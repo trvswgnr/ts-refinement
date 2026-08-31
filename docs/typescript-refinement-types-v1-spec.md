@@ -30,16 +30,16 @@ has stronger semantics than a normal TypeScript `as` assertion when compiled wit
 
 The toolchain classifies each refinement assertion into one of three states:
 
-| State | Example | Editor | Build output |
-| --- | --- | --- | --- |
-| Provably valid | `4 as Even` | no error | validation erased |
-| Provably invalid | `5 as Even` | diagnostic | build error |
-| Not statically knowable | `x as Even` | no error | runtime validation inserted |
+| State                   | Example     | Editor     | Build output                |
+| ----------------------- | ----------- | ---------- | --------------------------- |
+| Provably valid          | `4 as Even` | no error   | validation erased           |
+| Provably invalid        | `5 as Even` | diagnostic | build error                 |
+| Not statically knowable | `x as Even` | no error   | runtime validation inserted |
 
 The primary developer experience is ordinary TypeScript syntax plus a single type constructor:
 
 ```ts
-Refined<Base, "javascript expression">
+Refined<Base, "javascript expression">;
 ```
 
 There is no separate schema language and no v1 refinement-specific predicate vocabulary.
@@ -55,31 +55,25 @@ These decisions are part of the v1 contract.
 The second generic argument is a string literal containing a JavaScript expression.
 
 ```ts
-type Positive =
-  Refined<number, "n > 0">;
+type Positive = Refined<number, "n > 0">;
 
-type FinitePositive =
-  Refined<number, "Number.isFinite(n) && n > 0">;
+type FinitePositive = Refined<number, "Number.isFinite(n) && n > 0">;
 
-type NonEmptyString =
-  Refined<string, "s.length > 0">;
+type NonEmptyString = Refined<string, "s.length > 0">;
 
-type NonEmptyArray<T> =
-  Refined<T[], "xs.length > 0">;
+type NonEmptyArray<T> = Refined<T[], "xs.length > 0">;
 
-type AllPositive =
-  Refined<number[], "xs.every(x => x > 0)">;
+type AllPositive = Refined<number[], "xs.every(x => x > 0)">;
 
-type Slug =
-  Refined<string, "/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(s)">;
+type Slug = Refined<string, "/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(s)">;
 ```
 
 The language does **not** introduce aliases such as:
 
 ```ts
 // Not v1
-Refined<number, "int">
-Refined<string, "nonempty">
+Refined<number, "int">;
+Refined<string, "nonempty">;
 ```
 
 If integer semantics are wanted, write JavaScript:
@@ -115,8 +109,7 @@ The compiler parses the expression and performs lexical free-variable analysis.
 Given:
 
 ```ts
-type AllPositive =
-  Refined<number[], "xs.every(x => x > 0)">;
+type AllPositive = Refined<number[], "xs.every(x => x > 0)">;
 ```
 
 the analysis is:
@@ -129,8 +122,7 @@ x   -> locally bound by arrow function
 Given:
 
 ```ts
-type Even =
-  Refined<number, "Number.isInteger(n) && n % 2 === 0">;
+type Even = Refined<number, "Number.isInteger(n) && n % 2 === 0">;
 ```
 
 the analysis is:
@@ -143,9 +135,9 @@ n      -> free identifier -> refinement subject
 The spelling of the subject is erased during normalization. These predicates therefore normalize identically:
 
 ```ts
-"x > 0"
-"n > 0"
-"value > 0"
+"x > 0";
+"n > 0";
+"value > 0";
 ```
 
 Internal normalized form:
@@ -174,8 +166,7 @@ Reject:
 ```ts
 const MIN = 10;
 
-type AtLeastMin =
-  Refined<number, "n >= MIN">;
+type AtLeastMin = Refined<number, "n >= MIN">;
 ```
 
 The reason is architectural, not syntactic. A refinement can be declared in one module and consumed through a type-only import in another:
@@ -184,8 +175,7 @@ The reason is architectural, not syntactic. A refinement can be declared in one 
 // limits.ts
 const MIN = 10;
 
-export type AtLeastMin =
-  Refined<number, "n >= MIN">;
+export type AtLeastMin = Refined<number, "n >= MIN">;
 ```
 
 ```ts
@@ -218,14 +208,11 @@ standard JavaScript globals, and locally-bound identifiers.
 Refine an already-refined type rather than inventing refinement combinators.
 
 ```ts
-type Int =
-  Refined<number, "Number.isInteger(n)">;
+type Int = Refined<number, "Number.isInteger(n)">;
 
-type Even =
-  Refined<Int, "n % 2 === 0">;
+type Even = Refined<Int, "n % 2 === 0">;
 
-type PositiveEven =
-  Refined<Even, "n > 0">;
+type PositiveEven = Refined<Even, "n > 0">;
 ```
 
 Semantically:
@@ -260,11 +247,7 @@ No custom implication solver is required for these assignments; the relationship
 A developer may still write a self-contained refinement:
 
 ```ts
-type EvenNumber =
-  Refined<
-    number,
-    "Number.isInteger(n) && n % 2 === 0"
-  >;
+type EvenNumber = Refined<number, "Number.isInteger(n) && n % 2 === 0">;
 ```
 
 However, TypeScript will not infer that `EvenNumber` is assignable to a separately-declared `Int`, because TypeScript does not prove logical implication between predicate strings.
@@ -290,20 +273,17 @@ type RefinementTags<Expr extends string> = {
   readonly [K in Expr]: true;
 };
 
-export type Refined<Base, Predicate extends string> =
-  Base & {
-    readonly [refinementBrand]: RefinementTags<Predicate>;
-  };
+export type Refined<Base, Predicate extends string> = Base & {
+  readonly [refinementBrand]: RefinementTags<Predicate>;
+};
 ```
 
 For nested refinements:
 
 ```ts
-type Int =
-  Refined<number, "Number.isInteger(n)">;
+type Int = Refined<number, "Number.isInteger(n)">;
 
-type Even =
-  Refined<Int, "n % 2 === 0">;
+type Even = Refined<Int, "n % 2 === 0">;
 ```
 
 the resulting intersection accumulates refinement tags while remaining a subtype of the base type.
@@ -327,7 +307,7 @@ Add explicit compiler tests for these properties before building the transform.
 The v1 refinement boundary is a TypeScript assertion whose target contains one or more refinement markers.
 
 ```ts
-expression as RefinedType
+expression as RefinedType;
 ```
 
 Example:
@@ -411,10 +391,7 @@ The simplest v1 implementation is to reuse TypeScript's parser so the project do
 Conceptually:
 
 ```ts
-function parsePredicate(
-  ts: typeof import("typescript"),
-  source: string,
-): ts.Expression {
+function parsePredicate(ts: typeof import("typescript"), source: string): ts.Expression {
   const file = ts.createSourceFile(
     "__refinement__.js",
     `const __predicate = (${source});`,
@@ -450,16 +427,16 @@ The predicate must parse as a JavaScript expression.
 Valid examples:
 
 ```ts
-"n > 0"
-"Number.isInteger(n)"
-"Number.isFinite(n) && n >= 0"
-"Math.abs(n) < 10"
-"s.length > 0"
-"s.startsWith('foo')"
-"/^[a-z]+$/.test(s)"
-"xs.length >= 1"
-"xs.every(x => Number.isFinite(x))"
-"xs.every((x, i) => i === 0 || xs[i - 1] <= x)"
+"n > 0";
+"Number.isInteger(n)";
+"Number.isFinite(n) && n >= 0";
+"Math.abs(n) < 10";
+"s.length > 0";
+"s.startsWith('foo')";
+"/^[a-z]+$/.test(s)";
+"xs.length >= 1";
+"xs.every(x => Number.isFinite(x))";
+"xs.every((x, i) => i === 0 || xs[i - 1] <= x)";
 ```
 
 A refinement expression is evaluated in JavaScript boolean context: a truthy result passes and a falsy result fails.
@@ -500,7 +477,7 @@ Collect identifier references that are not:
 Example:
 
 ```js
-xs.every(x => x > 0)
+xs.every((x) => x > 0);
 ```
 
 Candidates:
@@ -566,7 +543,7 @@ Environment-specific globals can become a configurable feature later.
 Exactly one unresolved free identifier:
 
 ```ts
-Refined<number, "Number.isInteger(n) && n > 0">
+Refined<number, "Number.isInteger(n) && n > 0">;
 ```
 
 Result:
@@ -578,7 +555,7 @@ subject = n
 No unresolved free identifiers:
 
 ```ts
-Refined<number, "true">
+Refined<number, "true">;
 ```
 
 Treat as a subjectless predicate. It is legal, although rarely useful.
@@ -586,7 +563,7 @@ Treat as a subjectless predicate. It is legal, although rarely useful.
 More than one unresolved free identifier:
 
 ```ts
-Refined<number, "n > min">
+Refined<number, "n > min">;
 ```
 
 Result:
@@ -616,7 +593,7 @@ Create a normalized internal IR that:
 Example input:
 
 ```js
-Number.isInteger(n) && n % 2 === 0
+Number.isInteger(n) && n % 2 === 0;
 ```
 
 Normalized form:
@@ -646,7 +623,7 @@ The runtime emitter may emit from the original parsed AST after safe subject sub
 Given an `as` expression:
 
 ```ts
-x as Even
+x as Even;
 ```
 
 use the real TypeScript `TypeChecker` to resolve the target type.
@@ -664,11 +641,9 @@ The analyzer must:
 Example:
 
 ```ts
-type Int =
-  Refined<number, "Number.isInteger(n)">;
+type Int = Refined<number, "Number.isInteger(n)">;
 
-type Even =
-  Refined<Int, "n % 2 === 0">;
+type Even = Refined<Int, "n % 2 === 0">;
 ```
 
 Resolved target:
@@ -695,10 +670,7 @@ Static validation is deliberately conservative.
 Every predicate proof returns:
 
 ```ts
-type Proof =
-  | { kind: "true" }
-  | { kind: "false"; reason?: string }
-  | { kind: "unknown" };
+type Proof = { kind: "true" } | { kind: "false"; reason?: string } | { kind: "unknown" };
 ```
 
 The evaluator must never execute arbitrary JavaScript.
@@ -715,17 +687,17 @@ MVP proof should support:
 Examples:
 
 ```ts
-4 as Even
+4 as Even;
 // true
 
-5 as Even
-// false
+((5 as Even) -
+  // false
 
--5 as Positive
+  5) as Positive;
 // false
 
 declare const x: number;
-x as Positive
+x as Positive;
 // unknown
 ```
 
@@ -852,21 +824,16 @@ function __rf_positive(value) {
 Nested refinements should generate one validator containing the conjunction:
 
 ```ts
-type Int =
-  Refined<number, "Number.isInteger(n)">;
+type Int = Refined<number, "Number.isInteger(n)">;
 
-type Even =
-  Refined<Int, "n % 2 === 0">;
+type Even = Refined<Int, "n % 2 === 0">;
 ```
 
 Possible output:
 
 ```js
 function __rf_even(value) {
-  if (!(
-    Number.isInteger(value) &&
-    value % 2 === 0
-  )) {
+  if (!(Number.isInteger(value) && value % 2 === 0)) {
     throw new RefinementError(/* ... */);
   }
 
@@ -877,20 +844,19 @@ function __rf_even(value) {
 The original source expression must never be duplicated:
 
 ```ts
-getValue() as Even
+getValue() as Even;
 ```
 
 must become equivalent to:
 
 ```js
-__rf_even(getValue())
+__rf_even(getValue());
 ```
 
 not:
 
 ```js
-Number.isInteger(getValue()) &&
-getValue() % 2 === 0
+Number.isInteger(getValue()) && getValue() % 2 === 0;
 ```
 
 ---
@@ -905,11 +871,7 @@ export class RefinementError extends TypeError {
   readonly predicate: string;
   readonly value: unknown;
 
-  constructor(options: {
-    refinement?: string;
-    predicate: string;
-    value: unknown;
-  }) {
+  constructor(options: { refinement?: string; predicate: string; value: unknown }) {
     // ...
   }
 }
@@ -1039,23 +1001,18 @@ For VS Code development/testing, ensure the workspace TypeScript version is used
 Proxy the existing language service and augment:
 
 ```ts
-getSemanticDiagnostics(fileName)
+getSemanticDiagnostics(fileName);
 ```
 
 Conceptually:
 
 ```ts
-proxy.getSemanticDiagnostics = fileName => {
-  const existing =
-    info.languageService.getSemanticDiagnostics(fileName);
+proxy.getSemanticDiagnostics = (fileName) => {
+  const existing = info.languageService.getSemanticDiagnostics(fileName);
 
-  const refinementDiagnostics =
-    analyzeFileForDiagnostics(fileName);
+  const refinementDiagnostics = analyzeFileForDiagnostics(fileName);
 
-  return [
-    ...existing,
-    ...refinementDiagnostics,
-  ];
+  return [...existing, ...refinementDiagnostics];
 };
 ```
 
@@ -1084,8 +1041,7 @@ V1 should surface at least these cases.
 ### Malformed JavaScript predicate
 
 ```ts
-type Positive =
-  Refined<number, "n >>>">;
+type Positive = Refined<number, "n >>>">;
 ```
 
 Diagnostic should point into or as close as practical to the string literal:
@@ -1097,8 +1053,7 @@ RF1000: Invalid refinement JavaScript expression.
 ### Ambiguous free identifiers
 
 ```ts
-type Foo =
-  Refined<number, "n > min">;
+type Foo = Refined<number, "n > min">;
 ```
 
 ```text
@@ -1290,8 +1245,7 @@ Implement one end-to-end case first.
 ```ts
 import type { Refined } from "<core>";
 
-type Positive =
-  Refined<number, "n > 0">;
+type Positive = Refined<number, "n > 0">;
 
 declare const dynamic: number;
 
@@ -1341,7 +1295,7 @@ Only after this works should `Number.isInteger` and nested refinements be added.
 Implement and test:
 
 ```ts
-Refined<Base, Predicate>
+Refined<Base, Predicate>;
 ```
 
 Acceptance tests:
@@ -1363,9 +1317,9 @@ const c: Int = e;
 Support:
 
 ```ts
-"n > 0"
-"value > 0"
-"xs.every(x => x > 0)"
+"n > 0";
+"value > 0";
+"xs.every(x => x > 0)";
 ```
 
 Produce deterministic normalized IR.
@@ -1390,9 +1344,9 @@ Implement literals and basic operators.
 Demonstrate:
 
 ```ts
-5 as Positive   // true
--5 as Positive  // false
-x as Positive   // unknown
+((5 as Positive) - // true
+  5) as Positive; // false
+x as Positive; // unknown
 ```
 
 ### Phase 5 — Build transform
@@ -1412,21 +1366,19 @@ Surface RF1000/RF1002/RF1101/RF1200 in VS Code.
 Add static modeling for ordinary JS:
 
 ```ts
-Number.isInteger(n)
+Number.isInteger(n);
 ```
 
 Verify:
 
 ```ts
-type Int =
-  Refined<number, "Number.isInteger(n)">;
+type Int = Refined<number, "Number.isInteger(n)">;
 
-type Even =
-  Refined<Int, "n % 2 === 0">;
+type Even = Refined<Int, "n % 2 === 0">;
 
-4 as Even // true
-5 as Even // false
-x as Even // runtime
+4 as Even; // true
+5 as Even; // false
+x as Even; // runtime
 ```
 
 ### Phase 8 — Hardening
@@ -1454,18 +1406,18 @@ language-service plugin
 ### Predicate parsing
 
 ```ts
-Refined<number, "n > 0">
-Refined<number, "(n > 0)">
-Refined<number, "Number.isInteger(n)">
-Refined<string, "/x/.test(s)">
-Refined<number[], "xs.every(x => x > 0)">
+Refined<number, "n > 0">;
+Refined<number, "(n > 0)">;
+Refined<number, "Number.isInteger(n)">;
+Refined<string, "/x/.test(s)">;
+Refined<number[], "xs.every(x => x > 0)">;
 ```
 
 Malformed:
 
 ```ts
-Refined<number, "n >">
-Refined<number, "if (n) true">
+Refined<number, "n >">;
+Refined<number, "if (n) true">;
 ```
 
 ### Subject inference
@@ -1483,14 +1435,11 @@ Refined<number, "if (n) true">
 ### Composition
 
 ```ts
-type Int =
-  Refined<number, "Number.isInteger(n)">;
+type Int = Refined<number, "Number.isInteger(n)">;
 
-type Even =
-  Refined<Int, "n % 2 === 0">;
+type Even = Refined<Int, "n % 2 === 0">;
 
-type PositiveEven =
-  Refined<Even, "n > 0">;
+type PositiveEven = Refined<Even, "n > 0">;
 ```
 
 Verify inherited predicates are all resolved.
@@ -1498,11 +1447,10 @@ Verify inherited predicates are all resolved.
 ### Static proof
 
 ```ts
-5 as Positive
--5 as Positive
-0 as Positive
-4 as Even
-5 as Even
+((5 as Positive) - 5) as Positive;
+0 as Positive;
+4 as Even;
+5 as Even;
 ```
 
 ### Unknown values
@@ -1510,9 +1458,9 @@ Verify inherited predicates are all resolved.
 ```ts
 declare const n: number;
 
-n as Positive
-n as Int
-n as Even
+n as Positive;
+n as Int;
+n as Even;
 ```
 
 Verify runtime validation.
@@ -1520,7 +1468,7 @@ Verify runtime validation.
 ### Evaluation count
 
 ```ts
-getNumber() as Positive
+getNumber() as Positive;
 ```
 
 Verify `getNumber()` executes exactly once.
@@ -1532,9 +1480,9 @@ declare const x: unknown;
 declare const y: any;
 declare const s: string;
 
-x as Positive
-y as Positive
-s as Positive
+x as Positive;
+y as Positive;
+s as Positive;
 ```
 
 All should produce a refinement diagnostic rather than silently generating a predicate-only check.
@@ -1543,8 +1491,7 @@ All should produce a refinement diagnostic rather than silently generating a pre
 
 ```ts
 // types.ts
-export type Positive =
-  Refined<number, "n > 0">;
+export type Positive = Refined<number, "n > 0">;
 ```
 
 ```ts
@@ -1576,7 +1523,7 @@ Do not reconstruct a TypeScript `Program` inside individual language-service dia
 Use the language service's existing program:
 
 ```ts
-info.languageService.getProgram()
+info.languageService.getProgram();
 ```
 
 For builds, create one program per build graph and reuse its checker across transforms.
@@ -1629,9 +1576,7 @@ Treat `typescript` as a peer dependency for user-facing packages.
 The language-service plugin must use the TypeScript module passed by tsserver:
 
 ```ts
-function init(modules: {
-  typescript: typeof import("typescript");
-}) {
+function init(modules: { typescript: typeof import("typescript") }) {
   const ts = modules.typescript;
 }
 ```
@@ -1685,8 +1630,8 @@ Do not implement these during the first version.
 No:
 
 ```ts
-Refined<number, "int">
-Refined<string, "nonempty">
+Refined<number, "int">;
+Refined<string, "nonempty">;
 ```
 
 Use JavaScript.
@@ -1718,7 +1663,7 @@ type T = Refined<number, "n >= MIN">;
 Do not recursively generate validators for arbitrary:
 
 ```ts
-unknown as User
+unknown as User;
 ```
 
 The source must already satisfy the base TypeScript type.
@@ -1744,13 +1689,13 @@ A future control-flow analyzer could add diagnostics or helpers, but this is not
 Do not attempt general implication:
 
 ```ts
-Refined<number, "n > 10">
+Refined<number, "n > 10">;
 ```
 
 being automatically recognized by TypeScript as a subtype of:
 
 ```ts
-Refined<number, "n > 0">
+Refined<number, "n > 0">;
 ```
 
 Use nested refinement types when the subtype relationship matters.
@@ -1827,9 +1772,9 @@ These are valuable but not necessary to prove the core system.
 Potential future API:
 
 ```ts
-is<Positive>(value)
-assert<Positive>(value)
-parse<Positive>(value)
+is<Positive>(value);
+assert<Positive>(value);
+parse<Positive>(value);
 ```
 
 These require compiler-recognized intrinsics and are not needed for the initial `as`-based model.
@@ -1839,7 +1784,7 @@ These require compiler-recognized intrinsics and are not needed for the initial 
 Future evaluator improvements could prove:
 
 ```ts
-const n = 2 + 2 as Even;
+const n = (2 + 2) as Even;
 ```
 
 or reason over literal unions and selected local constant propagation.
@@ -1855,14 +1800,11 @@ V1 is complete when this program works end-to-end:
 ```ts
 import type { Refined } from "<package>";
 
-type Positive =
-  Refined<number, "n > 0">;
+type Positive = Refined<number, "n > 0">;
 
-type Int =
-  Refined<number, "Number.isInteger(n)">;
+type Int = Refined<number, "Number.isInteger(n)">;
 
-type Even =
-  Refined<Int, "n % 2 === 0">;
+type Even = Refined<Int, "n % 2 === 0">;
 
 declare const dynamic: number;
 
@@ -1870,8 +1812,8 @@ function takesEven(n: Even) {
   return n;
 }
 
-takesEven(4 as Even);       // accepted, runtime check erased
-takesEven(5 as Even);       // editor error + build error
+takesEven(4 as Even); // accepted, runtime check erased
+takesEven(5 as Even); // editor error + build error
 takesEven(dynamic as Even); // accepted, runtime validation emitted
 ```
 
@@ -1913,8 +1855,7 @@ And the following engineering criteria are met:
 ### Acceptance fixture
 
 ```ts
-type Positive =
-  Refined<number, "n > 0">;
+type Positive = Refined<number, "n > 0">;
 
 declare const n: number;
 

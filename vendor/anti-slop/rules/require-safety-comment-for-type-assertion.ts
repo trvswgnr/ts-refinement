@@ -37,10 +37,7 @@ function markerPattern(markers: readonly string[]): RegExp {
   const alternation = markers
     .map((marker) => marker.replaceAll(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`))
     .join("|");
-  return new RegExp(
-    String.raw`(?:^|[^\p{L}\p{N}_])(?:${alternation})\s*:\s*\S`,
-    "u",
-  );
+  return new RegExp(String.raw`(?:^|[^\p{L}\p{N}_])(?:${alternation})\s*:\s*\S`, "u");
 }
 
 function hasSafetyJustificationBefore(
@@ -51,16 +48,10 @@ function hasSafetyJustificationBefore(
 ): boolean {
   return sourceCode
     .getCommentsBefore(owner)
-    .some(
-      (comment) => comment.end <= assertion.start && pattern.test(comment.value),
-    );
+    .some((comment) => comment.end <= assertion.start && pattern.test(comment.value));
 }
 
-function hasSafetyComment(
-  sourceCode: SourceCode,
-  node: TypeAssertion,
-  pattern: RegExp,
-): boolean {
+function hasSafetyComment(sourceCode: SourceCode, node: TypeAssertion, pattern: RegExp): boolean {
   let current: ESTree.Node = node;
   while (true) {
     if (hasSafetyJustificationBefore(sourceCode, current, node, pattern)) return true;

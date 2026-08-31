@@ -1,11 +1,44 @@
 {
-  "name": "ts-refinement-types",
-  "module": "index.ts",
+  "name": "ts-refinement-types-name-tbd",
+  "version": "1.0.0",
+  "license": "MIT",
+  "files": [
+    "dist/index.d.mts",
+    "dist/index.d.mts.map",
+    "dist/index.mjs",
+    "dist/index.mjs.map"
+  ],
   "type": "module",
-  "devDependencies": {
-    "@types/bun": "latest"
+  "sideEffects": false,
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs",
+      "default": "./dist/index.mjs"
+    }
   },
-  "peerDependencies": {
-    "typescript": "^7"
+  "scripts": {
+    "gate": "bun run typecheck && bun run lint && bun run fmt && bun run test",
+    "build": "tsdown",
+    "prepublishOnly": "bun run build",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint .",
+    "fmt": "oxfmt --check .",
+    "fmt:fix": "oxfmt .",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@oxlint/plugins": "^1.80.0",
+    "@types/bun": "^1.4.0",
+    "fast-check": "^4.9.0",
+    "oxfmt": "^0.65.0",
+    "oxlint": "^1.80.0",
+    "oxlint-tsgolint": "^7.0.2001",
+    "tsdown": "^0.22.14",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
   }
 }
