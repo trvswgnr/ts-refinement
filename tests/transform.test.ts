@@ -78,4 +78,25 @@ describe("source transform", () => {
       output.code?.indexOf("refinement-types:validator:") ?? -1,
     );
   });
+
+  it("transforms angle-bracket and as refinement assertions equivalently", () => {
+    const state = fixtureProgram();
+    const sourceFile = state.program.getSourceFile(fixtureFile("angle-bracket.ts"));
+    if (sourceFile === undefined) throw new Error("fixture was not loaded");
+    const registry = createValidatorRegistry(ts, "@ts-refinement/runtime");
+    const output = transformSource(state.context, sourceFile, sourceFile.text, registry);
+
+    expect(output.diagnostics).toEqual([]);
+    expect(output.code).toContain("export const asKnownEven = 4;");
+    expect(output.code).toContain("export const angleKnownEven = 4;");
+
+    const asRuntimeCall = output.code?.match(
+      /export const asRuntimeEven = (__rf_[a-z0-9_]+)\(\(dynamic\), "Even"\);/u,
+    );
+    const angleRuntimeCall = output.code?.match(
+      /export const angleRuntimeEven = (__rf_[a-z0-9_]+)\(\(dynamic\), "Even"\);/u,
+    );
+    expect(asRuntimeCall?.[1]).toBeDefined();
+    expect(angleRuntimeCall?.[1]).toBe(asRuntimeCall?.[1]);
+  });
 });
