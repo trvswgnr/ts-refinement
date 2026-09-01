@@ -144,6 +144,21 @@ export function parsePredicate(tsModule: typeof ts, source: string): PredicatePa
   }
 
   const free = analyzeFreeIdentifiers(tsModule, expression);
+  if (free.disallowedNames.length > 0) {
+    const result: PredicateParseResult = {
+      diagnostics: [
+        createDiagnostic(
+          DiagnosticCode.CannotInferSubject,
+          `Cannot infer refinement subject. Disallowed free identifiers: ${free.disallowedNames.join(", ")}.`,
+          predicateLocation(source),
+        ),
+      ],
+      ok: false,
+    };
+    cache.set(source, result);
+    return result;
+  }
+
   if (free.unresolvedNames.length > 1) {
     const result: PredicateParseResult = {
       diagnostics: [

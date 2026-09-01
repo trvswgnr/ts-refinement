@@ -5,7 +5,75 @@ import {
   emitPredicateWithSubject,
   normalizePredicate,
   parsePredicate,
+  standardGlobals,
 } from "@ts-refinement/analyzer";
+
+const allowedGlobals = [
+  "Array",
+  "BigInt",
+  "Boolean",
+  "Date",
+  "Infinity",
+  "JSON",
+  "Map",
+  "Math",
+  "NaN",
+  "Number",
+  "Object",
+  "RegExp",
+  "Set",
+  "String",
+  "Symbol",
+  "WeakMap",
+  "WeakSet",
+  "isFinite",
+  "isNaN",
+  "parseFloat",
+  "parseInt",
+  "undefined",
+] as const;
+
+const removedGlobals = [
+  "AggregateError",
+  "ArrayBuffer",
+  "Atomics",
+  "BigInt64Array",
+  "BigUint64Array",
+  "DataView",
+  "Error",
+  "EvalError",
+  "FinalizationRegistry",
+  "Float32Array",
+  "Float64Array",
+  "Function",
+  "Int8Array",
+  "Int16Array",
+  "Int32Array",
+  "Intl",
+  "Promise",
+  "Proxy",
+  "RangeError",
+  "ReferenceError",
+  "Reflect",
+  "SharedArrayBuffer",
+  "SyntaxError",
+  "TypeError",
+  "URIError",
+  "Uint8Array",
+  "Uint8ClampedArray",
+  "Uint16Array",
+  "Uint32Array",
+  "WeakRef",
+  "WebAssembly",
+  "decodeURI",
+  "decodeURIComponent",
+  "encodeURI",
+  "encodeURIComponent",
+  "escape",
+  "eval",
+  "globalThis",
+  "unescape",
+] as const;
 
 function normalized(source: string) {
   const parsed = parsePredicate(ts, source);
@@ -31,6 +99,31 @@ describe("predicate parsing and subject inference", () => {
     const parsed = parsePredicate(ts, "Number.isInteger(n) && n > 0");
     expect(parsed.ok).toBe(true);
     if (parsed.ok) expect(parsed.predicate.subject).toBe("n");
+  });
+
+  it("accepts exactly the approved predicate globals", () => {
+    expect([...standardGlobals]).toEqual(allowedGlobals);
+
+    for (const name of allowedGlobals) {
+      const parsed = parsePredicate(ts, `${name} === ${name} || subject`);
+      expect(parsed.ok, name).toBe(true);
+      if (parsed.ok) expect(parsed.predicate.subject, name).toBe("subject");
+    }
+  });
+
+  it("rejects every global removed from the prior allowlist", () => {
+    for (const name of removedGlobals) {
+      expect(parsePredicate(ts, name).diagnostics[0]?.code, name).toBe(1002);
+    }
+  });
+
+  it.each([
+    ["eval", "eval('globalThis.PWNED = 1')"],
+    ["Function", "Function('return true')()"],
+    ["globalThis", "globalThis.PWNED"],
+    ["Reflect", "Reflect.get({}, 'value')"],
+  ])("rejects the high-risk %s call form", (_name, source) => {
+    expect(parsePredicate(ts, source).diagnostics[0]?.code).toBe(1002);
   });
 
   it("tracks arrow parameters as local bindings", () => {
