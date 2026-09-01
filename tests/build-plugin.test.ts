@@ -1,4 +1,4 @@
-import { originalPositionFor, TraceMap } from "@jridgewell/trace-mapping";
+import { decodedMappings, originalPositionFor, TraceMap } from "@jridgewell/trace-mapping";
 import { rolldown } from "rolldown";
 import { describe, expect, it } from "vitest";
 
@@ -18,7 +18,10 @@ interface RuntimeFixture {
 }
 
 interface NestedRuntimeFixture {
+  readonly checkAngleThenAs: (value: number) => number;
+  readonly checkChained: (value: number) => number;
   readonly checkNested: (value: number) => number;
+  readonly checkNestedAngle: (value: number) => number;
 }
 
 function escapeRegExp(value: string): string {
@@ -31,6 +34,14 @@ function generatedPosition(code: string, offset: number) {
     column: precedingLines.at(-1)?.length ?? 0,
     line: precedingLines.length,
   };
+}
+
+function validatorCalls(code: string, functionName: string): readonly number[] {
+  const functionStart = code.indexOf(`function ${functionName}`);
+  const functionEnd = code.indexOf("\n}", functionStart);
+  return [...code.slice(functionStart, functionEnd).matchAll(/\bassert(?:\$\d+)?\(/gu)].map(
+    (match) => functionStart + (match.index ?? 0),
+  );
 }
 
 async function build(input: string, ignore: readonly string[] = [], source?: string) {
@@ -133,12 +144,7 @@ describe("Rolldown plugin", () => {
     if (chunk === undefined) throw new Error("bundle did not emit a chunk");
     if (chunk.map === null) throw new Error("bundle did not emit a source map");
 
-    const functionStart = chunk.code.indexOf("function checkNested");
-    const functionEnd = chunk.code.indexOf("\n}", functionStart);
-    const functionCode = chunk.code.slice(functionStart, functionEnd);
-    const calls = [...functionCode.matchAll(/\bassert(?:\$\d+)?\(/gu)].map(
-      (match) => functionStart + (match.index ?? 0),
-    );
+    const calls = validatorCalls(chunk.code, "checkNested");
     expect(calls).toHaveLength(2);
     const [outerCall, innerCall] = calls;
     if (outerCall === undefined || innerCall === undefined) {
@@ -146,12 +152,19 @@ describe("Rolldown plugin", () => {
     }
 
     const traceMap = new TraceMap(JSON.stringify(chunk.map));
+    const decoded = decodedMappings(traceMap);
     const outerOriginal = originalPositionFor(traceMap, generatedPosition(chunk.code, outerCall));
     const innerOriginal = originalPositionFor(traceMap, generatedPosition(chunk.code, innerCall));
     expect(outerOriginal).toMatchObject({ column: 9, line: 4 });
     expect(innerOriginal).toMatchObject({ column: 11, line: 4 });
     expect(outerOriginal.source?.endsWith("nested-runtime.ts")).toBe(true);
     expect(innerOriginal.source?.endsWith("nested-runtime.ts")).toBe(true);
+    for (const call of calls) {
+      const callPosition = generatedPosition(chunk.code, call);
+      expect(
+        decoded[callPosition.line - 1]?.some((segment) => segment[0] === callPosition.column),
+      ).toBe(true);
+    }
     expect(
       chunk.map.sourcesContent?.some((source) => source?.includes("dynamicValue as Int")),
     ).toBe(true);
@@ -164,6 +177,35 @@ describe("Rolldown plugin", () => {
       expect.objectContaining({ refinement: "Even" }),
     );
     expect(() => fixture.checkNested(2.5)).toThrowError(
+      expect.objectContaining({ refinement: "Int" }),
+    );
+
+    const chainedCalls = validatorCalls(chunk.code, "checkChained");
+    expect(chainedCalls).toHaveLength(2);
+    for (const call of chainedCalls) {
+      const callPosition = generatedPosition(chunk.code, call);
+      expect(originalPositionFor(traceMap, callPosition)).toMatchObject({ column: 9, line: 8 });
+      expect(
+        decoded[callPosition.line - 1]?.some((segment) => segment[0] === callPosition.column),
+      ).toBe(true);
+    }
+    expect(fixture.checkChained(4)).toBe(4);
+    expect(() => fixture.checkChained(3)).toThrowError(
+      expect.objectContaining({ refinement: "Even" }),
+    );
+    expect(() => fixture.checkChained(2.5)).toThrowError(
+      expect.objectContaining({ refinement: "Int" }),
+    );
+
+    expect(fixture.checkNestedAngle(4)).toBe(4);
+    expect(() => fixture.checkNestedAngle(3)).toThrowError(
+      expect.objectContaining({ refinement: "Even" }),
+    );
+    expect(() => fixture.checkNestedAngle(2.5)).toThrowError(
+      expect.objectContaining({ refinement: "Int" }),
+    );
+    expect(fixture.checkAngleThenAs(4)).toBe(4);
+    expect(() => fixture.checkAngleThenAs(2.5)).toThrowError(
       expect.objectContaining({ refinement: "Int" }),
     );
   });

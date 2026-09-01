@@ -1,4 +1,4 @@
-import MagicString, { type SourceMap } from "magic-string";
+import MagicString, { SourceMap, type DecodedSourceMap, type SourceMapSegment } from "magic-string";
 import type * as ts from "typescript";
 
 import {
@@ -14,6 +14,16 @@ export interface TransformOutput {
   readonly code: string | null;
   readonly diagnostics: readonly RefinementDiagnostic[];
   readonly map: SourceMap | null;
+}
+
+interface ValidatorMappingAnchor {
+  readonly localName: string;
+  readonly originalStart: number;
+}
+
+interface SourcePosition {
+  readonly column: number;
+  readonly line: number;
 }
 
 function uniqueLocalName(
@@ -57,13 +67,15 @@ function applyAssertionEdits(
   magicString: MagicString,
   imports: Map<ValidatorEntry, string>,
   allocatedNames: Set<string>,
+  mappingAnchors: ValidatorMappingAnchor[],
 ): void {
   const prefixes = new Map<number, string[]>();
   const suffixes = new Map<number, string[]>();
 
   for (const analysis of analyses) {
     const node = analysis.site.node;
-    if (context.ts.isAsExpression(node)) {
+    const isAsExpression = context.ts.isAsExpression(node);
+    if (isAsExpression) {
       magicString.remove(node.expression.getEnd(), node.getEnd());
     } else {
       magicString.remove(node.getStart(), node.expression.getStart());
@@ -80,8 +92,9 @@ function applyAssertionEdits(
       imports.set(entry, localName);
       allocatedNames.add(localName);
     }
+    mappingAnchors.push({ localName, originalStart: node.getStart() });
 
-    const expressionStart = node.expression.getStart();
+    const expressionStart = isAsExpression ? node.expression.getStart() : node.getStart();
     const expressionEnd = node.expression.getEnd();
     const atStart = prefixes.get(expressionStart) ?? [];
     atStart.push(`${localName}((`);
@@ -95,15 +108,69 @@ function applyAssertionEdits(
   }
 
   for (const [start, atStart] of [...prefixes].sort(([left], [right]) => right - left)) {
-    const codePoint = source.codePointAt(start);
-    if (codePoint === undefined) throw new Error("Refinement expression has no source text.");
-    const end = start + (codePoint > 0xffff ? 2 : 1);
-    magicString.overwrite(start, end, `${atStart.join("")}${source.slice(start, end)}`);
+    magicString.appendLeft(start, atStart.join(""));
   }
 
   for (const [end, atEnd] of suffixes) {
     magicString.appendLeft(end, atEnd.join(""));
   }
+}
+
+function offsetPosition(source: string, offset: number): SourcePosition {
+  const lineStart = source.lastIndexOf("\n", offset - 1) + 1;
+  return {
+    column: offset - lineStart,
+    line: source.slice(0, lineStart).split("\n").length - 1,
+  };
+}
+
+function addMappingSegment(
+  decodedMap: DecodedSourceMap,
+  generatedLine: number,
+  segment: SourceMapSegment,
+): void {
+  const line = decodedMap.mappings[generatedLine] ?? [];
+  decodedMap.mappings[generatedLine] = line;
+  const index = line.findIndex((candidate) => candidate[0] >= segment[0]);
+  if (index === -1) {
+    line.push(segment);
+  } else if (line[index]?.[0] === segment[0]) {
+    line[index] = segment;
+  } else {
+    line.splice(index, 0, segment);
+  }
+}
+
+function generateSourceMap(
+  magicString: MagicString,
+  code: string,
+  source: string,
+  fileName: string,
+  mappingAnchors: readonly ValidatorMappingAnchor[],
+): SourceMap {
+  const decodedMap = magicString.generateDecodedMap({
+    file: fileName,
+    hires: true,
+    includeContent: true,
+    source: fileName,
+  });
+  let searchStart = 0;
+  for (const anchor of mappingAnchors) {
+    const marker = `${anchor.localName}((`;
+    const generatedOffset = code.indexOf(marker, searchStart);
+    if (generatedOffset === -1)
+      throw new Error(`Unable to map validator call '${anchor.localName}'.`);
+    searchStart = generatedOffset + marker.length;
+    const generated = offsetPosition(code, generatedOffset);
+    const original = offsetPosition(source, anchor.originalStart);
+    addMappingSegment(decodedMap, generated.line, [
+      generated.column,
+      0,
+      original.line,
+      original.column,
+    ]);
+  }
+  return new SourceMap(decodedMap);
 }
 
 export function transformSource(
@@ -126,8 +193,18 @@ export function transformSource(
 
   const imports = new Map<ValidatorEntry, string>();
   const allocatedNames = new Set<string>();
+  const mappingAnchors: ValidatorMappingAnchor[] = [];
   const magicString = new MagicString(source);
-  applyAssertionEdits(context, source, eligible, registry, magicString, imports, allocatedNames);
+  applyAssertionEdits(
+    context,
+    source,
+    eligible,
+    registry,
+    magicString,
+    imports,
+    allocatedNames,
+    mappingAnchors,
+  );
 
   if (imports.size > 0) {
     const importCode = [...imports]
@@ -141,14 +218,10 @@ export function transformSource(
     magicString.appendLeft(insertionPoint, `${leadingNewline}${importCode}\n`);
   }
 
+  const code = magicString.toString();
   return {
-    code: magicString.toString(),
+    code,
     diagnostics: [],
-    map: magicString.generateMap({
-      file: sourceFile.fileName,
-      hires: true,
-      includeContent: true,
-      source: sourceFile.fileName,
-    }),
+    map: generateSourceMap(magicString, code, source, sourceFile.fileName, mappingAnchors),
   };
 }
