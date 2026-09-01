@@ -8,18 +8,18 @@ export default defineConfig({
   resolve: {
     alias: [
       {
-        find: "ts-refinement-types/analyzer",
+        find: "@ts-refinement/analyzer",
         replacement: `${root}packages/analyzer/src/index.ts`,
       },
       {
-        find: "ts-refinement-types/rolldown",
+        find: "@ts-refinement/rolldown",
         replacement: `${root}packages/rolldown-plugin/src/index.ts`,
       },
       {
-        find: "ts-refinement-types/runtime",
+        find: "@ts-refinement/runtime",
         replacement: `${root}packages/runtime/src/index.ts`,
       },
-      { find: /^ts-refinement-types$/u, replacement: `${root}packages/core/src/index.ts` },
+      { find: /^ts-refinement$/u, replacement: `${root}packages/core/src/index.ts` },
     ],
   },
   test: {

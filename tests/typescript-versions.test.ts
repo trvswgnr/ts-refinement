@@ -3,7 +3,7 @@ import ts57 from "typescript-5-7";
 import ts59 from "typescript-5-9";
 import ts60 from "typescript";
 
-import { analyzeSourceFile, parsePredicate } from "ts-refinement-types/analyzer";
+import { analyzeSourceFile, parsePredicate } from "@ts-refinement/analyzer";
 
 import { createProgramState } from "../packages/rolldown-plugin/src/program.ts";
 

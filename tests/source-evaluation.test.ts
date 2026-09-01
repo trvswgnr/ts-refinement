@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { evaluateSourceExpression } from "ts-refinement-types/analyzer";
+import { evaluateSourceExpression } from "@ts-refinement/analyzer";
 
 import { fixtureFile, fixtureProgram } from "./helpers.ts";
 

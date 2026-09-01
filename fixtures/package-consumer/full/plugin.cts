@@ -1,4 +1,4 @@
-import plugin = require("ts-refinement-types/typescript-plugin");
+import plugin = require("@ts-refinement/typescript-plugin");
 
 declare const modules: Parameters<typeof plugin>[0];
 const initialized = plugin(modules);

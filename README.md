@@ -1,9 +1,9 @@
-# TypeScript Refinement Types
+# ts-refinement
 
 A v1 implementation of refinement assertions for ordinary TypeScript. A refinement attaches a JavaScript predicate to an existing type:
 
 ```ts
-import type { Refined } from "ts-refinement-types";
+import type { Refined } from "ts-refinement";
 
 type Positive = Refined<number, "n > 0">;
 type Int = Refined<number, "Number.isInteger(n)">;
@@ -29,30 +29,30 @@ The source must already be assignable to the unrefined base type. Refining direc
 ## Installation
 
 ```sh
-bun add ts-refinement-types
-bun add --dev typescript tsdown
+bun add ts-refinement @ts-refinement/runtime
+bun add --dev @ts-refinement/rolldown @ts-refinement/typescript-plugin typescript tsdown
 ```
 
-Keep `ts-refinement-types` in regular dependencies: transformed code can import its runtime entry point when the bundler is configured to externalize dependencies.
+`ts-refinement` is type-only and has no runtime dependencies. Keep `@ts-refinement/runtime` in regular dependencies because transformed code can import it when the bundler externalizes package dependencies. Build and editor integrations belong in development dependencies.
 
-## Package entry points
+## Packages
 
-The library ships as one versioned npm package. Its public entry points are:
+The repository publishes independently installable packages with separate dependency graphs:
 
-- `ts-refinement-types` - the type-only `Refined<Base, Predicate>` API
-- `ts-refinement-types/runtime` - `RefinementError`
-- `ts-refinement-types/analyzer` - the shared parser, resolver, proof engine, and diagnostics
-- `ts-refinement-types/rolldown` - the tsdown/Rolldown build transform
-- `ts-refinement-types/typescript-plugin` - TypeScript language-service diagnostics
+- `ts-refinement` - the dependency-free, type-only `Refined<Base, Predicate>` API
+- `@ts-refinement/runtime` - the dependency-free `RefinementError` API
+- `@ts-refinement/analyzer` - the shared parser, resolver, proof engine, and diagnostics for tooling authors
+- `@ts-refinement/rolldown` - the tsdown/Rolldown build transform; this is the only package that depends on `magic-string`
+- `@ts-refinement/typescript-plugin` - TypeScript language-service diagnostics
 
-Keeping these entry points in one package prevents the analyzer, build transform, editor plugin, and generated runtime from drifting across independently installed versions.
+The integration packages bundle the analyzer implementation they were tested with. This keeps the TypeScript plugin CommonJS-compatible and prevents ordinary users from installing the standalone analyzer package. All packages are released together at the same version, and integration peer dependencies require the matching core and runtime versions.
 
 ## tsdown setup
 
 ```ts
 // tsdown.config.ts
 import { defineConfig } from "tsdown";
-import refinementTypes from "ts-refinement-types/rolldown";
+import refinementTypes from "@ts-refinement/rolldown";
 
 export default defineConfig({
   entry: ["src/index.ts"],
@@ -66,7 +66,7 @@ The plugin uses the closest `tsconfig.json` by default. An explicit path and run
 ```ts
 refinementTypes({
   tsconfig: "./tsconfig.build.json",
-  runtimeModule: "ts-refinement-types/runtime",
+  runtimeModule: "@ts-refinement/runtime",
 });
 ```
 
@@ -79,7 +79,7 @@ The plugin recreates its TypeScript program at each build start and watches the 
   "compilerOptions": {
     "plugins": [
       {
-        "name": "ts-refinement-types/typescript-plugin"
+        "name": "@ts-refinement/typescript-plugin"
       }
     ]
   }
@@ -110,7 +110,7 @@ The initial proof engine handles primitive and array literals, trivial unary exp
 
 ## Development
 
-This repository uses Bun for development and publishes one npm package with several subpath exports. TypeScript 5.7 through 6.x is supported; TypeScript 7's native compiler package does not expose the classic `Program`/`TypeChecker` and tsserver plugin APIs required by this v1.
+This repository is a Bun workspace that publishes five npm packages. TypeScript 5.7 through 6.x is supported; TypeScript 7's native compiler package does not expose the classic `Program`/`TypeChecker` and tsserver plugin APIs required by this v1.
 
 ```sh
 bun install

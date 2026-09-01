@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { RefinementError } from "ts-refinement-types/runtime";
+import { RefinementError } from "@ts-refinement/runtime";
 
 describe("RefinementError", () => {
   it("preserves metadata without serializing the value", () => {

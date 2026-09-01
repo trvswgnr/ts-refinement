@@ -41,7 +41,7 @@ describe("TypeScript language-service plugin", () => {
 
     const diagnostics = proxy
       .getSemanticDiagnostics(fixtureFile("invalid.ts"))
-      .filter((diagnostic) => diagnostic.source === "typescript-refinement-types");
+      .filter((diagnostic) => diagnostic.source === "ts-refinement");
     expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
       1200, 1200, 1101, 1101, 1101,
     ]);
@@ -49,7 +49,7 @@ describe("TypeScript language-service plugin", () => {
 
     const declarationDiagnostics = proxy
       .getSemanticDiagnostics(fixtureFile("types.ts"))
-      .filter((diagnostic) => diagnostic.source === "typescript-refinement-types");
+      .filter((diagnostic) => diagnostic.source === "ts-refinement");
     expect(declarationDiagnostics.map((diagnostic) => diagnostic.code)).toEqual([1000, 1002]);
   });
 });

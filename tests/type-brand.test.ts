@@ -1,6 +1,6 @@
 import { describe, expectTypeOf, it } from "vitest";
 
-import type { Refined } from "ts-refinement-types";
+import type { Refined } from "ts-refinement";
 
 type Int = Refined<number, "Number.isInteger(n)">;
 type Even = Refined<Int, "n % 2 === 0">;

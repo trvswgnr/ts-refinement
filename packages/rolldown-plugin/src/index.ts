@@ -22,12 +22,12 @@ function isTransformableTypeScript(fileName: string): boolean {
 }
 
 export function refinementTypesPlugin(options: RefinementTypesPluginOptions = {}): Plugin {
-  const runtimeModule = options.runtimeModule ?? "ts-refinement-types/runtime";
+  const runtimeModule = options.runtimeModule ?? "@ts-refinement/runtime";
   const registry = createValidatorRegistry(ts, runtimeModule);
   let state: ProgramState | null = null;
 
   return {
-    name: "typescript-refinement-types",
+    name: "ts-refinement",
 
     buildStart() {
       registry.clear();

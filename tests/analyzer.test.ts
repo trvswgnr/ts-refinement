@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  analyzeSourceFile,
-  getRefinementDefinitionDiagnostics,
-} from "ts-refinement-types/analyzer";
+import { analyzeSourceFile, getRefinementDefinitionDiagnostics } from "@ts-refinement/analyzer";
 
 import { fixtureFile, fixtureProgram } from "./helpers.ts";
 

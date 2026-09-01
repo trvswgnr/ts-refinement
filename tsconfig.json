@@ -15,11 +15,11 @@
     "noPropertyAccessFromIndexSignature": true,
     "noUncheckedIndexedAccess": true,
     "paths": {
-      "ts-refinement-types": ["./packages/core/src/index.ts"],
-      "ts-refinement-types/analyzer": ["./packages/analyzer/src/index.ts"],
-      "ts-refinement-types/rolldown": ["./packages/rolldown-plugin/src/index.ts"],
-      "ts-refinement-types/runtime": ["./packages/runtime/src/index.ts"],
-      "ts-refinement-types/typescript-plugin": ["./packages/typescript-plugin/src/index.ts"]
+      "ts-refinement": ["./packages/core/src/index.ts"],
+      "@ts-refinement/analyzer": ["./packages/analyzer/src/index.ts"],
+      "@ts-refinement/rolldown": ["./packages/rolldown-plugin/src/index.ts"],
+      "@ts-refinement/runtime": ["./packages/runtime/src/index.ts"],
+      "@ts-refinement/typescript-plugin": ["./packages/typescript-plugin/src/index.ts"]
     },
     "skipLibCheck": true,
     "strict": true,

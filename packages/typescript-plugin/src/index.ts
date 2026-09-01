@@ -2,7 +2,7 @@ import type * as ts from "typescript/lib/tsserverlibrary";
 
 import { getRefinementDiagnostics } from "../../analyzer/src/index.ts";
 
-const pluginName = "typescript-refinement-types";
+const pluginName = "ts-refinement";
 
 function init(modules: { readonly typescript: typeof ts }): ts.server.PluginModule {
   const tsModule = modules.typescript;

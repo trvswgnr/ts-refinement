@@ -1,4 +1,4 @@
-import type { Refined } from "ts-refinement-types";
+import type { Refined } from "ts-refinement";
 
 export type Positive = Refined<number, "n > 0">;
 export type Negative = Refined<number, "n < 0">;

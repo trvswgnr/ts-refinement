@@ -1,4 +1,4 @@
-import type { Refined } from "ts-refinement-types";
+import type { Refined } from "ts-refinement";
 
 export function genericRefinement<Predicate extends string>(value: number) {
   return value as Refined<number, Predicate>;

@@ -11,7 +11,7 @@ describe("source transform", () => {
     const state = fixtureProgram();
     const sourceFile = state.program.getSourceFile(fixtureFile("valid.ts"));
     if (sourceFile === undefined) throw new Error("fixture was not loaded");
-    const registry = createValidatorRegistry(ts, "ts-refinement-types/runtime");
+    const registry = createValidatorRegistry(ts, "@ts-refinement/runtime");
     const output = transformSource(state.context, sourceFile, sourceFile.text, registry);
 
     expect(output.diagnostics).toEqual([]);
@@ -32,7 +32,7 @@ describe("source transform", () => {
     const state = fixtureProgram();
     const sourceFile = state.program.getSourceFile(fixtureFile("build-invalid.ts"));
     if (sourceFile === undefined) throw new Error("fixture was not loaded");
-    const registry = createValidatorRegistry(ts, "ts-refinement-types/runtime");
+    const registry = createValidatorRegistry(ts, "@ts-refinement/runtime");
     const output = transformSource(state.context, sourceFile, sourceFile.text, registry);
 
     expect(output.code).toBeNull();
@@ -43,7 +43,7 @@ describe("source transform", () => {
     const state = fixtureProgram();
     const sourceFile = state.program.getSourceFile(fixtureFile("types.ts"));
     if (sourceFile === undefined) throw new Error("fixture was not loaded");
-    const registry = createValidatorRegistry(ts, "ts-refinement-types/runtime");
+    const registry = createValidatorRegistry(ts, "@ts-refinement/runtime");
     const output = transformSource(state.context, sourceFile, sourceFile.text, registry);
 
     expect(output.code).toBeNull();
@@ -54,7 +54,7 @@ describe("source transform", () => {
     const state = fixtureProgram();
     const sourceFile = state.program.getSourceFile(fixtureFile("directives.ts"));
     if (sourceFile === undefined) throw new Error("fixture was not loaded");
-    const registry = createValidatorRegistry(ts, "ts-refinement-types/runtime");
+    const registry = createValidatorRegistry(ts, "@ts-refinement/runtime");
     const output = transformSource(state.context, sourceFile, sourceFile.text, registry);
 
     expect(output.diagnostics).toEqual([]);

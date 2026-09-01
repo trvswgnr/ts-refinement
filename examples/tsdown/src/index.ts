@@ -1,4 +1,4 @@
-import type { Refined } from "ts-refinement-types";
+import type { Refined } from "ts-refinement";
 
 type Positive = Refined<number, "n > 0">;
 type Int = Refined<number, "Number.isInteger(n)">;

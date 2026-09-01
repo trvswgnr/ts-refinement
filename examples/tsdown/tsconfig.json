@@ -4,7 +4,7 @@
     "moduleResolution": "bundler",
     "plugins": [
       {
-        "name": "ts-refinement-types/typescript-plugin"
+        "name": "@ts-refinement/typescript-plugin"
       }
     ],
     "strict": true,

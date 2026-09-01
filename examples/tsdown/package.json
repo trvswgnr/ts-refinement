@@ -1,0 +1,15 @@
+{
+  "name": "@ts-refinement/example-tsdown",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@ts-refinement/runtime": "workspace:*",
+    "ts-refinement": "workspace:*"
+  },
+  "devDependencies": {
+    "@ts-refinement/rolldown": "workspace:*",
+    "@ts-refinement/typescript-plugin": "workspace:*",
+    "tsdown": "^0.22.14",
+    "typescript": "^6.0.0"
+  }
+}

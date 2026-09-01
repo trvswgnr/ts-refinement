@@ -5,7 +5,7 @@ import {
   emitPredicateWithSubject,
   normalizePredicate,
   parsePredicate,
-} from "ts-refinement-types/analyzer";
+} from "@ts-refinement/analyzer";
 
 function normalized(source: string) {
   const parsed = parsePredicate(ts, source);

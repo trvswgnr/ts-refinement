@@ -1,9 +1,9 @@
 import * as ts from "typescript";
 
-import type { Refined } from "ts-refinement-types";
-import { parsePredicate } from "ts-refinement-types/analyzer";
-import refinementTypes from "ts-refinement-types/rolldown";
-import { RefinementError } from "ts-refinement-types/runtime";
+import { parsePredicate } from "@ts-refinement/analyzer";
+import refinementTypes from "@ts-refinement/rolldown";
+import { RefinementError } from "@ts-refinement/runtime";
+import type { Refined } from "ts-refinement";
 
 type Positive = Refined<number, "n > 0">;
 

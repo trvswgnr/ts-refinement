@@ -2,7 +2,7 @@ import { originalPositionFor, TraceMap } from "@jridgewell/trace-mapping";
 import { rolldown } from "rolldown";
 import { describe, expect, it } from "vitest";
 
-import { refinementTypesPlugin } from "ts-refinement-types/rolldown";
+import { refinementTypesPlugin } from "@ts-refinement/rolldown";
 import { fixtureDirectory, fixtureFile } from "./helpers.ts";
 
 interface RuntimeFixture {

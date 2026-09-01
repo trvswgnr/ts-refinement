@@ -8,7 +8,7 @@ import {
   parsePredicate,
   provePredicates,
   type StaticRuntimeValue,
-} from "ts-refinement-types/analyzer";
+} from "@ts-refinement/analyzer";
 
 function predicate(source: string) {
   const parsed = parsePredicate(ts, source);

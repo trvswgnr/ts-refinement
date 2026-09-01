@@ -1,0 +1,37 @@
+{
+  "name": "@ts-refinement/runtime",
+  "version": "0.1.0",
+  "description": "Runtime errors for ts-refinement validation",
+  "keywords": [
+    "refinement-types",
+    "typescript",
+    "validation"
+  ],
+  "license": "MIT",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs",
+      "default": "./dist/index.mjs"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "bunx --no-install tsdown --config ../../tsdown.config.ts --filter runtime",
+    "prepack": "bun run build"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  }
+}
