@@ -151,7 +151,7 @@ function evaluateCall(
   if (
     expression.callee.kind !== "member" ||
     expression.callee.computed ||
-    expression.callee.object.kind !== "global" ||
+    expression.callee.object.kind !== "free" ||
     expression.callee.object.name !== "Number" ||
     typeof expression.callee.property !== "string" ||
     expression.arguments.length !== 1
@@ -204,13 +204,14 @@ export function evaluateExpression(
         subject,
       );
     }
-    case "global":
+    case "free":
       if (expression.name === "Infinity") return knownValue(Infinity);
       if (expression.name === "NaN") return knownValue(NaN);
       if (expression.name === "undefined") return knownValue(undefined);
       return unknownValue;
     case "literal":
       return knownValue(expression.value);
+    case "function":
     case "local":
     case "opaque":
       return unknownValue;

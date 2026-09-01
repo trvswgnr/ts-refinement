@@ -235,7 +235,16 @@ export function canonicalPredicateWithSubject(
   predicate: ParsedPredicate,
   replacement: string,
 ): string {
-  const emitted = emitPredicateWithSubject(tsModule, predicate, replacement);
+  return canonicalExpressionWithSubject(tsModule, predicate, predicate.expression, replacement);
+}
+
+export function canonicalExpressionWithSubject(
+  tsModule: typeof ts,
+  predicate: ParsedPredicate,
+  expressionNode: ts.Expression,
+  replacement: string,
+): string {
+  const emitted = emitNodeWithSubject(tsModule, predicate, expressionNode, replacement);
   const sourceFile = tsModule.createSourceFile(
     "__normalized_refinement__.js",
     `const __predicate = (${emitted});`,

@@ -22,7 +22,10 @@ export {
 export { displayStaticValue, type StaticRuntimeValue, type StaticValue } from "./proof/values.ts";
 export {
   serializeExpression,
+  type NormalizedBinding,
+  type NormalizedBindingElement,
   type NormalizedExpression,
+  type NormalizedObjectBindingElement,
   type NormalizedPredicate,
 } from "./predicate/ir.ts";
 export { normalizePredicate } from "./predicate/normalize.ts";

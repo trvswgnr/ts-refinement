@@ -1,5 +1,14 @@
 import { checkOther } from "./runtime-other.ts";
-import type { AllPositive, Even, Negative, NonEmpty, Positive, Slug } from "./types.ts";
+import type {
+  AllPositive,
+  Even,
+  Negative,
+  NonEmpty,
+  ParameterNamedA,
+  ParameterNamedB,
+  Positive,
+  Slug,
+} from "./types.ts";
 
 export const knownGood = 5 as Positive;
 export const knownNonEmpty = "a" as NonEmpty;
@@ -23,6 +32,14 @@ export function checkSlug(value: string): Slug {
 
 export function checkAllPositive(value: number[]): AllPositive {
   return value as AllPositive;
+}
+
+export function checkParameterNamedA(value: number[]): ParameterNamedA {
+  return value as ParameterNamedA;
+}
+
+export function checkParameterNamedB(value: number[]): ParameterNamedB {
+  return value as ParameterNamedB;
 }
 
 export function checkConflicting(value: number): Negative {

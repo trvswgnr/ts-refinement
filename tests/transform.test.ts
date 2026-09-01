@@ -32,7 +32,7 @@ describe("source transform", () => {
     expect(output.map).not.toBeNull();
     expect(output.code).toContain("export const knownGood = 5;");
     expect(output.code).toContain("export const knownEven = 4;");
-    expect(output.code?.match(/refinement-types:validator:/gu)).toHaveLength(2);
+    expect(output.code?.match(/refinement-types:validator:/gu)).toHaveLength(3);
 
     const positiveCalls = [
       ...(output.code?.matchAll(/(__rf_[a-z0-9_]+)\(\(dynamic\), "Positive(?:ByValue)?"\)/gu) ??
@@ -40,6 +40,14 @@ describe("source transform", () => {
     ];
     expect(positiveCalls).toHaveLength(2);
     expect(new Set(positiveCalls.map((match) => match[1])).size).toBe(1);
+
+    const allPositiveCalls = [
+      ...(output.code?.matchAll(
+        /(__rf_[a-z0-9_]+)\(\(dynamicValues\), "AllPositive(?:ByItem)?"\)/gu,
+      ) ?? []),
+    ];
+    expect(allPositiveCalls).toHaveLength(2);
+    expect(new Set(allPositiveCalls.map((match) => match[1])).size).toBe(1);
   });
 
   it("returns build-stopping diagnostics without changing the module", () => {
