@@ -66,6 +66,20 @@ describe("source transform", () => {
     expect(output.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([1000, 1002]);
   });
 
+  it("rejects code-execution globals before registering a validator", () => {
+    const state = fixtureProgram();
+    const sourceFile = state.program.getSourceFile(fixtureFile("unsafe-predicate.ts"));
+    if (sourceFile === undefined) throw new Error("fixture was not loaded");
+    const registry = createValidatorRegistry(ts, "@ts-refinement/runtime");
+    const register = vi.spyOn(registry, "register");
+    const output = transformSource(state.context, sourceFile, sourceFile.text, registry);
+
+    expect(output.code).toBeNull();
+    expect(output.diagnostics.map((diagnostic) => diagnostic.code)).toContain(1002);
+    expect(register).not.toHaveBeenCalled();
+    expect(output.code ?? "").not.toContain("globalThis.PWNED");
+  });
+
   it("keeps module directives ahead of generated imports", () => {
     const state = fixtureProgram();
     const sourceFile = state.program.getSourceFile(fixtureFile("directives.ts"));
