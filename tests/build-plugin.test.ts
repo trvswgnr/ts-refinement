@@ -25,12 +25,26 @@ function generatedPosition(code: string, offset: number) {
   };
 }
 
-async function build(input: string) {
+async function build(input: string, ignore: readonly string[] = [], source?: string) {
   return rolldown({
     input,
     plugins: [
+      ...(source === undefined
+        ? []
+        : [
+            {
+              name: "outside-program-loader",
+              load(id: string) {
+                return id === input ? source : null;
+              },
+              resolveId(id: string) {
+                return id === input ? id : null;
+              },
+            },
+          ]),
       refinementTypesPlugin({
         cwd: fixtureDirectory,
+        ignore,
         runtimeModule: fixtureFile("../../packages/runtime/src/index.ts"),
         tsconfig: "tsconfig.json",
       }),
@@ -107,4 +121,37 @@ describe("Rolldown plugin", () => {
     const bundle = await build(fixtureFile("build-invalid.ts"));
     await expect(bundle.generate({ format: "esm" })).rejects.toThrow(/RF1200/u);
   });
+
+  it("fails when a TypeScript module is outside the configured program", async () => {
+    const input = fixtureFile("../outside-program.ts");
+    const bundle = await build(input);
+
+    await expect(bundle.generate({ format: "esm" })).rejects.toThrow(
+      new RegExp(`${input}.*${fixtureFile("tsconfig.json")}`, "u"),
+    );
+  });
+
+  it("skips an outside-program module that matches an ignore glob", async () => {
+    const bundle = await build(fixtureFile("../outside-program.ts"), ["../outside-*.ts"]);
+    const generated = await bundle.generate({ format: "esm" });
+    const chunk = generated.output.find((output) => output.type === "chunk");
+
+    expect(chunk?.code).toContain("outsideProgram = true");
+  });
+
+  it("still fails outside-program modules that do not match an ignore glob", async () => {
+    const bundle = await build(fixtureFile("../outside-program.ts"), ["../other-*.ts"]);
+
+    await expect(bundle.generate({ format: "esm" })).rejects.toThrow(/outside-program\.ts/u);
+  });
+
+  it.each(["?raw", "#fragment", "?raw#fragment"])(
+    "normalizes %s suffixes before checking the program and ignore globs",
+    async (suffix) => {
+      const input = `${fixtureFile("../outside-program.ts")}${suffix}`;
+      const bundle = await build(input, ["../other-*.ts"], "export const outsideProgram = true;");
+
+      await expect(bundle.generate({ format: "esm" })).rejects.toThrow(/outside-program\.ts/u);
+    },
+  );
 });
