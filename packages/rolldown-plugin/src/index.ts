@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import { dirname, matchesGlob, relative, resolve } from "node:path";
 
 import type { Plugin } from "rolldown";
 import ts from "typescript";
@@ -9,12 +9,13 @@ import { createValidatorRegistry } from "./validators.ts";
 
 export interface RefinementTypesPluginOptions {
   readonly cwd?: string;
+  readonly ignore?: readonly string[];
   readonly runtimeModule?: string;
   readonly tsconfig?: string;
 }
 
 function cleanModuleId(id: string): string {
-  return id.split("?", 1)[0] ?? id;
+  return id.split(/[?#]/u, 1)[0] ?? id;
 }
 
 function isTransformableTypeScript(fileName: string): boolean {
@@ -22,6 +23,7 @@ function isTransformableTypeScript(fileName: string): boolean {
 }
 
 export function refinementTypesPlugin(options: RefinementTypesPluginOptions = {}): Plugin {
+  const ignore = options.ignore ?? [];
   const runtimeModule = options.runtimeModule ?? "@ts-refinement/runtime";
   const registry = createValidatorRegistry(ts, runtimeModule);
   let state: ProgramState | null = null;
@@ -53,8 +55,19 @@ export function refinementTypesPlugin(options: RefinementTypesPluginOptions = {}
         if (!isTransformableTypeScript(fileName)) return null;
         if (state === null) state = createProgramState(ts, options);
 
+        const relativeFileName = relative(dirname(state.configPath), fileName).replaceAll(
+          "\\",
+          "/",
+        );
+        if (ignore.some((pattern) => matchesGlob(relativeFileName, pattern))) return null;
+
         const sourceFile = state.program.getSourceFile(fileName);
-        if (sourceFile === undefined) return null;
+        if (sourceFile === undefined) {
+          this.error({
+            id: fileName,
+            message: `TypeScript module '${fileName}' is not included in the program configured by '${state.configPath}'.`,
+          });
+        }
         const output = transformSource(state.context, sourceFile, code, registry);
         const diagnostic = output.diagnostics[0];
         if (diagnostic !== undefined) {
