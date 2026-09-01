@@ -168,6 +168,12 @@ describe("predicate parsing and subject inference", () => {
     expect(normalized('xs.every(a => String(a => 1).includes("a"))').key).not.toBe(
       normalized('xs.every(b => String(b => 1).includes("a"))').key,
     );
+    expect(normalized('xs.every(a => String.call(null, a => 1).includes("a"))').key).not.toBe(
+      normalized('xs.every(b => String.call(null, b => 1).includes("a"))').key,
+    );
+    expect(normalized('xs.every(a => ("" + (a => 1)).includes("a"))').key).not.toBe(
+      normalized('xs.every(b => ("" + (b => 1)).includes("a"))').key,
+    );
   });
 
   it("caches normalized predicates for editor latency", () => {

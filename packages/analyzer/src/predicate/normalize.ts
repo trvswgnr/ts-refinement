@@ -11,6 +11,22 @@ import { serializeExpression } from "./ir.ts";
 import { canonicalExpressionWithSubject, type ParsedPredicate } from "./parse.ts";
 
 const normalizerCaches = new WeakMap<object, Map<string, NormalizedPredicate>>();
+const alphaNormalizedCallbackMethods = new Set([
+  "every",
+  "filter",
+  "find",
+  "findIndex",
+  "findLast",
+  "findLastIndex",
+  "flatMap",
+  "forEach",
+  "map",
+  "reduce",
+  "reduceRight",
+  "some",
+  "sort",
+  "toSorted",
+]);
 
 function tokenText(tsModule: typeof ts, kind: ts.SyntaxKind): string {
   return tsModule.tokenToString(kind) ?? tsModule.SyntaxKind[kind];
@@ -143,31 +159,28 @@ export function normalizePredicate(
     };
   }
 
-  function containsFunctionExpression(node: ts.Node): boolean {
-    if (tsModule.isArrowFunction(node) || tsModule.isFunctionExpression(node)) return true;
-    let containsFunction = false;
-    node.forEachChild((child) => {
-      if (!containsFunction && containsFunctionExpression(child)) containsFunction = true;
-    });
-    return containsFunction;
-  }
-
-  function isFunctionToStringAccess(node: ts.Expression): boolean {
-    if (tsModule.isPropertyAccessExpression(node)) {
-      return node.name.text === "toString" && containsFunctionExpression(node.expression);
+  function alphaNormalizesFirstArgument(node: ts.CallExpression): boolean {
+    const callee = node.expression;
+    if (tsModule.isPropertyAccessExpression(callee)) {
+      return alphaNormalizedCallbackMethods.has(callee.name.text);
     }
-    if (!tsModule.isElementAccessExpression(node)) return false;
-    const property = node.argumentExpression;
+    if (!tsModule.isElementAccessExpression(callee)) return false;
+    const property = callee.argumentExpression;
     return (
       property !== undefined &&
       (tsModule.isStringLiteral(property) || tsModule.isNoSubstitutionTemplateLiteral(property)) &&
-      property.text === "toString" &&
-      containsFunctionExpression(node.expression)
+      alphaNormalizedCallbackMethods.has(property.text)
     );
   }
 
-  function normalize(node: ts.Expression, bindings: readonly string[] = []): NormalizedExpression {
-    if (tsModule.isParenthesizedExpression(node)) return normalize(node.expression, bindings);
+  function normalize(
+    node: ts.Expression,
+    bindings: readonly string[] = [],
+    alphaNormalizeFunction = false,
+  ): NormalizedExpression {
+    if (tsModule.isParenthesizedExpression(node)) {
+      return normalize(node.expression, bindings, alphaNormalizeFunction);
+    }
     if (tsModule.isNumericLiteral(node)) return { kind: "literal", value: Number(node.text) };
     if (tsModule.isBigIntLiteral(node)) {
       return { kind: "literal", value: BigInt(node.text.slice(0, -1)) };
@@ -187,7 +200,7 @@ export function normalizePredicate(
       return normalizeOpaque(node);
     }
 
-    if (tsModule.isArrowFunction(node) && !tsModule.isBlock(node.body)) {
+    if (alphaNormalizeFunction && tsModule.isArrowFunction(node) && !tsModule.isBlock(node.body)) {
       const functionBindings = [...bindings];
       for (const parameter of node.parameters) {
         collectBindingNames(parameter.name, functionBindings);
@@ -203,6 +216,7 @@ export function normalizePredicate(
         ),
       };
     }
+    if (tsModule.isArrowFunction(node)) return normalizeOpaque(node);
 
     if (tsModule.isPrefixUnaryExpression(node)) {
       return {
@@ -231,7 +245,6 @@ export function normalizePredicate(
     }
 
     if (tsModule.isPropertyAccessExpression(node)) {
-      if (isFunctionToStringAccess(node)) return normalizeOpaque(node);
       return {
         computed: false,
         kind: "member",
@@ -242,7 +255,6 @@ export function normalizePredicate(
     }
 
     if (tsModule.isElementAccessExpression(node)) {
-      if (isFunctionToStringAccess(node)) return normalizeOpaque(node);
       return {
         computed: true,
         kind: "member",
@@ -256,15 +268,11 @@ export function normalizePredicate(
     }
 
     if (tsModule.isCallExpression(node)) {
-      if (
-        tsModule.isIdentifier(node.expression) &&
-        node.expression.text === "String" &&
-        node.arguments.some(containsFunctionExpression)
-      ) {
-        return normalizeOpaque(node);
-      }
+      const normalizeFirstArgument = alphaNormalizesFirstArgument(node);
       return {
-        arguments: node.arguments.map((argument) => normalize(argument, bindings)),
+        arguments: node.arguments.map((argument, index) =>
+          normalize(argument, bindings, normalizeFirstArgument && index === 0),
+        ),
         callee: normalize(node.expression, bindings),
         kind: "call",
         optional: node.questionDotToken !== undefined,

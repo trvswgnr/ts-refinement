@@ -11,5 +11,11 @@ export type NonEmpty = Refined<string, "s.length > 0">;
 export type Slug = Refined<string, "/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(s)">;
 export type AllPositive = Refined<number[], "xs.every((x) => x > 0)">;
 export type AllPositiveByItem = Refined<number[], "values.every((item) => item > 0)">;
-export type ParameterNamedA = Refined<number[], 'xs.every(a => (a => 1).toString().includes("a"))'>;
-export type ParameterNamedB = Refined<number[], 'xs.every(b => (b => 1).toString().includes("a"))'>;
+export type ParameterNamedA = Refined<
+  number[],
+  'xs.every(a => String.call(null, a => 1).includes("a"))'
+>;
+export type ParameterNamedB = Refined<
+  number[],
+  'xs.every(b => String.call(null, b => 1).includes("a"))'
+>;
