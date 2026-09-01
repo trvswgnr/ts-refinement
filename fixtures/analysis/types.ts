@@ -13,9 +13,9 @@ export type AllPositive = Refined<number[], "xs.every((x) => x > 0)">;
 export type AllPositiveByItem = Refined<number[], "values.every((item) => item > 0)">;
 export type ParameterNamedA = Refined<
   number[],
-  'xs.every(a => String.call(null, a => 1).includes("a"))'
+  'xs.every(a => ({ map: callback => callback.toString() }).map(a => 1).includes("a"))'
 >;
 export type ParameterNamedB = Refined<
   number[],
-  'xs.every(b => String.call(null, b => 1).includes("a"))'
+  'xs.every(b => ({ map: callback => callback.toString() }).map(b => 1).includes("a"))'
 >;

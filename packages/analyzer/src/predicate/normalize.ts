@@ -162,11 +162,17 @@ export function normalizePredicate(
   function alphaNormalizesFirstArgument(node: ts.CallExpression): boolean {
     const callee = node.expression;
     if (tsModule.isPropertyAccessExpression(callee)) {
-      return alphaNormalizedCallbackMethods.has(callee.name.text);
+      return (
+        tsModule.isIdentifier(callee.expression) &&
+        subjectReferences.has(callee.expression) &&
+        alphaNormalizedCallbackMethods.has(callee.name.text)
+      );
     }
     if (!tsModule.isElementAccessExpression(callee)) return false;
     const property = callee.argumentExpression;
     return (
+      tsModule.isIdentifier(callee.expression) &&
+      subjectReferences.has(callee.expression) &&
       property !== undefined &&
       (tsModule.isStringLiteral(property) || tsModule.isNoSubstitutionTemplateLiteral(property)) &&
       alphaNormalizedCallbackMethods.has(property.text)

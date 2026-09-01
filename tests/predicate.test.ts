@@ -174,6 +174,15 @@ describe("predicate parsing and subject inference", () => {
     expect(normalized('xs.every(a => ("" + (a => 1)).includes("a"))').key).not.toBe(
       normalized('xs.every(b => ("" + (b => 1)).includes("a"))').key,
     );
+    expect(
+      normalized(
+        'xs.every(a => ({ map: callback => callback.toString() }).map(a => 1).includes("a"))',
+      ).key,
+    ).not.toBe(
+      normalized(
+        'xs.every(b => ({ map: callback => callback.toString() }).map(b => 1).includes("a"))',
+      ).key,
+    );
   });
 
   it("caches normalized predicates for editor latency", () => {
