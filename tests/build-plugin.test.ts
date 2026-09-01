@@ -1,4 +1,4 @@
-import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -248,11 +248,12 @@ describe("Rolldown plugin", () => {
     await expect(invalidBundle.generate({ format: "esm" })).rejects.toThrow(/RF1200/u);
   });
 
-  it("refreshes the language service when the effective tsconfig changes", async () => {
+  it("watches inherited configs and refreshes when their effective settings change", async () => {
     const directory = await realpath(await mkdtemp(join(tmpdir(), "ts-refinement-config-")));
     const initialInput = join(directory, "initial.ts");
     const changedInput = join(directory, "changed.ts");
     const configPath = join(directory, "tsconfig.json");
+    const baseConfigPath = join(directory, "tsconfig.base.json");
     const compilerOptions = {
       module: "Preserve",
       strict: true,
@@ -263,14 +264,54 @@ describe("Rolldown plugin", () => {
       await Promise.all([
         writeFile(initialInput, "export const initial = true;\n"),
         writeFile(changedInput, "export const changed = true;\n"),
-        writeFile(configPath, JSON.stringify({ compilerOptions, include: ["initial.ts"] })),
+        writeFile(configPath, JSON.stringify({ extends: "./tsconfig.base.json" })),
+        writeFile(baseConfigPath, JSON.stringify({ compilerOptions, include: ["initial.ts"] })),
       ]);
       const refinementPlugin = refinementTypesPlugin({ cwd: directory });
       const initialBundle = await rolldown({ input: initialInput, plugins: [refinementPlugin] });
       const initialGenerated = await initialBundle.generate({ format: "esm" });
       expect(initialGenerated.output[0]?.type).toBe("chunk");
+      expect(await initialBundle.watchFiles).toContain(baseConfigPath);
 
-      await writeFile(configPath, JSON.stringify({ compilerOptions, include: ["changed.ts"] }));
+      await writeFile(baseConfigPath, JSON.stringify({ compilerOptions, include: ["changed.ts"] }));
+      const changedBundle = await rolldown({ input: changedInput, plugins: [refinementPlugin] });
+      const changedGenerated = await changedBundle.generate({ format: "esm" });
+      const changedChunk = changedGenerated.output.find((output) => output.type === "chunk");
+      expect(changedChunk?.code).toContain("changed = true");
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("reruns implicit tsconfig discovery before reusing the language service", async () => {
+    const directory = await realpath(await mkdtemp(join(tmpdir(), "ts-refinement-discovery-")));
+    const projectDirectory = join(directory, "project");
+    const initialInput = join(projectDirectory, "initial.ts");
+    const changedInput = join(projectDirectory, "changed.ts");
+    const compilerOptions = {
+      module: "Preserve",
+      strict: true,
+      target: "ESNext",
+    };
+
+    try {
+      await mkdir(projectDirectory);
+      await Promise.all([
+        writeFile(initialInput, "export const initial = true;\n"),
+        writeFile(changedInput, "export const changed = true;\n"),
+        writeFile(
+          join(directory, "tsconfig.json"),
+          JSON.stringify({ compilerOptions, include: ["project/initial.ts"] }),
+        ),
+      ]);
+      const refinementPlugin = refinementTypesPlugin({ cwd: projectDirectory });
+      const initialBundle = await rolldown({ input: initialInput, plugins: [refinementPlugin] });
+      await initialBundle.generate({ format: "esm" });
+
+      await writeFile(
+        join(projectDirectory, "tsconfig.json"),
+        JSON.stringify({ compilerOptions, include: ["changed.ts"] }),
+      );
       const changedBundle = await rolldown({ input: changedInput, plugins: [refinementPlugin] });
       const changedGenerated = await changedBundle.generate({ format: "esm" });
       const changedChunk = changedGenerated.output.find((output) => output.type === "chunk");

@@ -5,6 +5,7 @@ import type * as ts from "typescript";
 import type { AnalyzerContext } from "../../analyzer/src/index.ts";
 
 export interface ProgramState {
+  readonly configFiles: readonly string[];
   readonly configPath: string;
   readonly context: AnalyzerContext;
   readonly program: ts.Program;
@@ -18,37 +19,18 @@ export interface ProgramOptions {
   readonly tsconfig?: string;
 }
 
-function readProgramConfig(tsModule: typeof ts, configPath: string): ts.ParsedCommandLine {
-  const read = tsModule.readConfigFile(configPath, (fileName) => tsModule.sys.readFile(fileName));
-  if (read.error !== undefined) {
-    throw new Error(tsModule.flattenDiagnosticMessageText(read.error.messageText, "\n"));
-  }
-
-  const parsed = tsModule.parseJsonConfigFileContent(
-    read.config,
-    tsModule.sys,
-    dirname(configPath),
-    undefined,
-    configPath,
-  );
-  if (parsed.errors.length > 0) {
-    throw new Error(
-      parsed.errors
-        .map((diagnostic) => tsModule.flattenDiagnosticMessageText(diagnostic.messageText, "\n"))
-        .join("\n"),
-    );
-  }
-  return parsed;
+interface ProgramConfig {
+  readonly configFiles: readonly string[];
+  readonly configPath: string;
+  readonly fingerprint: string;
+  readonly parsed: ts.ParsedCommandLine;
 }
 
-function configFingerprint(parsed: ts.ParsedCommandLine): string {
-  return JSON.stringify([parsed.fileNames, parsed.options, parsed.projectReferences]);
+interface ParsedCompilerOptions extends ts.CompilerOptions {
+  readonly configFile?: ts.TsConfigSourceFile;
 }
 
-export function createProgramState(
-  tsModule: typeof ts,
-  options: ProgramOptions = {},
-): ProgramState {
+function readProgramConfig(tsModule: typeof ts, options: ProgramOptions): ProgramConfig {
   const cwd = resolve(options.cwd ?? process.cwd());
   const configPath =
     options.tsconfig === undefined
@@ -63,8 +45,51 @@ export function createProgramState(
     throw new Error(`Unable to find tsconfig.json from '${cwd}'.`);
   }
 
-  const parsed = readProgramConfig(tsModule, configPath);
-  const initialConfigFingerprint = configFingerprint(parsed);
+  const parsed = tsModule.getParsedCommandLineOfConfigFile(configPath, undefined, {
+    ...tsModule.sys,
+    onUnRecoverableConfigFileDiagnostic(diagnostic) {
+      throw new Error(tsModule.flattenDiagnosticMessageText(diagnostic.messageText, "\n"));
+    },
+  });
+  if (parsed === undefined) {
+    throw new Error(`Unable to parse TypeScript config '${configPath}'.`);
+  }
+  if (parsed.errors.length > 0) {
+    throw new Error(
+      parsed.errors
+        .map((diagnostic) => tsModule.flattenDiagnosticMessageText(diagnostic.messageText, "\n"))
+        .join("\n"),
+    );
+  }
+  // SAFETY: getParsedCommandLineOfConfigFile attaches its parsed source to this internal option
+  // in every supported TypeScript version; the named extension preserves the public option shape.
+  const configSource = (parsed.options as ParsedCompilerOptions).configFile;
+  const configFiles = [
+    configPath,
+    ...(configSource?.extendedSourceFiles ?? []).map((fileName) =>
+      resolve(dirname(configPath), fileName),
+    ),
+  ];
+  const compilerOptions = Object.entries(parsed.options).filter(([name]) => name !== "configFile");
+  return {
+    configFiles: [...new Set(configFiles)],
+    configPath,
+    fingerprint: JSON.stringify([
+      configPath,
+      parsed.fileNames,
+      compilerOptions,
+      parsed.projectReferences,
+    ]),
+    parsed,
+  };
+}
+
+export function createProgramState(
+  tsModule: typeof ts,
+  options: ProgramOptions = {},
+): ProgramState {
+  const initialConfig = readProgramConfig(tsModule, options);
+  const { configPath, parsed } = initialConfig;
 
   interface ScriptState {
     readonly snapshot: ts.IScriptSnapshot;
@@ -130,6 +155,7 @@ export function createProgramState(
   }
 
   return {
+    configFiles: initialConfig.configFiles,
     configPath,
     get context() {
       const program = getProgram();
@@ -142,9 +168,7 @@ export function createProgramState(
       return getScript(fileName)?.version ?? 0;
     },
     isConfigCurrent() {
-      return (
-        configFingerprint(readProgramConfig(tsModule, configPath)) === initialConfigFingerprint
-      );
+      return readProgramConfig(tsModule, options).fingerprint === initialConfig.fingerprint;
     },
     updateSource(fileName, source) {
       const normalizedFileName = normalizeFileName(fileName);
