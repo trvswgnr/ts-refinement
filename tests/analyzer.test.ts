@@ -29,6 +29,8 @@ describe("TypeScript refinement analysis", () => {
       "unknown",
       "unknown",
       "unknown",
+      "unknown",
+      "unknown",
     ]);
     expect(results[1]?.site.definition?.predicates.map((predicate) => predicate.source)).toEqual([
       "Number.isInteger(n)",

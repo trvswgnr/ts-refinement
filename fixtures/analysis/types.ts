@@ -10,3 +10,4 @@ export type Ambiguous = Refined<number, "n > min">;
 export type NonEmpty = Refined<string, "s.length > 0">;
 export type Slug = Refined<string, "/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(s)">;
 export type AllPositive = Refined<number[], "xs.every((x) => x > 0)">;
+export type AllPositiveByItem = Refined<number[], "values.every((item) => item > 0)">;
