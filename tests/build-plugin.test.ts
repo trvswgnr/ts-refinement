@@ -17,6 +17,10 @@ interface RuntimeFixture {
   readonly knownNonEmpty: string;
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
 function generatedPosition(code: string, offset: number) {
   const precedingLines = code.slice(0, offset).split("\n");
   return {
@@ -127,7 +131,7 @@ describe("Rolldown plugin", () => {
     const bundle = await build(input);
 
     await expect(bundle.generate({ format: "esm" })).rejects.toThrow(
-      new RegExp(`${input}.*${fixtureFile("tsconfig.json")}`, "u"),
+      new RegExp(`${escapeRegExp(input)}.*${escapeRegExp(fixtureFile("tsconfig.json"))}`, "u"),
     );
   });
 
