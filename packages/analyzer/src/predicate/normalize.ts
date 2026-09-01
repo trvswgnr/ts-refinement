@@ -108,12 +108,62 @@ export function normalizePredicate(
     };
   }
 
-  function normalizeOpaque(node: ts.Expression): NormalizedExpression {
+  function normalizeOpaque(
+    node: ts.Expression,
+  ): Extract<NormalizedExpression, { readonly kind: "opaque" }> {
+    const sourceText = node.getText(predicate.sourceFile);
+    let markerIndex = 0;
+    let marker = "__ts_refinement_subject_0__";
+    while (sourceText.includes(marker)) {
+      markerIndex += 1;
+      marker = `__ts_refinement_subject_${markerIndex}__`;
+    }
+
+    const canonical = canonicalExpressionWithSubject(tsModule, predicate, node, marker);
+    const subjectOffsets: number[] = [];
+    let text = "";
+    let cursor = 0;
+    for (;;) {
+      const markerOffset = canonical.indexOf(marker, cursor);
+      if (markerOffset === -1) {
+        text += canonical.slice(cursor);
+        break;
+      }
+      text += canonical.slice(cursor, markerOffset);
+      subjectOffsets.push(text.length);
+      text += "SUBJECT";
+      cursor = markerOffset + marker.length;
+    }
+
     return {
       kind: "opaque",
+      subjectOffsets,
       syntaxKind: tsModule.SyntaxKind[node.kind],
-      text: canonicalExpressionWithSubject(tsModule, predicate, node, "SUBJECT"),
+      text,
     };
+  }
+
+  function containsFunctionExpression(node: ts.Node): boolean {
+    if (tsModule.isArrowFunction(node) || tsModule.isFunctionExpression(node)) return true;
+    let containsFunction = false;
+    node.forEachChild((child) => {
+      if (!containsFunction && containsFunctionExpression(child)) containsFunction = true;
+    });
+    return containsFunction;
+  }
+
+  function isFunctionToStringAccess(node: ts.Expression): boolean {
+    if (tsModule.isPropertyAccessExpression(node)) {
+      return node.name.text === "toString" && containsFunctionExpression(node.expression);
+    }
+    if (!tsModule.isElementAccessExpression(node)) return false;
+    const property = node.argumentExpression;
+    return (
+      property !== undefined &&
+      (tsModule.isStringLiteral(property) || tsModule.isNoSubstitutionTemplateLiteral(property)) &&
+      property.text === "toString" &&
+      containsFunctionExpression(node.expression)
+    );
   }
 
   function normalize(node: ts.Expression, bindings: readonly string[] = []): NormalizedExpression {
@@ -181,6 +231,7 @@ export function normalizePredicate(
     }
 
     if (tsModule.isPropertyAccessExpression(node)) {
+      if (isFunctionToStringAccess(node)) return normalizeOpaque(node);
       return {
         computed: false,
         kind: "member",
@@ -191,6 +242,7 @@ export function normalizePredicate(
     }
 
     if (tsModule.isElementAccessExpression(node)) {
+      if (isFunctionToStringAccess(node)) return normalizeOpaque(node);
       return {
         computed: true,
         kind: "member",
@@ -204,6 +256,13 @@ export function normalizePredicate(
     }
 
     if (tsModule.isCallExpression(node)) {
+      if (
+        tsModule.isIdentifier(node.expression) &&
+        node.expression.text === "String" &&
+        node.arguments.some(containsFunctionExpression)
+      ) {
+        return normalizeOpaque(node);
+      }
       return {
         arguments: node.arguments.map((argument) => normalize(argument, bindings)),
         callee: normalize(node.expression, bindings),
@@ -214,22 +273,26 @@ export function normalizePredicate(
 
     if (tsModule.isArrayLiteralExpression(node)) {
       return {
-        elements: node.elements.map((element) =>
-          tsModule.isSpreadElement(element)
-            ? {
-                kind: "opaque",
-                syntaxKind: "SpreadElement",
-                text: `...${canonicalExpressionWithSubject(
-                  tsModule,
-                  predicate,
-                  element.expression,
-                  "SUBJECT",
-                )}`,
-              }
-            : tsModule.isOmittedExpression(element)
-              ? { kind: "opaque", syntaxKind: "OmittedExpression", text: "" }
-              : normalize(element, bindings),
-        ),
+        elements: node.elements.map((element) => {
+          if (tsModule.isSpreadElement(element)) {
+            const expression = normalizeOpaque(element.expression);
+            return {
+              ...expression,
+              subjectOffsets: expression.subjectOffsets.map((offset) => offset + 3),
+              syntaxKind: "SpreadElement",
+              text: `...${expression.text}`,
+            };
+          }
+          if (tsModule.isOmittedExpression(element)) {
+            return {
+              kind: "opaque",
+              subjectOffsets: [],
+              syntaxKind: "OmittedExpression",
+              text: "",
+            };
+          }
+          return normalize(element, bindings);
+        }),
         kind: "array",
       };
     }

@@ -15,6 +15,8 @@ interface RuntimeFixture {
   readonly checkEven: (value: number) => number;
   readonly checkFromFactory: (factory: () => number) => number;
   readonly checkOther: (value: number) => number;
+  readonly checkParameterNamedA: (value: number[]) => number[];
+  readonly checkParameterNamedB: (value: number[]) => number[];
   readonly checkPositive: (value: number) => number;
   readonly checkSlug: (value: string) => string;
   readonly knownGood: number;
@@ -152,9 +154,9 @@ describe("Rolldown plugin", () => {
       generatedPosition(chunk.code, validationCall),
     );
     expect(original.source?.endsWith("runtime-entry.ts")).toBe(true);
-    expect(original.line).toBe(9);
+    expect(original.line).toBe(18);
     expect(original.column).toBe(9);
-    expect(chunk.code.match(/function assert/gu)).toHaveLength(5);
+    expect(chunk.code.match(/function assert/gu)).toHaveLength(7);
     expect(chunk.code).not.toContain("5 as Positive");
 
     const moduleUrl = `data:text/javascript;base64,${Buffer.from(chunk.code).toString("base64")}#${Date.now()}`;
@@ -180,6 +182,10 @@ describe("Rolldown plugin", () => {
     );
     expect(fixture.checkAllPositive([1, 2, 3])).toEqual([1, 2, 3]);
     expect(() => fixture.checkAllPositive([1, -2, 3])).toThrowError(
+      expect.objectContaining({ name: "RefinementError" }),
+    );
+    expect(fixture.checkParameterNamedA([1])).toEqual([1]);
+    expect(() => fixture.checkParameterNamedB([1])).toThrowError(
       expect.objectContaining({ name: "RefinementError" }),
     );
     expect(() => fixture.checkConflicting(2)).toThrowError(
@@ -216,7 +222,7 @@ describe("Rolldown plugin", () => {
       new TraceMap(JSON.stringify(chunk.map)),
       generatedPosition(chunk.code, validationCall),
     );
-    expect(original).toMatchObject({ column: 9, line: 10 });
+    expect(original).toMatchObject({ column: 9, line: 19 });
     expect(chunk.map.sourcesContent?.some((source) => source?.startsWith(banner))).toBe(true);
   });
 

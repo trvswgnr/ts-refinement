@@ -52,7 +52,12 @@ export type NormalizedExpression =
       readonly optional: boolean;
       readonly property: NormalizedExpression | string;
     }
-  | { readonly kind: "opaque"; readonly syntaxKind: string; readonly text: string }
+  | {
+      readonly kind: "opaque";
+      readonly subjectOffsets: readonly number[];
+      readonly syntaxKind: string;
+      readonly text: string;
+    }
   | { readonly kind: "subject" }
   | {
       readonly kind: "binary";
@@ -178,7 +183,12 @@ export function serializeExpression(expression: NormalizedExpression): string {
         expression.optional,
       ]);
     case "opaque":
-      return JSON.stringify(["opaque", expression.syntaxKind, expression.text]);
+      return JSON.stringify([
+        "opaque",
+        expression.syntaxKind,
+        expression.text,
+        expression.subjectOffsets,
+      ]);
     case "subject":
       return '["subject"]';
     case "unary":

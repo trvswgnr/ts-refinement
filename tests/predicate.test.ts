@@ -155,6 +155,21 @@ describe("predicate parsing and subject inference", () => {
     );
   });
 
+  it("distinguishes subject holes from identically spelled local names", () => {
+    expect(normalized("xs.every(SUBJECT => ({ value: xs }).value > 0)").key).not.toBe(
+      normalized("items.every(SUBJECT => ({ value: SUBJECT }).value > 0)").key,
+    );
+  });
+
+  it("preserves function spelling when source text is observed", () => {
+    expect(normalized('xs.every(a => (a => 1).toString().includes("a"))').key).not.toBe(
+      normalized('xs.every(b => (b => 1).toString().includes("a"))').key,
+    );
+    expect(normalized('xs.every(a => String(a => 1).includes("a"))').key).not.toBe(
+      normalized('xs.every(b => String(b => 1).includes("a"))').key,
+    );
+  });
+
   it("caches normalized predicates for editor latency", () => {
     expect(normalized("n >= 0")).toBe(normalized("n >= 0"));
   });
