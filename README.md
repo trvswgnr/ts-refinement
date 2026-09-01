@@ -1,6 +1,10 @@
 # ts-refinement
 
-A v1 implementation of refinement assertions for ordinary TypeScript. A refinement attaches a JavaScript predicate to an existing type:
+An implementation of refinement assertions for TypeScript that integrates with build tooling and your favorite code editor.
+
+Using VSCode? [Start here](./docs/vscode-quickstart.md).
+
+A refinement attaches a predicate to an existing type:
 
 ```ts
 import type { Refined } from "ts-refinement";
@@ -118,5 +122,3 @@ bun run gate
 ```
 
 `gate` runs type checking, linting, formatting verification, the analyzer/build/runtime/language-service tests, and all package builds.
-
-The complete design and acceptance criteria are in [`docs/typescript-refinement-types-v1-spec.md`](docs/typescript-refinement-types-v1-spec.md).
