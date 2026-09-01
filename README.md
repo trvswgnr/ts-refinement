@@ -96,7 +96,7 @@ VS Code may need to be switched to the workspace TypeScript version. The languag
 
 Predicates are parsed as JavaScript expressions. The compiler never executes predicate JavaScript. The static interpreter only evaluates operations it explicitly models; valid but unsupported expressions fall back to runtime validation.
 
-V1 permits the inferred subject, standard ECMAScript globals, and locally bound identifiers. It rejects malformed expressions, assignments, updates, `await`, `yield`, dynamic imports, and ambiguous free identifiers. Node and browser globals such as `Buffer`, `process`, `window`, and `document` are not implicit standard globals.
+This initial implementation permits the inferred subject, standard ECMAScript globals, and locally bound identifiers. It rejects malformed expressions, assignments, updates, `await`, `yield`, dynamic imports, and ambiguous free identifiers. Node and browser globals such as `Buffer`, `process`, `window`, and `document` are not implicit standard globals.
 
 The initial proof engine handles primitive and array literals, trivial unary expressions, arithmetic, comparisons, strict equality, logical/nullish operations, conditionals, primitive `.length`, `Number.isInteger`, and `Number.isFinite`. Runtime predicates remain normal JavaScript, so regular expressions, array methods, and other ordinary operations work without becoming a separate refinement DSL.
 
@@ -114,7 +114,7 @@ The initial proof engine handles primitive and array literals, trivial unary exp
 
 ## Development
 
-This repository is a Bun workspace that publishes five npm packages. TypeScript 5.7 through 6.x is supported; TypeScript 7's native compiler package does not expose the classic `Program`/`TypeChecker` and tsserver plugin APIs required by this v1.
+This repository is a Bun workspace that publishes five npm packages. TypeScript 5.7 through 6.x is supported; TypeScript 7's native compiler package does not expose the classic `Program`/`TypeChecker` and tsserver plugin APIs required by this initial implementation.
 
 ```sh
 bun install
