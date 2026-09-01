@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import ts from "typescript";
 
 import { transformSource } from "../packages/rolldown-plugin/src/transform.ts";
@@ -7,6 +7,22 @@ import { createValidatorRegistry } from "../packages/rolldown-plugin/src/validat
 import { fixtureFile, fixtureProgram } from "./helpers.ts";
 
 describe("source transform", () => {
+  it("returns no output when the bundler source differs from the program source", () => {
+    const state = fixtureProgram();
+    const sourceFile = state.program.getSourceFile(fixtureFile("valid.ts"));
+    if (sourceFile === undefined) throw new Error("fixture was not loaded");
+    const registry = createValidatorRegistry(ts, "@ts-refinement/runtime");
+    const register = vi.spyOn(registry, "register");
+    const source = `// prepended by an earlier plugin\n${sourceFile.text}`;
+
+    expect(transformSource(state.context, sourceFile, source, registry)).toEqual({
+      code: null,
+      diagnostics: [],
+      map: null,
+    });
+    expect(register).not.toHaveBeenCalled();
+  });
+
   it("erases proofs, inserts runtime checks, and deduplicates normalized validators", () => {
     const state = fixtureProgram();
     const sourceFile = state.program.getSourceFile(fixtureFile("valid.ts"));
