@@ -33,7 +33,7 @@ export function refinementTypesPlugin(options: RefinementTypesPluginOptions = {}
 
     buildStart() {
       registry.clear();
-      state = createProgramState(ts, options);
+      state ??= createProgramState(ts, options);
       this.addWatchFile(state.configPath);
       for (const sourceFile of state.program.getSourceFiles()) {
         this.addWatchFile(sourceFile.fileName);
@@ -61,14 +61,16 @@ export function refinementTypesPlugin(options: RefinementTypesPluginOptions = {}
         );
         if (ignore.some((pattern) => matchesGlob(relativeFileName, pattern))) return null;
 
-        const sourceFile = state.program.getSourceFile(fileName);
+        state.updateSource(fileName, code);
+        const context = state.context;
+        const sourceFile = context.program.getSourceFile(fileName);
         if (sourceFile === undefined) {
           this.error({
             id: fileName,
             message: `TypeScript module '${fileName}' is not included in the program configured by '${state.configPath}'.`,
           });
         }
-        const output = transformSource(state.context, sourceFile, code, registry);
+        const output = transformSource(context, sourceFile, code, registry);
         const diagnostic = output.diagnostics[0];
         if (diagnostic !== undefined) {
           this.error({

@@ -3,7 +3,7 @@ import { rolldown } from "rolldown";
 import { describe, expect, it } from "vitest";
 
 import { refinementTypesPlugin } from "@ts-refinement/rolldown";
-import { fixtureDirectory, fixtureFile } from "./helpers.ts";
+import { fixtureDirectory, fixtureFile, fixtureProgram } from "./helpers.ts";
 
 interface RuntimeFixture {
   readonly checkAllPositive: (value: number[]) => number[];
@@ -44,6 +44,37 @@ function validatorCalls(code: string, functionName: string): readonly number[] {
   );
 }
 
+function createRefinementPlugin() {
+  return refinementTypesPlugin({
+    cwd: fixtureDirectory,
+    runtimeModule: fixtureFile("../../packages/runtime/src/index.ts"),
+    tsconfig: "tsconfig.json",
+  });
+}
+
+async function buildWithPriorTransform(
+  input: string,
+  transformSource: (source: string) => string,
+  refinementPlugin = createRefinementPlugin(),
+) {
+  return rolldown({
+    input,
+    plugins: [
+      {
+        name: "prior-source-transform",
+        transform: {
+          order: "pre",
+          handler(code, id) {
+            const cleanId = id.split(/[?#]/u, 1)[0] ?? id;
+            return cleanId === input ? { code: transformSource(code), map: null } : null;
+          },
+        },
+      },
+      refinementPlugin,
+    ],
+  });
+}
+
 async function build(input: string, ignore: readonly string[] = [], source?: string) {
   return rolldown({
     input,
@@ -72,6 +103,31 @@ async function build(input: string, ignore: readonly string[] = [], source?: str
 }
 
 describe("Rolldown plugin", () => {
+  it("updates the in-memory program only when source text changes", () => {
+    const state = fixtureProgram();
+    const fileName = fixtureFile("valid.ts");
+    const initialProgram = state.program;
+    const source = initialProgram.getSourceFile(fileName)?.text;
+    if (source === undefined) throw new Error("fixture was not loaded");
+    const initialVersion = state.getScriptVersion(fileName);
+
+    state.updateSource(fileName, source);
+    expect(state.getScriptVersion(fileName)).toBe(initialVersion);
+    expect(state.program).toBe(initialProgram);
+
+    const changedSource = `// prepended by an earlier plugin\n${source}`;
+    state.updateSource(fileName, changedSource);
+    const changedVersion = state.getScriptVersion(fileName);
+    const changedProgram = state.program;
+    expect(changedVersion).toBe(initialVersion + 1);
+    expect(changedProgram).not.toBe(initialProgram);
+    expect(changedProgram.getSourceFile(fileName)?.text).toBe(changedSource);
+
+    state.updateSource(fileName, changedSource);
+    expect(state.getScriptVersion(fileName)).toBe(changedVersion);
+    expect(state.program).toBe(changedProgram);
+  });
+
   it("runs the full static/runtime pipeline and evaluates sources once", async () => {
     const bundle = await build(fixtureFile("runtime-entry.ts"));
     const generated = await bundle.generate({ format: "esm", sourcemap: true });
@@ -135,6 +191,57 @@ describe("Rolldown plugin", () => {
       }),
     ).toBe(6);
     expect(calls).toBe(1);
+  });
+
+  it("analyzes and maps the exact source supplied by a prior plugin", async () => {
+    const banner = "// prepended by an earlier plugin";
+    const bundle = await buildWithPriorTransform(
+      fixtureFile("runtime-entry.ts"),
+      (source) => `${banner}\n${source}`,
+    );
+    const generated = await bundle.generate({ format: "esm", sourcemap: true });
+    const chunk = generated.output.find((output) => output.type === "chunk");
+    if (chunk === undefined) throw new Error("bundle did not emit a chunk");
+    if (chunk.map === null) throw new Error("bundle did not emit a source map");
+
+    const checkPositiveStart = chunk.code.indexOf("function checkPositive");
+    const validationCall = chunk.code.indexOf("return ", checkPositiveStart) + "return ".length;
+    const original = originalPositionFor(
+      new TraceMap(JSON.stringify(chunk.map)),
+      generatedPosition(chunk.code, validationCall),
+    );
+    expect(original).toMatchObject({ column: 9, line: 10 });
+    expect(chunk.map.sourcesContent?.some((source) => source?.startsWith(banner))).toBe(true);
+  });
+
+  it("updates validators and diagnostics across incremental source changes", async () => {
+    const input = fixtureFile("runtime-entry.ts");
+    const refinementPlugin = createRefinementPlugin();
+    let assertion = "5 as Positive";
+    const rewriteAssertion = (source: string) => source.replace("5 as Positive", assertion);
+
+    const initialBundle = await buildWithPriorTransform(input, rewriteAssertion, refinementPlugin);
+    const initialGenerated = await initialBundle.generate({ format: "esm" });
+    const initialChunk = initialGenerated.output.find((output) => output.type === "chunk");
+    expect(initialChunk?.code).toContain("const knownGood = 5;");
+
+    assertion = "Math.random() as Positive";
+    const changedBundle = await buildWithPriorTransform(input, rewriteAssertion, refinementPlugin);
+    const changedGenerated = await changedBundle.generate({ format: "esm", sourcemap: true });
+    const changedChunk = changedGenerated.output.find((output) => output.type === "chunk");
+    if (changedChunk === undefined) throw new Error("bundle did not emit a chunk");
+    expect(changedChunk.code).toMatch(
+      /const knownGood = assert(?:\$\d+)?\(Math\.random\(\), "Positive"\);/u,
+    );
+    expect(
+      changedChunk.map?.sourcesContent?.some((source) =>
+        source?.includes("Math.random() as Positive"),
+      ),
+    ).toBe(true);
+
+    assertion = "-5 as Positive";
+    const invalidBundle = await buildWithPriorTransform(input, rewriteAssertion, refinementPlugin);
+    await expect(invalidBundle.generate({ format: "esm" })).rejects.toThrow(/RF1200/u);
   });
 
   it("maps nested validators to their independent assertion locations", async () => {
