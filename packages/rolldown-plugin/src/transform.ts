@@ -28,13 +28,6 @@ function uniqueLocalName(
   return name;
 }
 
-function isContainedBy(candidate: AnalysisResult, container: AnalysisResult): boolean {
-  return (
-    candidate.site.node.getStart() >= container.site.node.getStart() &&
-    candidate.site.node.getEnd() <= container.site.node.getEnd()
-  );
-}
-
 function importInsertionPoint(
   tsModule: typeof ts,
   sourceFile: ts.SourceFile,
@@ -54,6 +47,63 @@ function importInsertionPoint(
   }
 
   return position;
+}
+
+function applyAssertionEdits(
+  context: AnalyzerContext,
+  source: string,
+  analyses: readonly AnalysisResult[],
+  registry: ValidatorRegistry,
+  magicString: MagicString,
+  imports: Map<ValidatorEntry, string>,
+  allocatedNames: Set<string>,
+): void {
+  const prefixes = new Map<number, string[]>();
+  const suffixes = new Map<number, string[]>();
+
+  for (const analysis of analyses) {
+    const node = analysis.site.node;
+    if (context.ts.isAsExpression(node)) {
+      magicString.remove(node.expression.getEnd(), node.getEnd());
+    } else {
+      magicString.remove(node.getStart(), node.expression.getStart());
+    }
+
+    if (analysis.proof.kind === "true") continue;
+    const definition = analysis.site.definition;
+    if (definition === null) continue;
+
+    const entry = registry.register(definition);
+    let localName = imports.get(entry);
+    if (localName === undefined) {
+      localName = uniqueLocalName(source, entry, allocatedNames);
+      imports.set(entry, localName);
+      allocatedNames.add(localName);
+    }
+
+    const expressionStart = node.expression.getStart();
+    const expressionEnd = node.expression.getEnd();
+    const atStart = prefixes.get(expressionStart) ?? [];
+    atStart.push(`${localName}((`);
+    prefixes.set(expressionStart, atStart);
+
+    const refinementArgument =
+      definition.displayName === undefined ? "" : `, ${JSON.stringify(definition.displayName)}`;
+    const atEnd = suffixes.get(expressionEnd) ?? [];
+    atEnd.unshift(`)${refinementArgument})`);
+    suffixes.set(expressionEnd, atEnd);
+  }
+
+  for (const [start, atStart] of [...prefixes].sort(([left], [right]) => right - left)) {
+    const codePoint = source.codePointAt(start);
+    if (codePoint === undefined) throw new Error("Refinement expression has no source text.");
+    const end = start + (codePoint > 0xffff ? 2 : 1);
+    magicString.overwrite(start, end, `${atStart.join("")}${source.slice(start, end)}`);
+  }
+
+  for (const [end, atEnd] of suffixes) {
+    magicString.appendLeft(end, atEnd.join(""));
+  }
 }
 
 export function transformSource(
@@ -76,69 +126,8 @@ export function transformSource(
 
   const imports = new Map<ValidatorEntry, string>();
   const allocatedNames = new Set<string>();
-
-  function renderRange(start: number, end: number, candidates: readonly AnalysisResult[]): string {
-    let rendered = source.slice(start, end);
-    const contained = candidates.filter(
-      (candidate) => candidate.site.node.getStart() >= start && candidate.site.node.getEnd() <= end,
-    );
-    const topLevel = contained.filter(
-      (candidate) =>
-        !contained.some(
-          (possibleParent) =>
-            possibleParent !== candidate && isContainedBy(candidate, possibleParent),
-        ),
-    );
-
-    for (const analysis of [...topLevel].sort(
-      (left, right) => right.site.node.getStart() - left.site.node.getStart(),
-    )) {
-      const replacement = renderAnalysis(analysis);
-      const relativeStart = analysis.site.node.getStart() - start;
-      const relativeEnd = analysis.site.node.getEnd() - start;
-      rendered = `${rendered.slice(0, relativeStart)}${replacement}${rendered.slice(relativeEnd)}`;
-    }
-    return rendered;
-  }
-
-  function renderAnalysis(analysis: AnalysisResult): string {
-    const node = analysis.site.node;
-    const expression = renderRange(
-      node.expression.getStart(),
-      node.expression.getEnd(),
-      eligible.filter((candidate) => candidate !== analysis),
-    );
-    if (analysis.proof.kind === "true") return expression;
-
-    const definition = analysis.site.definition;
-    if (definition === null) return expression;
-    const entry = registry.register(definition);
-    let localName = imports.get(entry);
-    if (localName === undefined) {
-      localName = uniqueLocalName(source, entry, allocatedNames);
-      imports.set(entry, localName);
-      allocatedNames.add(localName);
-    }
-    const refinementArgument =
-      definition.displayName === undefined ? "" : `, ${JSON.stringify(definition.displayName)}`;
-    return `${localName}((${expression})${refinementArgument})`;
-  }
-
-  const topLevel = eligible.filter(
-    (candidate) =>
-      !eligible.some(
-        (possibleParent) =>
-          possibleParent !== candidate && isContainedBy(candidate, possibleParent),
-      ),
-  );
   const magicString = new MagicString(source);
-  for (const analysis of topLevel) {
-    magicString.overwrite(
-      analysis.site.node.getStart(),
-      analysis.site.node.getEnd(),
-      renderAnalysis(analysis),
-    );
-  }
+  applyAssertionEdits(context, source, eligible, registry, magicString, imports, allocatedNames);
 
   if (imports.size > 0) {
     const importCode = [...imports]

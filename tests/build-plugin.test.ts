@@ -17,6 +17,10 @@ interface RuntimeFixture {
   readonly knownNonEmpty: string;
 }
 
+interface NestedRuntimeFixture {
+  readonly checkNested: (value: number) => number;
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
@@ -76,6 +80,7 @@ describe("Rolldown plugin", () => {
     );
     expect(original.source?.endsWith("runtime-entry.ts")).toBe(true);
     expect(original.line).toBe(9);
+    expect(original.column).toBe(9);
     expect(chunk.code.match(/function assert/gu)).toHaveLength(5);
     expect(chunk.code).not.toContain("5 as Positive");
 
@@ -119,6 +124,48 @@ describe("Rolldown plugin", () => {
       }),
     ).toBe(6);
     expect(calls).toBe(1);
+  });
+
+  it("maps nested validators to their independent assertion locations", async () => {
+    const bundle = await build(fixtureFile("nested-runtime.ts"));
+    const generated = await bundle.generate({ format: "esm", sourcemap: true });
+    const chunk = generated.output.find((output) => output.type === "chunk");
+    if (chunk === undefined) throw new Error("bundle did not emit a chunk");
+    if (chunk.map === null) throw new Error("bundle did not emit a source map");
+
+    const functionStart = chunk.code.indexOf("function checkNested");
+    const functionEnd = chunk.code.indexOf("\n}", functionStart);
+    const functionCode = chunk.code.slice(functionStart, functionEnd);
+    const calls = [...functionCode.matchAll(/\bassert(?:\$\d+)?\(/gu)].map(
+      (match) => functionStart + (match.index ?? 0),
+    );
+    expect(calls).toHaveLength(2);
+    const [outerCall, innerCall] = calls;
+    if (outerCall === undefined || innerCall === undefined) {
+      throw new Error("expected nested validator calls");
+    }
+
+    const traceMap = new TraceMap(JSON.stringify(chunk.map));
+    const outerOriginal = originalPositionFor(traceMap, generatedPosition(chunk.code, outerCall));
+    const innerOriginal = originalPositionFor(traceMap, generatedPosition(chunk.code, innerCall));
+    expect(outerOriginal).toMatchObject({ column: 9, line: 4 });
+    expect(innerOriginal).toMatchObject({ column: 11, line: 4 });
+    expect(outerOriginal.source?.endsWith("nested-runtime.ts")).toBe(true);
+    expect(innerOriginal.source?.endsWith("nested-runtime.ts")).toBe(true);
+    expect(
+      chunk.map.sourcesContent?.some((source) => source?.includes("dynamicValue as Int")),
+    ).toBe(true);
+
+    const moduleUrl = `data:text/javascript;base64,${Buffer.from(chunk.code).toString("base64")}#${Date.now()}`;
+    // SAFETY: Rolldown generated this module from the typed nested runtime fixture above.
+    const fixture = (await import(moduleUrl)) as NestedRuntimeFixture;
+    expect(fixture.checkNested(2)).toBe(4);
+    expect(() => fixture.checkNested(1)).toThrowError(
+      expect.objectContaining({ refinement: "Even" }),
+    );
+    expect(() => fixture.checkNested(2.5)).toThrowError(
+      expect.objectContaining({ refinement: "Int" }),
+    );
   });
 
   it("fails the build for a statically false assertion", async () => {
