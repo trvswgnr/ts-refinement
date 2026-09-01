@@ -62,6 +62,8 @@ export function transformSource(
   source: string,
   registry: ValidatorRegistry,
 ): TransformOutput {
+  if (sourceFile.text !== source) return { code: null, diagnostics: [], map: null };
+
   const analyses = analyzeSourceFile(context, sourceFile);
   const diagnostics = [
     ...getRefinementDefinitionDiagnostics(context, sourceFile),
