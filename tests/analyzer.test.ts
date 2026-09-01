@@ -85,4 +85,47 @@ describe("TypeScript refinement analysis", () => {
       results.flatMap((result) => result.diagnostics).map((diagnostic) => diagnostic.code),
     ).toEqual([1200]);
   });
+
+  it("analyzes angle-bracket and as refinement assertions equivalently", () => {
+    const state = fixtureProgram();
+    const source = state.program.getSourceFile(fixtureFile("angle-bracket.ts"));
+    if (source === undefined) throw new Error("fixture was not loaded");
+
+    const results = analyzeSourceFile(state.context, source);
+    expect(results).toHaveLength(4);
+    const [asKnown, angleKnown, asRuntime, angleRuntime] = results;
+    if (
+      asKnown === undefined ||
+      angleKnown === undefined ||
+      asRuntime === undefined ||
+      angleRuntime === undefined
+    ) {
+      throw new Error("expected four refinement assertions");
+    }
+    expect(results.map((result) => result.proof.kind)).toEqual([
+      "true",
+      "true",
+      "unknown",
+      "unknown",
+    ]);
+    expect(state.context.ts.isAsExpression(asKnown.site.node)).toBe(true);
+    expect(state.context.ts.isTypeAssertionExpression(angleKnown.site.node)).toBe(true);
+    expect(state.context.ts.isAsExpression(asRuntime.site.node)).toBe(true);
+    expect(state.context.ts.isTypeAssertionExpression(angleRuntime.site.node)).toBe(true);
+    expect(results.every((result) => result.diagnostics.length === 0)).toBe(true);
+    expect(asKnown.site.definition?.predicates).toEqual(angleKnown.site.definition?.predicates);
+    expect(asRuntime.site.definition?.predicates).toEqual(angleRuntime.site.definition?.predicates);
+  });
+
+  it("diagnoses disproven angle-bracket and as assertions equivalently", () => {
+    const state = fixtureProgram();
+    const source = state.program.getSourceFile(fixtureFile("angle-bracket-invalid.ts"));
+    if (source === undefined) throw new Error("fixture was not loaded");
+
+    const results = analyzeSourceFile(state.context, source);
+    expect(results).toHaveLength(2);
+    expect(results.map((result) => result.proof.kind)).toEqual(["false", "false"]);
+    expect(results.map((result) => result.diagnostics[0]?.code)).toEqual([1200, 1200]);
+    expect(results[0]?.diagnostics[0]?.message).toBe(results[1]?.diagnostics[0]?.message);
+  });
 });

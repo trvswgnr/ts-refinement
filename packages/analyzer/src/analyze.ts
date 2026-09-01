@@ -18,7 +18,7 @@ import {
 export interface RefinementSite {
   readonly definition: RefinementDefinition | null;
   readonly fileName: string;
-  readonly node: ts.AsExpression;
+  readonly node: ts.AsExpression | ts.TypeAssertion;
   readonly sourceType: ts.Type;
   readonly targetType: ts.Type;
 }
@@ -29,7 +29,10 @@ export interface AnalysisResult {
   readonly site: RefinementSite;
 }
 
-const analysisCaches = new WeakMap<ts.Program, WeakMap<ts.AsExpression, AnalysisResult | null>>();
+const analysisCaches = new WeakMap<
+  ts.Program,
+  WeakMap<ts.AsExpression | ts.TypeAssertion, AnalysisResult | null>
+>();
 
 function nodeLocation(node: ts.Node): DiagnosticLocation {
   return { length: node.getWidth(), start: node.getStart() };
@@ -104,7 +107,7 @@ export function getRefinementDefinitionDiagnostics(
 
 function analyzeAssertionUncached(
   context: AnalyzerContext,
-  node: ts.AsExpression,
+  node: ts.AsExpression | ts.TypeAssertion,
 ): AnalysisResult | null {
   const targetType = context.checker.getTypeAtLocation(node.type);
   const resolution = resolveRefinementMetadata(context, targetType);
@@ -162,7 +165,7 @@ function analyzeAssertionUncached(
 
 export function analyzeAssertion(
   context: AnalyzerContext,
-  node: ts.AsExpression,
+  node: ts.AsExpression | ts.TypeAssertion,
 ): AnalysisResult | null {
   let cache = analysisCaches.get(context.program);
   if (cache === undefined) {
@@ -183,7 +186,7 @@ export function analyzeSourceFile(
   const results: AnalysisResult[] = [];
 
   function visit(node: ts.Node): void {
-    if (context.ts.isAsExpression(node)) {
+    if (context.ts.isAsExpression(node) || context.ts.isTypeAssertionExpression(node)) {
       const result = analyzeAssertion(context, node);
       if (result !== null) results.push(result);
     }
