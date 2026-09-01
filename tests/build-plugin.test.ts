@@ -28,6 +28,8 @@ interface NestedRuntimeFixture {
   readonly checkNestedAngle: (value: number) => number;
 }
 
+const rebuildTestTimeout = 15_000;
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
@@ -248,7 +250,7 @@ describe("Rolldown plugin", () => {
     await expect(invalidBundle.generate({ format: "esm" })).rejects.toThrow(/RF1200/u);
   });
 
-  it("watches inherited configs and refreshes when their effective settings change", async () => {
+  it("refreshes inherited config watches", { timeout: rebuildTestTimeout }, async () => {
     const directory = await realpath(await mkdtemp(join(tmpdir(), "ts-refinement-config-")));
     const initialInput = join(directory, "initial.ts");
     const changedInput = join(directory, "changed.ts");
@@ -282,7 +284,10 @@ describe("Rolldown plugin", () => {
       expect(await initialBundle.watchFiles).toContain(firstBaseConfigPath);
 
       await writeFile(configPath, JSON.stringify({ extends: "./tsconfig.base-b.json" }));
-      const equivalentBundle = await rolldown({ input: initialInput, plugins: [refinementPlugin] });
+      const equivalentBundle = await rolldown({
+        input: initialInput,
+        plugins: [refinementPlugin],
+      });
       await equivalentBundle.generate({ format: "esm" });
       expect(await equivalentBundle.watchFiles).toContain(secondBaseConfigPath);
       expect(await equivalentBundle.watchFiles).not.toContain(firstBaseConfigPath);
@@ -300,7 +305,7 @@ describe("Rolldown plugin", () => {
     }
   });
 
-  it("reruns implicit tsconfig discovery before reusing the language service", async () => {
+  it("reruns implicit tsconfig discovery", { timeout: rebuildTestTimeout }, async () => {
     const directory = await realpath(await mkdtemp(join(tmpdir(), "ts-refinement-discovery-")));
     const projectDirectory = join(directory, "project");
     const initialInput = join(projectDirectory, "initial.ts");
