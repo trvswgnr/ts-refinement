@@ -1,9 +1,13 @@
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { decodedMappings, originalPositionFor, TraceMap } from "@jridgewell/trace-mapping";
 import { rolldown } from "rolldown";
 import { describe, expect, it } from "vitest";
 
 import { refinementTypesPlugin } from "@ts-refinement/rolldown";
-import { fixtureDirectory, fixtureFile } from "./helpers.ts";
+import { fixtureDirectory, fixtureFile, fixtureProgram } from "./helpers.ts";
 
 interface RuntimeFixture {
   readonly checkAllPositive: (value: number[]) => number[];
@@ -24,6 +28,8 @@ interface NestedRuntimeFixture {
   readonly checkNestedAngle: (value: number) => number;
 }
 
+const rebuildTestTimeout = 15_000;
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
@@ -42,6 +48,37 @@ function validatorCalls(code: string, functionName: string): readonly number[] {
   return [...code.slice(functionStart, functionEnd).matchAll(/\bassert(?:\$\d+)?\(/gu)].map(
     (match) => functionStart + (match.index ?? 0),
   );
+}
+
+function createRefinementPlugin() {
+  return refinementTypesPlugin({
+    cwd: fixtureDirectory,
+    runtimeModule: fixtureFile("../../packages/runtime/src/index.ts"),
+    tsconfig: "tsconfig.json",
+  });
+}
+
+async function buildWithPriorTransform(
+  input: string,
+  transformSource: (source: string) => string,
+  refinementPlugin = createRefinementPlugin(),
+) {
+  return rolldown({
+    input,
+    plugins: [
+      {
+        name: "prior-source-transform",
+        transform: {
+          order: "pre",
+          handler(code, id) {
+            const cleanId = id.split(/[?#]/u, 1)[0] ?? id;
+            return cleanId === input ? { code: transformSource(code), map: null } : null;
+          },
+        },
+      },
+      refinementPlugin,
+    ],
+  });
 }
 
 async function build(input: string, ignore: readonly string[] = [], source?: string) {
@@ -72,6 +109,31 @@ async function build(input: string, ignore: readonly string[] = [], source?: str
 }
 
 describe("Rolldown plugin", () => {
+  it("updates the in-memory program only when source text changes", () => {
+    const state = fixtureProgram();
+    const fileName = fixtureFile("valid.ts");
+    const initialProgram = state.program;
+    const source = initialProgram.getSourceFile(fileName)?.text;
+    if (source === undefined) throw new Error("fixture was not loaded");
+    const initialVersion = state.getScriptVersion(fileName);
+
+    state.updateSource(fileName, source);
+    expect(state.getScriptVersion(fileName)).toBe(initialVersion);
+    expect(state.program).toBe(initialProgram);
+
+    const changedSource = `// prepended by an earlier plugin\n${source}`;
+    state.updateSource(fileName, changedSource);
+    const changedVersion = state.getScriptVersion(fileName);
+    const changedProgram = state.program;
+    expect(changedVersion).toBe(initialVersion + 1);
+    expect(changedProgram).not.toBe(initialProgram);
+    expect(changedProgram.getSourceFile(fileName)?.text).toBe(changedSource);
+
+    state.updateSource(fileName, changedSource);
+    expect(state.getScriptVersion(fileName)).toBe(changedVersion);
+    expect(state.program).toBe(changedProgram);
+  });
+
   it("runs the full static/runtime pipeline and evaluates sources once", async () => {
     const bundle = await build(fixtureFile("runtime-entry.ts"));
     const generated = await bundle.generate({ format: "esm", sourcemap: true });
@@ -135,6 +197,150 @@ describe("Rolldown plugin", () => {
       }),
     ).toBe(6);
     expect(calls).toBe(1);
+  });
+
+  it("analyzes and maps the exact source supplied by a prior plugin", async () => {
+    const banner = "// prepended by an earlier plugin";
+    const bundle = await buildWithPriorTransform(
+      fixtureFile("runtime-entry.ts"),
+      (source) => `${banner}\n${source}`,
+    );
+    const generated = await bundle.generate({ format: "esm", sourcemap: true });
+    const chunk = generated.output.find((output) => output.type === "chunk");
+    if (chunk === undefined) throw new Error("bundle did not emit a chunk");
+    if (chunk.map === null) throw new Error("bundle did not emit a source map");
+
+    const checkPositiveStart = chunk.code.indexOf("function checkPositive");
+    const validationCall = chunk.code.indexOf("return ", checkPositiveStart) + "return ".length;
+    const original = originalPositionFor(
+      new TraceMap(JSON.stringify(chunk.map)),
+      generatedPosition(chunk.code, validationCall),
+    );
+    expect(original).toMatchObject({ column: 9, line: 10 });
+    expect(chunk.map.sourcesContent?.some((source) => source?.startsWith(banner))).toBe(true);
+  });
+
+  it("updates validators and diagnostics across incremental source changes", async () => {
+    const input = fixtureFile("runtime-entry.ts");
+    const refinementPlugin = createRefinementPlugin();
+    let assertion = "5 as Positive";
+    const rewriteAssertion = (source: string) => source.replace("5 as Positive", assertion);
+
+    const initialBundle = await buildWithPriorTransform(input, rewriteAssertion, refinementPlugin);
+    const initialGenerated = await initialBundle.generate({ format: "esm" });
+    const initialChunk = initialGenerated.output.find((output) => output.type === "chunk");
+    expect(initialChunk?.code).toContain("const knownGood = 5;");
+
+    assertion = "Math.random() as Positive";
+    const changedBundle = await buildWithPriorTransform(input, rewriteAssertion, refinementPlugin);
+    const changedGenerated = await changedBundle.generate({ format: "esm", sourcemap: true });
+    const changedChunk = changedGenerated.output.find((output) => output.type === "chunk");
+    if (changedChunk === undefined) throw new Error("bundle did not emit a chunk");
+    expect(changedChunk.code).toMatch(
+      /const knownGood = assert(?:\$\d+)?\(Math\.random\(\), "Positive"\);/u,
+    );
+    expect(
+      changedChunk.map?.sourcesContent?.some((source) =>
+        source?.includes("Math.random() as Positive"),
+      ),
+    ).toBe(true);
+
+    assertion = "-5 as Positive";
+    const invalidBundle = await buildWithPriorTransform(input, rewriteAssertion, refinementPlugin);
+    await expect(invalidBundle.generate({ format: "esm" })).rejects.toThrow(/RF1200/u);
+  });
+
+  it("refreshes inherited config watches", { timeout: rebuildTestTimeout }, async () => {
+    const directory = await realpath(await mkdtemp(join(tmpdir(), "ts-refinement-config-")));
+    const initialInput = join(directory, "initial.ts");
+    const changedInput = join(directory, "changed.ts");
+    const configPath = join(directory, "tsconfig.json");
+    const firstBaseConfigPath = join(directory, "tsconfig.base-a.json");
+    const secondBaseConfigPath = join(directory, "tsconfig.base-b.json");
+    const compilerOptions = {
+      module: "Preserve",
+      strict: true,
+      target: "ESNext",
+    };
+
+    try {
+      await Promise.all([
+        writeFile(initialInput, "export const initial = true;\n"),
+        writeFile(changedInput, "export const changed = true;\n"),
+        writeFile(configPath, JSON.stringify({ extends: "./tsconfig.base-a.json" })),
+        writeFile(
+          firstBaseConfigPath,
+          JSON.stringify({ compilerOptions, include: ["initial.ts"] }),
+        ),
+        writeFile(
+          secondBaseConfigPath,
+          JSON.stringify({ compilerOptions, include: ["initial.ts"] }),
+        ),
+      ]);
+      const refinementPlugin = refinementTypesPlugin({ cwd: directory });
+      const initialBundle = await rolldown({ input: initialInput, plugins: [refinementPlugin] });
+      const initialGenerated = await initialBundle.generate({ format: "esm" });
+      expect(initialGenerated.output[0]?.type).toBe("chunk");
+      expect(await initialBundle.watchFiles).toContain(firstBaseConfigPath);
+
+      await writeFile(configPath, JSON.stringify({ extends: "./tsconfig.base-b.json" }));
+      const equivalentBundle = await rolldown({
+        input: initialInput,
+        plugins: [refinementPlugin],
+      });
+      await equivalentBundle.generate({ format: "esm" });
+      expect(await equivalentBundle.watchFiles).toContain(secondBaseConfigPath);
+      expect(await equivalentBundle.watchFiles).not.toContain(firstBaseConfigPath);
+
+      await writeFile(
+        secondBaseConfigPath,
+        JSON.stringify({ compilerOptions, include: ["changed.ts"] }),
+      );
+      const changedBundle = await rolldown({ input: changedInput, plugins: [refinementPlugin] });
+      const changedGenerated = await changedBundle.generate({ format: "esm" });
+      const changedChunk = changedGenerated.output.find((output) => output.type === "chunk");
+      expect(changedChunk?.code).toContain("changed = true");
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("reruns implicit tsconfig discovery", { timeout: rebuildTestTimeout }, async () => {
+    const directory = await realpath(await mkdtemp(join(tmpdir(), "ts-refinement-discovery-")));
+    const projectDirectory = join(directory, "project");
+    const initialInput = join(projectDirectory, "initial.ts");
+    const changedInput = join(projectDirectory, "changed.ts");
+    const compilerOptions = {
+      module: "Preserve",
+      strict: true,
+      target: "ESNext",
+    };
+
+    try {
+      await mkdir(projectDirectory);
+      await Promise.all([
+        writeFile(initialInput, "export const initial = true;\n"),
+        writeFile(changedInput, "export const changed = true;\n"),
+        writeFile(
+          join(directory, "tsconfig.json"),
+          JSON.stringify({ compilerOptions, include: ["project/initial.ts"] }),
+        ),
+      ]);
+      const refinementPlugin = refinementTypesPlugin({ cwd: projectDirectory });
+      const initialBundle = await rolldown({ input: initialInput, plugins: [refinementPlugin] });
+      await initialBundle.generate({ format: "esm" });
+
+      await writeFile(
+        join(projectDirectory, "tsconfig.json"),
+        JSON.stringify({ compilerOptions, include: ["changed.ts"] }),
+      );
+      const changedBundle = await rolldown({ input: changedInput, plugins: [refinementPlugin] });
+      const changedGenerated = await changedBundle.generate({ format: "esm" });
+      const changedChunk = changedGenerated.output.find((output) => output.type === "chunk");
+      expect(changedChunk?.code).toContain("changed = true");
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
   });
 
   it("maps nested validators to their independent assertion locations", async () => {

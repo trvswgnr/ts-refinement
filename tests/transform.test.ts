@@ -7,7 +7,7 @@ import { createValidatorRegistry } from "../packages/rolldown-plugin/src/validat
 import { fixtureFile, fixtureProgram } from "./helpers.ts";
 
 describe("source transform", () => {
-  it("returns no output when the bundler source differs from the program source", () => {
+  it("rejects a stale source file as an invariant violation", () => {
     const state = fixtureProgram();
     const sourceFile = state.program.getSourceFile(fixtureFile("valid.ts"));
     if (sourceFile === undefined) throw new Error("fixture was not loaded");
@@ -15,11 +15,9 @@ describe("source transform", () => {
     const register = vi.spyOn(registry, "register");
     const source = `// prepended by an earlier plugin\n${sourceFile.text}`;
 
-    expect(transformSource(state.context, sourceFile, source, registry)).toEqual({
-      code: null,
-      diagnostics: [],
-      map: null,
-    });
+    expect(() => transformSource(state.context, sourceFile, source, registry)).toThrowError(
+      /Source text invariant failed/u,
+    );
     expect(register).not.toHaveBeenCalled();
   });
 

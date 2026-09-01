@@ -179,7 +179,9 @@ export function transformSource(
   source: string,
   registry: ValidatorRegistry,
 ): TransformOutput {
-  if (sourceFile.text !== source) return { code: null, diagnostics: [], map: null };
+  if (sourceFile.text !== source) {
+    throw new Error(`Source text invariant failed for '${sourceFile.fileName}'.`);
+  }
 
   const analyses = analyzeSourceFile(context, sourceFile);
   const diagnostics = [
