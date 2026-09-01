@@ -253,7 +253,8 @@ describe("Rolldown plugin", () => {
     const initialInput = join(directory, "initial.ts");
     const changedInput = join(directory, "changed.ts");
     const configPath = join(directory, "tsconfig.json");
-    const baseConfigPath = join(directory, "tsconfig.base.json");
+    const firstBaseConfigPath = join(directory, "tsconfig.base-a.json");
+    const secondBaseConfigPath = join(directory, "tsconfig.base-b.json");
     const compilerOptions = {
       module: "Preserve",
       strict: true,
@@ -264,16 +265,32 @@ describe("Rolldown plugin", () => {
       await Promise.all([
         writeFile(initialInput, "export const initial = true;\n"),
         writeFile(changedInput, "export const changed = true;\n"),
-        writeFile(configPath, JSON.stringify({ extends: "./tsconfig.base.json" })),
-        writeFile(baseConfigPath, JSON.stringify({ compilerOptions, include: ["initial.ts"] })),
+        writeFile(configPath, JSON.stringify({ extends: "./tsconfig.base-a.json" })),
+        writeFile(
+          firstBaseConfigPath,
+          JSON.stringify({ compilerOptions, include: ["initial.ts"] }),
+        ),
+        writeFile(
+          secondBaseConfigPath,
+          JSON.stringify({ compilerOptions, include: ["initial.ts"] }),
+        ),
       ]);
       const refinementPlugin = refinementTypesPlugin({ cwd: directory });
       const initialBundle = await rolldown({ input: initialInput, plugins: [refinementPlugin] });
       const initialGenerated = await initialBundle.generate({ format: "esm" });
       expect(initialGenerated.output[0]?.type).toBe("chunk");
-      expect(await initialBundle.watchFiles).toContain(baseConfigPath);
+      expect(await initialBundle.watchFiles).toContain(firstBaseConfigPath);
 
-      await writeFile(baseConfigPath, JSON.stringify({ compilerOptions, include: ["changed.ts"] }));
+      await writeFile(configPath, JSON.stringify({ extends: "./tsconfig.base-b.json" }));
+      const equivalentBundle = await rolldown({ input: initialInput, plugins: [refinementPlugin] });
+      await equivalentBundle.generate({ format: "esm" });
+      expect(await equivalentBundle.watchFiles).toContain(secondBaseConfigPath);
+      expect(await equivalentBundle.watchFiles).not.toContain(firstBaseConfigPath);
+
+      await writeFile(
+        secondBaseConfigPath,
+        JSON.stringify({ compilerOptions, include: ["changed.ts"] }),
+      );
       const changedBundle = await rolldown({ input: changedInput, plugins: [refinementPlugin] });
       const changedGenerated = await changedBundle.generate({ format: "esm" });
       const changedChunk = changedGenerated.output.find((output) => output.type === "chunk");

@@ -76,6 +76,7 @@ function readProgramConfig(tsModule: typeof ts, options: ProgramOptions): Progra
     configPath,
     fingerprint: JSON.stringify([
       configPath,
+      configFiles,
       parsed.fileNames,
       compilerOptions,
       parsed.projectReferences,
