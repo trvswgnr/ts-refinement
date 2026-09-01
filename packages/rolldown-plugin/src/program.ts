@@ -9,12 +9,40 @@ export interface ProgramState {
   readonly context: AnalyzerContext;
   readonly program: ts.Program;
   getScriptVersion(fileName: string): number;
+  isConfigCurrent(): boolean;
   updateSource(fileName: string, source: string): void;
 }
 
 export interface ProgramOptions {
   readonly cwd?: string;
   readonly tsconfig?: string;
+}
+
+function readProgramConfig(tsModule: typeof ts, configPath: string): ts.ParsedCommandLine {
+  const read = tsModule.readConfigFile(configPath, (fileName) => tsModule.sys.readFile(fileName));
+  if (read.error !== undefined) {
+    throw new Error(tsModule.flattenDiagnosticMessageText(read.error.messageText, "\n"));
+  }
+
+  const parsed = tsModule.parseJsonConfigFileContent(
+    read.config,
+    tsModule.sys,
+    dirname(configPath),
+    undefined,
+    configPath,
+  );
+  if (parsed.errors.length > 0) {
+    throw new Error(
+      parsed.errors
+        .map((diagnostic) => tsModule.flattenDiagnosticMessageText(diagnostic.messageText, "\n"))
+        .join("\n"),
+    );
+  }
+  return parsed;
+}
+
+function configFingerprint(parsed: ts.ParsedCommandLine): string {
+  return JSON.stringify([parsed.fileNames, parsed.options, parsed.projectReferences]);
 }
 
 export function createProgramState(
@@ -35,25 +63,8 @@ export function createProgramState(
     throw new Error(`Unable to find tsconfig.json from '${cwd}'.`);
   }
 
-  const read = tsModule.readConfigFile(configPath, (fileName) => tsModule.sys.readFile(fileName));
-  if (read.error !== undefined) {
-    throw new Error(tsModule.flattenDiagnosticMessageText(read.error.messageText, "\n"));
-  }
-
-  const parsed = tsModule.parseJsonConfigFileContent(
-    read.config,
-    tsModule.sys,
-    dirname(configPath),
-    undefined,
-    configPath,
-  );
-  if (parsed.errors.length > 0) {
-    throw new Error(
-      parsed.errors
-        .map((diagnostic) => tsModule.flattenDiagnosticMessageText(diagnostic.messageText, "\n"))
-        .join("\n"),
-    );
-  }
+  const parsed = readProgramConfig(tsModule, configPath);
+  const initialConfigFingerprint = configFingerprint(parsed);
 
   interface ScriptState {
     readonly snapshot: ts.IScriptSnapshot;
@@ -129,6 +140,11 @@ export function createProgramState(
     },
     getScriptVersion(fileName) {
       return getScript(fileName)?.version ?? 0;
+    },
+    isConfigCurrent() {
+      return (
+        configFingerprint(readProgramConfig(tsModule, configPath)) === initialConfigFingerprint
+      );
     },
     updateSource(fileName, source) {
       const normalizedFileName = normalizeFileName(fileName);

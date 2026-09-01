@@ -33,7 +33,9 @@ export function refinementTypesPlugin(options: RefinementTypesPluginOptions = {}
 
     buildStart() {
       registry.clear();
-      state ??= createProgramState(ts, options);
+      if (state === null || !state.isConfigCurrent()) {
+        state = createProgramState(ts, options);
+      }
       this.addWatchFile(state.configPath);
       for (const sourceFile of state.program.getSourceFiles()) {
         this.addWatchFile(sourceFile.fileName);
