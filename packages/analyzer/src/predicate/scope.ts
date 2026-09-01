@@ -1,6 +1,6 @@
 import type * as ts from "typescript";
 
-import { standardGlobals } from "./globals.ts";
+import { disallowedGlobals, standardGlobals } from "./globals.ts";
 
 interface Scope {
   readonly names: Set<string>;
@@ -8,6 +8,7 @@ interface Scope {
 }
 
 export interface FreeIdentifierAnalysis {
+  readonly disallowedNames: readonly string[];
   readonly freeReferences: ReadonlyMap<string, readonly ts.Identifier[]>;
   readonly unresolvedNames: readonly string[];
 }
@@ -137,7 +138,12 @@ export function analyzeFreeIdentifiers(
   visit(expression, rootScope);
 
   return {
+    disallowedNames: [...freeReferences.keys()]
+      .filter((name) => disallowedGlobals.has(name))
+      .sort(),
     freeReferences,
-    unresolvedNames: [...freeReferences.keys()].filter((name) => !standardGlobals.has(name)).sort(),
+    unresolvedNames: [...freeReferences.keys()]
+      .filter((name) => !standardGlobals.has(name) && !disallowedGlobals.has(name))
+      .sort(),
   };
 }

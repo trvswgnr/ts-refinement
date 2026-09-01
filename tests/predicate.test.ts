@@ -113,16 +113,18 @@ describe("predicate parsing and subject inference", () => {
 
   it("rejects every global removed from the prior allowlist", () => {
     for (const name of removedGlobals) {
-      expect(parsePredicate(ts, `subject && ${name}`).diagnostics[0]?.code, name).toBe(1002);
+      expect(parsePredicate(ts, name).diagnostics[0]?.code, name).toBe(1002);
     }
   });
 
-  it.each(["eval", "Function", "globalThis", "Reflect"])(
-    "rejects the high-risk %s identifier",
-    (name) => {
-      expect(parsePredicate(ts, `subject && ${name}`).diagnostics[0]?.code).toBe(1002);
-    },
-  );
+  it.each([
+    ["eval", "eval('globalThis.PWNED = 1')"],
+    ["Function", "Function('return true')()"],
+    ["globalThis", "globalThis.PWNED"],
+    ["Reflect", "Reflect.get({}, 'value')"],
+  ])("rejects the high-risk %s call form", (_name, source) => {
+    expect(parsePredicate(ts, source).diagnostics[0]?.code).toBe(1002);
+  });
 
   it("tracks arrow parameters as local bindings", () => {
     const parsed = parsePredicate(ts, "xs.every((x, i) => i === 0 || xs[i - 1] <= x)");
