@@ -1,4 +1,4 @@
-import { originalPositionFor, TraceMap } from "@jridgewell/trace-mapping";
+import { decodedMappings, originalPositionFor, TraceMap } from "@jridgewell/trace-mapping";
 import { rolldown } from "rolldown";
 import { describe, expect, it } from "vitest";
 
@@ -17,6 +17,13 @@ interface RuntimeFixture {
   readonly knownNonEmpty: string;
 }
 
+interface NestedRuntimeFixture {
+  readonly checkAngleThenAs: (value: number) => number;
+  readonly checkChained: (value: number) => number;
+  readonly checkNested: (value: number) => number;
+  readonly checkNestedAngle: (value: number) => number;
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
@@ -27,6 +34,14 @@ function generatedPosition(code: string, offset: number) {
     column: precedingLines.at(-1)?.length ?? 0,
     line: precedingLines.length,
   };
+}
+
+function validatorCalls(code: string, functionName: string): readonly number[] {
+  const functionStart = code.indexOf(`function ${functionName}`);
+  const functionEnd = code.indexOf("\n}", functionStart);
+  return [...code.slice(functionStart, functionEnd).matchAll(/\bassert(?:\$\d+)?\(/gu)].map(
+    (match) => functionStart + (match.index ?? 0),
+  );
 }
 
 async function build(input: string, ignore: readonly string[] = [], source?: string) {
@@ -76,6 +91,7 @@ describe("Rolldown plugin", () => {
     );
     expect(original.source?.endsWith("runtime-entry.ts")).toBe(true);
     expect(original.line).toBe(9);
+    expect(original.column).toBe(9);
     expect(chunk.code.match(/function assert/gu)).toHaveLength(5);
     expect(chunk.code).not.toContain("5 as Positive");
 
@@ -119,6 +135,79 @@ describe("Rolldown plugin", () => {
       }),
     ).toBe(6);
     expect(calls).toBe(1);
+  });
+
+  it("maps nested validators to their independent assertion locations", async () => {
+    const bundle = await build(fixtureFile("nested-runtime.ts"));
+    const generated = await bundle.generate({ format: "esm", sourcemap: true });
+    const chunk = generated.output.find((output) => output.type === "chunk");
+    if (chunk === undefined) throw new Error("bundle did not emit a chunk");
+    if (chunk.map === null) throw new Error("bundle did not emit a source map");
+
+    const calls = validatorCalls(chunk.code, "checkNested");
+    expect(calls).toHaveLength(2);
+    const [outerCall, innerCall] = calls;
+    if (outerCall === undefined || innerCall === undefined) {
+      throw new Error("expected nested validator calls");
+    }
+
+    const traceMap = new TraceMap(JSON.stringify(chunk.map));
+    const decoded = decodedMappings(traceMap);
+    const outerOriginal = originalPositionFor(traceMap, generatedPosition(chunk.code, outerCall));
+    const innerOriginal = originalPositionFor(traceMap, generatedPosition(chunk.code, innerCall));
+    expect(outerOriginal).toMatchObject({ column: 9, line: 4 });
+    expect(innerOriginal).toMatchObject({ column: 11, line: 4 });
+    expect(outerOriginal.source?.endsWith("nested-runtime.ts")).toBe(true);
+    expect(innerOriginal.source?.endsWith("nested-runtime.ts")).toBe(true);
+    for (const call of calls) {
+      const callPosition = generatedPosition(chunk.code, call);
+      expect(
+        decoded[callPosition.line - 1]?.some((segment) => segment[0] === callPosition.column),
+      ).toBe(true);
+    }
+    expect(
+      chunk.map.sourcesContent?.some((source) => source?.includes("dynamicValue as Int")),
+    ).toBe(true);
+
+    const moduleUrl = `data:text/javascript;base64,${Buffer.from(chunk.code).toString("base64")}#${Date.now()}`;
+    // SAFETY: Rolldown generated this module from the typed nested runtime fixture above.
+    const fixture = (await import(moduleUrl)) as NestedRuntimeFixture;
+    expect(fixture.checkNested(2)).toBe(4);
+    expect(() => fixture.checkNested(1)).toThrowError(
+      expect.objectContaining({ refinement: "Even" }),
+    );
+    expect(() => fixture.checkNested(2.5)).toThrowError(
+      expect.objectContaining({ refinement: "Int" }),
+    );
+
+    const chainedCalls = validatorCalls(chunk.code, "checkChained");
+    expect(chainedCalls).toHaveLength(2);
+    for (const call of chainedCalls) {
+      const callPosition = generatedPosition(chunk.code, call);
+      expect(originalPositionFor(traceMap, callPosition)).toMatchObject({ column: 9, line: 8 });
+      expect(
+        decoded[callPosition.line - 1]?.some((segment) => segment[0] === callPosition.column),
+      ).toBe(true);
+    }
+    expect(fixture.checkChained(4)).toBe(4);
+    expect(() => fixture.checkChained(3)).toThrowError(
+      expect.objectContaining({ refinement: "Even" }),
+    );
+    expect(() => fixture.checkChained(2.5)).toThrowError(
+      expect.objectContaining({ refinement: "Int" }),
+    );
+
+    expect(fixture.checkNestedAngle(4)).toBe(4);
+    expect(() => fixture.checkNestedAngle(3)).toThrowError(
+      expect.objectContaining({ refinement: "Even" }),
+    );
+    expect(() => fixture.checkNestedAngle(2.5)).toThrowError(
+      expect.objectContaining({ refinement: "Int" }),
+    );
+    expect(fixture.checkAngleThenAs(4)).toBe(4);
+    expect(() => fixture.checkAngleThenAs(2.5)).toThrowError(
+      expect.objectContaining({ refinement: "Int" }),
+    );
   });
 
   it("fails the build for a statically false assertion", async () => {
