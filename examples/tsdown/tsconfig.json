@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "module": "Preserve",
+    "moduleResolution": "bundler",
+    "plugins": [
+      {
+        "name": "ts-refinement-types/typescript-plugin"
+      }
+    ],
+    "strict": true,
+    "target": "ESNext"
+  },
+  "include": ["src"]
+}

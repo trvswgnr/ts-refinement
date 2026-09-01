@@ -1,1 +1,122 @@
 # TypeScript Refinement Types
+
+A v1 implementation of refinement assertions for ordinary TypeScript. A refinement attaches a JavaScript predicate to an existing type:
+
+```ts
+import type { Refined } from "ts-refinement-types";
+
+type Positive = Refined<number, "n > 0">;
+type Int = Refined<number, "Number.isInteger(n)">;
+type Even = Refined<Int, "n % 2 === 0">;
+```
+
+The subject name is inferred. `"n > 0"`, `"value > 0"`, and `"potato > 0"` have the same normalized meaning.
+
+## Assertion behavior
+
+```ts
+declare const dynamic: number;
+
+4 as Even; // proved valid; the assertion is erased
+5 as Even; // RF1200 editor diagnostic and build error
+dynamic as Even; // unknown statically; a runtime validator is inserted
+```
+
+The runtime validator evaluates the original expression once, returns its original value on success, and throws `RefinementError` on failure. Validators are deduplicated by normalized predicate semantics, including across modules in the same build.
+
+The source must already be assignable to the unrefined base type. Refining directly from `unknown`, `any`, or an incompatible type produces RF1101; this project is not a general TypeScript runtime type reifier.
+
+## Installation
+
+```sh
+bun add ts-refinement-types
+bun add --dev typescript tsdown
+```
+
+Keep `ts-refinement-types` in regular dependencies: transformed code can import its runtime entry point when the bundler is configured to externalize dependencies.
+
+## Package entry points
+
+The library ships as one versioned npm package. Its public entry points are:
+
+- `ts-refinement-types` - the type-only `Refined<Base, Predicate>` API
+- `ts-refinement-types/runtime` - `RefinementError`
+- `ts-refinement-types/analyzer` - the shared parser, resolver, proof engine, and diagnostics
+- `ts-refinement-types/rolldown` - the tsdown/Rolldown build transform
+- `ts-refinement-types/typescript-plugin` - TypeScript language-service diagnostics
+
+Keeping these entry points in one package prevents the analyzer, build transform, editor plugin, and generated runtime from drifting across independently installed versions.
+
+## tsdown setup
+
+```ts
+// tsdown.config.ts
+import { defineConfig } from "tsdown";
+import refinementTypes from "ts-refinement-types/rolldown";
+
+export default defineConfig({
+  entry: ["src/index.ts"],
+  plugins: [refinementTypes()],
+  sourcemap: true,
+});
+```
+
+The plugin uses the closest `tsconfig.json` by default. An explicit path and runtime module can be supplied when needed:
+
+```ts
+refinementTypes({
+  tsconfig: "./tsconfig.build.json",
+  runtimeModule: "ts-refinement-types/runtime",
+});
+```
+
+The plugin recreates its TypeScript program at each build start and watches the tsconfig plus every source/type-definition file in the program. This favors correct watch rebuilds over premature incremental complexity.
+
+## Editor setup
+
+```json
+{
+  "compilerOptions": {
+    "plugins": [
+      {
+        "name": "ts-refinement-types/typescript-plugin"
+      }
+    ]
+  }
+}
+```
+
+VS Code may need to be switched to the workspace TypeScript version. The language-service plugin adds refinement diagnostics; normal `tsc` does not run language-service plugins or perform the runtime transform.
+
+## Predicate rules
+
+Predicates are parsed as JavaScript expressions. The compiler never executes predicate JavaScript. The static interpreter only evaluates operations it explicitly models; valid but unsupported expressions fall back to runtime validation.
+
+V1 permits the inferred subject, standard ECMAScript globals, and locally bound identifiers. It rejects malformed expressions, assignments, updates, `await`, `yield`, dynamic imports, and ambiguous free identifiers. Node and browser globals such as `Buffer`, `process`, `window`, and `document` are not implicit standard globals.
+
+The initial proof engine handles primitive and array literals, trivial unary expressions, arithmetic, comparisons, strict equality, logical/nullish operations, conditionals, primitive `.length`, `Number.isInteger`, and `Number.isFinite`. Runtime predicates remain normal JavaScript, so regular expressions, array methods, and other ordinary operations work without becoming a separate refinement DSL.
+
+## Diagnostics
+
+| Code   | Meaning                                             |
+| ------ | --------------------------------------------------- |
+| RF1000 | Invalid or disallowed JavaScript expression         |
+| RF1001 | Predicate is not a concrete string literal          |
+| RF1002 | Subject cannot be inferred unambiguously            |
+| RF1003 | Predicate attempts a disallowed external capture    |
+| RF1101 | Source is not assignable to the unrefined base type |
+| RF1200 | Predicate is statically disproven                   |
+| RF1400 | Refinement metadata cannot be resolved              |
+
+## Development
+
+This repository uses Bun for development and publishes one npm package with several subpath exports. TypeScript 5.7 through 6.x is supported; TypeScript 7's native compiler package does not expose the classic `Program`/`TypeChecker` and tsserver plugin APIs required by this v1.
+
+```sh
+bun install
+bun run gate
+```
+
+`gate` runs type checking, linting, formatting verification, the analyzer/build/runtime/language-service tests, and all package builds.
+
+The complete design and acceptance criteria are in [`docs/typescript-refinement-types-v1-spec.md`](docs/typescript-refinement-types-v1-spec.md).

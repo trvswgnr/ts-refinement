@@ -1,44 +1,100 @@
 {
-  "name": "ts-refinement-types-name-tbd",
-  "version": "1.0.0",
+  "name": "ts-refinement-types",
+  "version": "0.1.0",
+  "description": "JavaScript-predicate refinement types for TypeScript",
+  "keywords": [
+    "refinement-types",
+    "rolldown",
+    "tsdown",
+    "typescript",
+    "validation"
+  ],
   "license": "MIT",
   "files": [
-    "dist/index.d.mts",
-    "dist/index.d.mts.map",
-    "dist/index.mjs",
-    "dist/index.mjs.map"
+    "packages/*/dist/**",
+    "packages/*/src/**"
   ],
   "type": "module",
   "sideEffects": false,
-  "main": "./dist/index.mjs",
-  "module": "./dist/index.mjs",
-  "types": "./dist/index.d.mts",
+  "main": "./packages/core/dist/index.mjs",
+  "module": "./packages/core/dist/index.mjs",
+  "types": "./packages/core/dist/index.d.mts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.mts",
-      "import": "./dist/index.mjs",
-      "default": "./dist/index.mjs"
+      "types": "./packages/core/dist/index.d.mts",
+      "import": "./packages/core/dist/index.mjs",
+      "default": "./packages/core/dist/index.mjs"
+    },
+    "./analyzer": {
+      "types": "./packages/analyzer/dist/index.d.mts",
+      "import": "./packages/analyzer/dist/index.mjs",
+      "default": "./packages/analyzer/dist/index.mjs"
+    },
+    "./rolldown": {
+      "types": "./packages/rolldown-plugin/dist/index.d.mts",
+      "import": "./packages/rolldown-plugin/dist/index.mjs",
+      "default": "./packages/rolldown-plugin/dist/index.mjs"
+    },
+    "./runtime": {
+      "types": "./packages/runtime/dist/index.d.mts",
+      "import": "./packages/runtime/dist/index.mjs",
+      "default": "./packages/runtime/dist/index.mjs"
+    },
+    "./typescript-plugin": {
+      "types": "./packages/typescript-plugin/dist/index.d.cts",
+      "require": "./packages/typescript-plugin/dist/index.cjs",
+      "default": "./packages/typescript-plugin/dist/index.cjs"
     }
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "gate": "bun run typecheck && bun run lint && bun run fmt && bun run test",
     "build": "tsdown",
-    "prepublishOnly": "bun run build",
-    "typecheck": "tsc --noEmit",
-    "lint": "oxlint .",
     "fmt": "oxfmt --check .",
     "fmt:fix": "oxfmt .",
-    "test": "vitest run"
+    "gate": "bun run typecheck && bun run lint && bun run fmt && bun run test:coverage && bun run test:package && bun run test:example",
+    "lint": "oxlint .",
+    "prepack": "bun run build",
+    "prepublishOnly": "bun run gate",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:example": "cd examples/tsdown && bunx tsdown",
+    "test:package": "bun run build && tsc -p fixtures/package-consumer/tsconfig.json && node scripts/verify-exports.mjs && publint && attw --pack . --profile esm-only",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "magic-string": "^0.30.21"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.2",
+    "@jridgewell/trace-mapping": "^0.3.31",
     "@oxlint/plugins": "^1.80.0",
     "@types/bun": "^1.4.0",
+    "@vitest/coverage-v8": "^4.1.11",
     "fast-check": "^4.9.0",
     "oxfmt": "^0.65.0",
     "oxlint": "^1.80.0",
     "oxlint-tsgolint": "^7.0.2001",
+    "publint": "^0.3.24",
+    "rolldown": "^1.2.6",
     "tsdown": "^0.22.14",
-    "typescript": "^7.0.2",
+    "typescript": "^6.0.0",
+    "typescript-5-7": "npm:typescript@5.7.3",
+    "typescript-5-9": "npm:typescript@5.9.3",
     "vitest": "^4.1.11"
-  }
+  },
+  "peerDependencies": {
+    "rolldown": ">=1 <2",
+    "typescript": ">=5.7 <7"
+  },
+  "peerDependenciesMeta": {
+    "rolldown": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "packageManager": "bun@1.4.0"
 }
