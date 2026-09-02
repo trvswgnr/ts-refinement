@@ -1,7 +1,14 @@
 import type * as ts from "typescript";
 
 import type { NormalizedExpression, NormalizedPredicate } from "../predicate/ir.ts";
-import { knownValue, unknownValue, type StaticRuntimeValue, type StaticValue } from "./values.ts";
+import {
+  isStaticObjectValue,
+  knownValue,
+  unknownValue,
+  type StaticObjectValue,
+  type StaticRuntimeValue,
+  type StaticValue,
+} from "./values.ts";
 
 export type Proof =
   | { readonly kind: "false"; readonly predicate?: string; readonly reason?: string }
@@ -17,7 +24,14 @@ function evaluateStrictEquality(
   right: StaticRuntimeValue,
   negate: boolean,
 ): StaticValue {
-  if (Array.isArray(left) || Array.isArray(right)) return unknownValue;
+  if (
+    Array.isArray(left) ||
+    Array.isArray(right) ||
+    isStaticObjectValue(left) ||
+    isStaticObjectValue(right)
+  ) {
+    return unknownValue;
+  }
   const equal = left === right;
   return knownValue(negate ? !equal : equal);
 }
@@ -225,6 +239,9 @@ export function evaluateExpression(
           return knownValue(object.value.length);
         }
       }
+      if (isStaticObjectValue(object.value) && expression.property in object.value) {
+        return knownValue(object.value[expression.property]);
+      }
       return unknownValue;
     }
     case "subject":
@@ -318,6 +335,24 @@ export function evaluateSourceExpression(
       values.push(value.value);
     }
     return knownValue(values);
+  }
+
+  if (tsModule.isObjectLiteralExpression(node)) {
+    const value: StaticObjectValue = {};
+    for (const property of node.properties) {
+      if (!tsModule.isPropertyAssignment(property)) return unknownValue;
+      const name =
+        tsModule.isIdentifier(property.name) ||
+        tsModule.isStringLiteral(property.name) ||
+        tsModule.isNumericLiteral(property.name)
+          ? property.name.text
+          : undefined;
+      if (name === undefined) return unknownValue;
+      const child = evaluateSourceExpression(tsModule, checker, property.initializer);
+      if (!child.known) return unknownValue;
+      value[name] = child.value;
+    }
+    return knownValue(value);
   }
 
   const type = checker.getTypeAtLocation(node);

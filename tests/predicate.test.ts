@@ -17,7 +17,6 @@ const allowedGlobals = [
   "Array",
   "BigInt",
   "Boolean",
-  "Date",
   "Infinity",
   "JSON",
   "Map",
@@ -45,6 +44,7 @@ const removedGlobals = [
   "BigInt64Array",
   "BigUint64Array",
   "DataView",
+  "Date",
   "Error",
   "EvalError",
   "FinalizationRegistry",
@@ -280,7 +280,7 @@ describe("predicate parsing and subject inference", () => {
 
   it("rejects every global removed from the prior allowlist", () => {
     for (const name of removedGlobals) {
-      expect(parsePredicate(ts, name).diagnostics[0]?.code, name).toBe(1002);
+      expect(parsePredicate(ts, name).diagnostics[0]?.code, name).toBe(90002);
     }
   });
 
@@ -290,7 +290,7 @@ describe("predicate parsing and subject inference", () => {
     ["globalThis", "globalThis.PWNED"],
     ["Reflect", "Reflect.get({}, 'value')"],
   ])("rejects the high-risk %s call form", (_name, source) => {
-    expect(parsePredicate(ts, source).diagnostics[0]?.code).toBe(1002);
+    expect(parsePredicate(ts, source).diagnostics[0]?.code).toBe(90002);
   });
 
   it("tracks arrow parameters as local bindings", () => {
@@ -313,7 +313,7 @@ describe("predicate parsing and subject inference", () => {
   });
 
   it("retains ambiguous free identifiers for contextual capture resolution", () => {
-    expect(parsePredicate(ts, "n >= MIN_AGE").diagnostics[0]?.code).toBe(1002);
+    expect(parsePredicate(ts, "n >= MIN_AGE").diagnostics[0]?.code).toBe(90002);
 
     const candidates = parsePredicateCandidates(ts, "n >= MIN_AGE");
     expect(candidates.ok).toBe(true);
@@ -324,20 +324,22 @@ describe("predicate parsing and subject inference", () => {
   });
 
   it("rejects ambiguity, malformed syntax, and mutation", () => {
-    expect(parsePredicate(ts, "n > min").diagnostics[0]?.code).toBe(1002);
-    expect(parsePredicate(ts, "n >").diagnostics[0]?.code).toBe(1000);
-    expect(parsePredicate(ts, "n += 1").diagnostics[0]?.code).toBe(1000);
-    expect(parsePredicate(ts, "n++").diagnostics[0]?.code).toBe(1000);
-    expect(parsePredicate(ts, "import('x')").diagnostics[0]?.code).toBe(1000);
-    expect(parsePredicate(ts, "import.meta.url").diagnostics[0]?.code).toBe(1000);
-    expect(parsePredicate(ts, "this.value").diagnostics[0]?.code).toBe(1000);
-    expect(parsePredicate(ts, "delete n.value").diagnostics[0]?.code).toBe(1000);
-    expect(parsePredicate(ts, "if (n) true").diagnostics[0]?.code).toBe(1000);
-    expect(parsePredicate(ts, "(() => { return true; })()").diagnostics[0]?.code).toBe(1000);
+    expect(parsePredicate(ts, "n > min").diagnostics[0]?.code).toBe(90002);
+    expect(parsePredicate(ts, "n >").diagnostics[0]?.code).toBe(90000);
+    expect(parsePredicate(ts, "n += 1").diagnostics[0]?.code).toBe(90000);
+    expect(parsePredicate(ts, "n++").diagnostics[0]?.code).toBe(90000);
+    expect(parsePredicate(ts, "import('x')").diagnostics[0]?.code).toBe(90000);
+    expect(parsePredicate(ts, "import.meta.url").diagnostics[0]?.code).toBe(90000);
+    expect(parsePredicate(ts, "this.value").diagnostics[0]?.code).toBe(90000);
+    expect(parsePredicate(ts, "delete n.value").diagnostics[0]?.code).toBe(90000);
+    expect(parsePredicate(ts, "if (n) true").diagnostics[0]?.code).toBe(90000);
+    expect(parsePredicate(ts, "(() => { return true; })() ").diagnostics[0]?.code).toBe(90000);
   });
 
   it("does not treat host-environment identifiers as standard globals", () => {
-    expect(parsePredicate(ts, "Buffer.isBuffer(n)").diagnostics[0]?.code).toBe(1002);
+    expect(parsePredicate(ts, "Buffer.isBuffer(n)").diagnostics[0]?.code).toBe(90002);
+    expect(parsePredicate(ts, "Math.random() < 0.5").diagnostics[0]?.code).toBe(90002);
+    expect(parsePredicate(ts, "Date.now() > 0").diagnostics[0]?.code).toBe(90002);
     const parsed = parsePredicate(ts, "Math.abs(n) < 10");
     expect(parsed.ok).toBe(true);
     if (parsed.ok) expect(parsed.predicate.subject).toBe("n");

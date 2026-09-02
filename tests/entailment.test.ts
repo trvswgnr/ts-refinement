@@ -155,6 +155,16 @@ describe("normalized predicate entailment", () => {
     expect(entails([predicate("s.length % 4 === 0")], [predicate("s.length % 2 === 0")])).toBe(
       false,
     );
+    expect(
+      entails([predicate("s.length > 0")], [predicate("s.length >= 1")], {
+        subjectLength: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("derives finiteness from two-sided numeric bounds", () => {
+    expect(entails([predicate("n > 0 && n < 10")], [predicate("Number.isFinite(n)")])).toBe(true);
+    expect(entails([predicate("n > 0")], [predicate("Number.isFinite(n)")])).toBe(false);
   });
 
   it("is reflexive for generated normalized predicates", () => {

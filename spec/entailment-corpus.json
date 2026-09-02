@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "name": "stronger lower bound",
+      "source": ["value > 5"],
+      "target": ["value > 0"],
+      "expected": true,
+      "samples": [6, 10, 100]
+    },
+    {
+      "name": "inverse lower bound",
+      "source": ["value > 0"],
+      "target": ["value > 5"],
+      "expected": false,
+      "samples": [1, 2, 6]
+    },
+    {
+      "name": "normalized comparison direction",
+      "source": ["5 < value"],
+      "target": ["value >= 5"],
+      "expected": true,
+      "samples": [6, 9]
+    },
+    {
+      "name": "open implies closed boundary",
+      "source": ["value > 5"],
+      "target": ["value >= 5"],
+      "expected": true,
+      "samples": [5.5, 6]
+    },
+    {
+      "name": "closed does not imply open boundary",
+      "source": ["value >= 5"],
+      "target": ["value > 5"],
+      "expected": false,
+      "samples": [5, 6]
+    },
+    {
+      "name": "conjunction meets bounds",
+      "source": ["value > 0 && value < 10"],
+      "target": ["value >= 0 && value <= 10"],
+      "expected": true,
+      "samples": [0.5, 5, 9.5]
+    },
+    {
+      "name": "bounded implies finite",
+      "source": ["value > 0 && value < 10"],
+      "target": ["Number.isFinite(value)"],
+      "expected": true,
+      "samples": [0.5, 5, 9.5]
+    },
+    {
+      "name": "one sided bound does not imply finite",
+      "source": ["value > 0"],
+      "target": ["Number.isFinite(value)"],
+      "expected": false,
+      "samples": [1, { "kind": "number", "value": "Infinity" }]
+    },
+    {
+      "name": "integer linear arithmetic",
+      "source": ["Number.isInteger(value)", "2 * value + 1 >= 11"],
+      "target": ["value >= 5"],
+      "expected": true,
+      "samples": [5, 6, 20]
+    },
+    {
+      "name": "integer congruence",
+      "source": ["Number.isInteger(value)", "value % 4 === 0"],
+      "target": ["value % 2 === 0"],
+      "expected": true,
+      "samples": [-8, -4, 0, 4, 8]
+    },
+    {
+      "name": "bigint lower bound",
+      "source": ["value > 5n"],
+      "target": ["value > 0n"],
+      "expected": true,
+      "samples": [
+        { "kind": "bigint", "value": "6" },
+        { "kind": "bigint", "value": "20" }
+      ]
+    },
+    {
+      "name": "bigint congruence",
+      "source": ["value % 4n === 0n"],
+      "target": ["value % 2n === 0n"],
+      "expected": true,
+      "samples": [
+        { "kind": "bigint", "value": "-8" },
+        { "kind": "bigint", "value": "0" },
+        { "kind": "bigint", "value": "8" }
+      ]
+    },
+    {
+      "name": "array length facts",
+      "source": ["value.length > 0"],
+      "target": ["value.length >= 1"],
+      "facts": { "subjectLength": true },
+      "expected": true,
+      "samples": [[1], [1, 2]]
+    },
+    {
+      "name": "string length facts",
+      "source": ["value.length > 0"],
+      "target": ["Number.isInteger(value.length)"],
+      "facts": { "subjectLength": true },
+      "expected": true,
+      "samples": ["a", "abc"]
+    },
+    {
+      "name": "unsupported atom identity",
+      "source": ["Math.abs(value) > 5"],
+      "target": ["Math.abs(value) > 5"],
+      "expected": true,
+      "samples": [-10, 10]
+    },
+    {
+      "name": "unsupported atoms do not generalize",
+      "source": ["Math.abs(value) > 5"],
+      "target": ["Math.abs(value) > 0"],
+      "expected": false,
+      "samples": [-10, 10]
+    }
+  ]
+}

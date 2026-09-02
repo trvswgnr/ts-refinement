@@ -2,6 +2,7 @@ import type * as ts from "typescript";
 
 import { entails } from "../proof/entail.ts";
 import {
+  resolveRefinementChecks,
   resolveRefinementMetadata,
   type AnalyzerContext,
   type RefinementDefinition,
@@ -9,7 +10,7 @@ import {
 
 interface RefinementTransfer {
   readonly sourceExpression: ts.Expression;
-  readonly targetNode: ts.Node;
+  readonly targetType: ts.Type;
 }
 
 function hasExactSpan(
@@ -37,7 +38,209 @@ function declarationTransfer(
   }
   if (node.type === undefined || node.initializer === undefined) return null;
   if (!hasExactSpan(sourceFile, node.name, start, length)) return null;
-  return { sourceExpression: node.initializer, targetNode: node.type };
+  return {
+    sourceExpression: node.initializer,
+    targetType: context.checker.getTypeAtLocation(node.type),
+  };
+}
+
+function containingFunction(
+  context: AnalyzerContext,
+  node: ts.Node,
+): ts.SignatureDeclaration | undefined {
+  let current = node.parent;
+  while (current !== undefined) {
+    if (context.ts.isFunctionLike(current)) return current;
+    current = current.parent;
+  }
+  return undefined;
+}
+
+function returnType(
+  context: AnalyzerContext,
+  declaration: ts.SignatureDeclaration,
+): ts.Type | undefined {
+  if (declaration.type !== undefined) return context.checker.getTypeAtLocation(declaration.type);
+  if (context.ts.isArrowFunction(declaration) || context.ts.isFunctionExpression(declaration)) {
+    const contextual = context.checker.getContextualType(declaration);
+    const signature =
+      contextual === undefined
+        ? undefined
+        : context.checker.getSignaturesOfType(contextual, context.ts.SignatureKind.Call)[0];
+    if (signature !== undefined) return context.checker.getReturnTypeOfSignature(signature);
+  }
+  const signature = context.checker.getSignatureFromDeclaration(declaration);
+  return signature === undefined ? undefined : context.checker.getReturnTypeOfSignature(signature);
+}
+
+function parameterType(
+  context: AnalyzerContext,
+  call: ts.CallExpression | ts.NewExpression,
+  argument: ts.Expression,
+): ts.Type | undefined {
+  const index = call.arguments?.indexOf(argument) ?? -1;
+  if (index < 0) return undefined;
+  const signature = context.checker.getResolvedSignature(call);
+  const parameter = signature?.parameters[index] ?? signature?.parameters.at(-1);
+  if (parameter === undefined) return undefined;
+  return context.checker.getTypeOfSymbolAtLocation(parameter, argument);
+}
+
+function contextualType(context: AnalyzerContext, expression: ts.Expression): ts.Type | undefined {
+  return context.checker.getContextualType(expression);
+}
+
+function binaryTransfers(
+  context: AnalyzerContext,
+  node: ts.Node,
+  sourceFile: ts.SourceFile,
+  start: number,
+  length: number,
+): readonly RefinementTransfer[] {
+  if (
+    !context.ts.isBinaryExpression(node) ||
+    node.operatorToken.kind !== context.ts.SyntaxKind.EqualsToken ||
+    (!hasExactSpan(sourceFile, node, start, length) &&
+      !hasExactSpan(sourceFile, node.left, start, length) &&
+      !hasExactSpan(sourceFile, node.right, start, length))
+  ) {
+    return [];
+  }
+  return [
+    {
+      sourceExpression: node.right,
+      targetType: context.checker.getTypeAtLocation(node.left),
+    },
+  ];
+}
+
+function returnTransfers(
+  context: AnalyzerContext,
+  node: ts.Node,
+  sourceFile: ts.SourceFile,
+  start: number,
+): readonly RefinementTransfer[] {
+  if (
+    !context.ts.isReturnStatement(node) ||
+    node.expression === undefined ||
+    node.getStart(sourceFile) !== start
+  ) {
+    return [];
+  }
+  const functionDeclaration = containingFunction(context, node);
+  const targetType =
+    functionDeclaration === undefined ? undefined : returnType(context, functionDeclaration);
+  return targetType === undefined ? [] : [{ sourceExpression: node.expression, targetType }];
+}
+
+function arrayTransfers(
+  context: AnalyzerContext,
+  node: ts.Node,
+  sourceFile: ts.SourceFile,
+  start: number,
+  length: number,
+): readonly RefinementTransfer[] {
+  if (!context.ts.isArrayLiteralExpression(node)) return [];
+  const transfers: RefinementTransfer[] = [];
+  for (const element of node.elements) {
+    if (!context.ts.isExpression(element) || !hasExactSpan(sourceFile, element, start, length)) {
+      continue;
+    }
+    const targetType = contextualType(context, element);
+    if (targetType !== undefined) transfers.push({ sourceExpression: element, targetType });
+  }
+  return transfers;
+}
+
+function propertyTransfers(
+  context: AnalyzerContext,
+  node: ts.Node,
+  sourceFile: ts.SourceFile,
+  start: number,
+  length: number,
+): readonly RefinementTransfer[] {
+  if (
+    !context.ts.isPropertyAssignment(node) ||
+    !hasExactSpan(sourceFile, node.name, start, length)
+  ) {
+    return [];
+  }
+  const targetType = contextualType(context, node.initializer);
+  return targetType === undefined ? [] : [{ sourceExpression: node.initializer, targetType }];
+}
+
+function arrowTransfers(
+  context: AnalyzerContext,
+  node: ts.Node,
+  sourceFile: ts.SourceFile,
+  start: number,
+  length: number,
+): readonly RefinementTransfer[] {
+  if (
+    !context.ts.isArrowFunction(node) ||
+    !context.ts.isExpression(node.body) ||
+    !hasExactSpan(sourceFile, node.body, start, length)
+  ) {
+    return [];
+  }
+  const targetType = returnType(context, node);
+  return targetType === undefined ? [] : [{ sourceExpression: node.body, targetType }];
+}
+
+function assignmentTransfers(
+  context: AnalyzerContext,
+  node: ts.Node,
+  sourceFile: ts.SourceFile,
+  start: number,
+  length: number,
+): readonly RefinementTransfer[] {
+  const declaration = declarationTransfer(context, node, sourceFile, start, length);
+  return [
+    ...(declaration === null ? [] : [declaration]),
+    ...binaryTransfers(context, node, sourceFile, start, length),
+    ...returnTransfers(context, node, sourceFile, start),
+    ...arrayTransfers(context, node, sourceFile, start, length),
+    ...propertyTransfers(context, node, sourceFile, start, length),
+    ...arrowTransfers(context, node, sourceFile, start, length),
+  ];
+}
+
+function callTransfers(
+  context: AnalyzerContext,
+  node: ts.Node,
+  sourceFile: ts.SourceFile,
+  start: number,
+  length: number,
+): readonly RefinementTransfer[] {
+  if (!context.ts.isCallExpression(node) && !context.ts.isNewExpression(node)) return [];
+  const transfers: RefinementTransfer[] = [];
+  for (const argument of node.arguments ?? []) {
+    if (!hasExactSpan(sourceFile, argument, start, length)) continue;
+    const targetType = parameterType(context, node, argument);
+    if (targetType !== undefined) transfers.push({ sourceExpression: argument, targetType });
+  }
+  return transfers;
+}
+
+function assertionTransfers(
+  context: AnalyzerContext,
+  node: ts.Node,
+  sourceFile: ts.SourceFile,
+  start: number,
+  length: number,
+): readonly RefinementTransfer[] {
+  if (
+    (!context.ts.isAsExpression(node) && !context.ts.isTypeAssertionExpression(node)) ||
+    !hasExactSpan(sourceFile, node, start, length)
+  ) {
+    return [];
+  }
+  return [
+    {
+      sourceExpression: node.expression,
+      targetType: context.checker.getTypeAtLocation(node.type),
+    },
+  ];
 }
 
 function findTransfers(
@@ -54,30 +257,19 @@ function findTransfers(
   const transfers: RefinementTransfer[] = [];
   function visit(node: ts.Node): void {
     if (diagnostic.code === 2322) {
-      const declaration = declarationTransfer(
-        context,
-        node,
-        sourceFile,
-        diagnosticStart,
-        diagnosticLength,
+      transfers.push(
+        ...assignmentTransfers(context, node, sourceFile, diagnosticStart, diagnosticLength),
       );
-      if (declaration !== null) transfers.push(declaration);
-
-      if (
-        context.ts.isBinaryExpression(node) &&
-        node.operatorToken.kind === context.ts.SyntaxKind.EqualsToken &&
-        hasExactSpan(sourceFile, node.right, diagnosticStart, diagnosticLength)
-      ) {
-        transfers.push({ sourceExpression: node.right, targetNode: node.left });
-      }
     }
-
-    if (
-      diagnostic.code === 2352 &&
-      (context.ts.isAsExpression(node) || context.ts.isTypeAssertionExpression(node)) &&
-      hasExactSpan(sourceFile, node, diagnosticStart, diagnosticLength)
-    ) {
-      transfers.push({ sourceExpression: node.expression, targetNode: node.type });
+    if (diagnostic.code === 2345) {
+      transfers.push(
+        ...callTransfers(context, node, sourceFile, diagnosticStart, diagnosticLength),
+      );
+    }
+    if (diagnostic.code === 2352) {
+      transfers.push(
+        ...assertionTransfers(context, node, sourceFile, diagnosticStart, diagnosticLength),
+      );
     }
     context.ts.forEachChild(node, visit);
   }
@@ -89,32 +281,202 @@ function basesAreAssignable(
   context: AnalyzerContext,
   source: RefinementDefinition,
   target: RefinementDefinition,
+  typeIsEntailed: (sourceType: ts.Type, targetType: ts.Type) => boolean,
 ): boolean {
   return target.baseTypes.every((targetBase) =>
-    source.baseTypes.some((sourceBase) =>
-      context.checker.isTypeAssignableTo(sourceBase, targetBase),
-    ),
+    source.baseTypes.some((sourceBase) => typeIsEntailed(sourceBase, targetBase)),
   );
+}
+
+function hasLengthBaseType(context: AnalyzerContext, definition: RefinementDefinition): boolean {
+  return definition.baseTypes.some(
+    (type) =>
+      (type.flags & context.ts.TypeFlags.StringLike) !== 0 || context.checker.isArrayType(type),
+  );
+}
+
+function propertyType(
+  context: AnalyzerContext,
+  type: ts.Type,
+  name: string,
+): { readonly symbol: ts.Symbol; readonly type: ts.Type } | null {
+  const symbol = context.checker.getPropertyOfType(type, name);
+  const location = symbol?.valueDeclaration ?? symbol?.declarations?.[0];
+  return symbol === undefined || location === undefined
+    ? null
+    : { symbol, type: context.checker.getTypeOfSymbolAtLocation(symbol, location) };
+}
+
+type EntailmentVisit = (source: ts.Type, target: ts.Type) => boolean;
+
+function refinementTypeEntailment(
+  context: AnalyzerContext,
+  source: ts.Type,
+  target: ts.Type,
+  visit: EntailmentVisit,
+): boolean | undefined {
+  const sourceResolution = resolveRefinementMetadata(context, source);
+  const targetResolution = resolveRefinementMetadata(context, target);
+  if (targetResolution.isRefinement) {
+    return (
+      sourceResolution.isRefinement &&
+      sourceResolution.definition !== null &&
+      targetResolution.definition !== null &&
+      basesAreAssignable(
+        context,
+        sourceResolution.definition,
+        targetResolution.definition,
+        visit,
+      ) &&
+      entails(sourceResolution.definition.predicates, targetResolution.definition.predicates, {
+        subjectLength: hasLengthBaseType(context, targetResolution.definition),
+      })
+    );
+  }
+  if (!sourceResolution.isRefinement) return undefined;
+  return (
+    sourceResolution.definition !== null &&
+    sourceResolution.definition.baseTypes.some((baseType) => visit(baseType, target))
+  );
+}
+
+function unionEntailment(
+  source: ts.Type,
+  target: ts.Type,
+  visit: EntailmentVisit,
+): boolean | undefined {
+  if (source.isUnion()) return source.types.every((part) => visit(part, target));
+  if (target.isUnion()) return target.types.some((part) => visit(source, part));
+  return undefined;
+}
+
+function typeParameterEntailment(
+  context: AnalyzerContext,
+  source: ts.Type,
+  target: ts.Type,
+  visit: EntailmentVisit,
+): boolean | undefined {
+  if ((source.flags & context.ts.TypeFlags.TypeParameter) !== 0) {
+    const constraint = context.checker.getBaseConstraintOfType(source);
+    return constraint !== undefined && visit(constraint, target);
+  }
+  if ((target.flags & context.ts.TypeFlags.TypeParameter) !== 0) {
+    const constraint = context.checker.getBaseConstraintOfType(target);
+    return constraint !== undefined && visit(source, constraint);
+  }
+  return undefined;
+}
+
+function propertiesAreEntailed(
+  context: AnalyzerContext,
+  source: ts.Type,
+  target: ts.Type,
+  visit: EntailmentVisit,
+): boolean {
+  const targetProperties = context.checker
+    .getPropertiesOfType(target)
+    .filter((property) => !property.getName().startsWith("__@refinementBrand"));
+  for (const targetProperty of targetProperties) {
+    const sourceProperty = propertyType(context, source, targetProperty.getName());
+    if (sourceProperty === null) {
+      if ((targetProperty.flags & context.ts.SymbolFlags.Optional) !== 0) continue;
+      return false;
+    }
+    if (
+      (sourceProperty.symbol.flags & context.ts.SymbolFlags.Optional) !== 0 &&
+      (targetProperty.flags & context.ts.SymbolFlags.Optional) === 0
+    ) {
+      return false;
+    }
+    const resolvedTargetProperty = propertyType(context, target, targetProperty.getName());
+    if (
+      resolvedTargetProperty === null ||
+      !visit(sourceProperty.type, resolvedTargetProperty.type)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function indexSignaturesAreEntailed(
+  context: AnalyzerContext,
+  source: ts.Type,
+  target: ts.Type,
+  visit: EntailmentVisit,
+): boolean {
+  for (const targetIndex of context.checker.getIndexInfosOfType(target)) {
+    const sourceIndex = context.checker
+      .getIndexInfosOfType(source)
+      .find((candidate) =>
+        context.checker.isTypeAssignableTo(targetIndex.keyType, candidate.keyType),
+      );
+    if (sourceIndex === undefined || !visit(sourceIndex.type, targetIndex.type)) return false;
+  }
+  return true;
+}
+
+function callSignaturesAreEntailed(
+  context: AnalyzerContext,
+  source: ts.Type,
+  target: ts.Type,
+): boolean {
+  const sourceCalls = context.checker.getSignaturesOfType(source, context.ts.SignatureKind.Call);
+  const targetCalls = context.checker.getSignaturesOfType(target, context.ts.SignatureKind.Call);
+  return targetCalls.length === 0 || sourceCalls.length > 0;
+}
+
+function refinementStructureIsEntailed(
+  context: AnalyzerContext,
+  sourceType: ts.Type,
+  targetType: ts.Type,
+): boolean {
+  const visited = new Map<ts.Type, Set<ts.Type>>();
+
+  function visit(source: ts.Type, target: ts.Type): boolean {
+    if (source === target) return true;
+    const sourceTargets = visited.get(source) ?? new Set<ts.Type>();
+    if (sourceTargets.has(target)) return true;
+    sourceTargets.add(target);
+    visited.set(source, sourceTargets);
+
+    const refinementResult = refinementTypeEntailment(context, source, target, visit);
+    if (refinementResult !== undefined) return refinementResult;
+    const unionResult = unionEntailment(source, target, visit);
+    if (unionResult !== undefined) return unionResult;
+    const typeParameterResult = typeParameterEntailment(context, source, target, visit);
+    if (typeParameterResult !== undefined) return typeParameterResult;
+
+    if (
+      (source.flags & context.ts.TypeFlags.Object) === 0 ||
+      (target.flags & context.ts.TypeFlags.Object) === 0
+    ) {
+      return context.checker.isTypeAssignableTo(source, target);
+    }
+
+    return (
+      propertiesAreEntailed(context, source, target, visit) &&
+      indexSignaturesAreEntailed(context, source, target, visit) &&
+      callSignaturesAreEntailed(context, source, target)
+    );
+  }
+
+  return visit(sourceType, targetType);
 }
 
 function transferIsEntailed(context: AnalyzerContext, transfer: RefinementTransfer): boolean {
   const sourceType = context.checker.getTypeAtLocation(transfer.sourceExpression);
-  const targetType = context.checker.getTypeAtLocation(transfer.targetNode);
-  const sourceResolution = resolveRefinementMetadata(context, sourceType);
-  const targetResolution = resolveRefinementMetadata(context, targetType);
+  const sourceChecks = resolveRefinementChecks(context, sourceType);
+  const targetChecks = resolveRefinementChecks(context, transfer.targetType);
   if (
-    !sourceResolution.isRefinement ||
-    sourceResolution.definition === null ||
-    !targetResolution.isRefinement ||
-    targetResolution.definition === null
+    sourceChecks.issues.length > 0 ||
+    targetChecks.issues.length > 0 ||
+    sourceChecks.checks.length === 0 ||
+    targetChecks.checks.length === 0
   ) {
     return false;
   }
-
-  return (
-    basesAreAssignable(context, sourceResolution.definition, targetResolution.definition) &&
-    entails(sourceResolution.definition.predicates, targetResolution.definition.predicates)
-  );
+  return refinementStructureIsEntailed(context, sourceType, transfer.targetType);
 }
 
 /**
@@ -128,7 +490,9 @@ export function filterEntailedRefinementDiagnostics(
   diagnostics: readonly ts.Diagnostic[],
 ): readonly ts.Diagnostic[] {
   return diagnostics.filter((diagnostic) => {
-    if (diagnostic.code !== 2322 && diagnostic.code !== 2352) return true;
+    if (diagnostic.code !== 2322 && diagnostic.code !== 2345 && diagnostic.code !== 2352) {
+      return true;
+    }
     const transfers = findTransfers(context, sourceFile, diagnostic);
     if (transfers.length !== 1) return true;
     const transfer = transfers[0];

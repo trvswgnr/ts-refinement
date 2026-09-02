@@ -18,7 +18,7 @@ target is false.
 The decision procedure works only over normalized IR. It does not execute predicate JavaScript.
 Unsupported expressions retain exact-key reflexivity but do not produce optimistic proofs.
 
-Subject names and whitespace are normalized for analyzer decisions; bare TypeScript still sees the original predicate strings as distinct brand keys. Primitive literal module constants are folded into normalized IR, while rejected captures report RF1003.
+Subject names and whitespace are normalized for analyzer decisions; bare TypeScript still sees the original predicate strings as distinct brand keys. Primitive literal module constants are folded into normalized IR, while rejected captures report RF90003.
 
 The compile-time analyzer never executes predicate JavaScript. Build adapters compile predicates needed at runtime into consumer bundle code.
 

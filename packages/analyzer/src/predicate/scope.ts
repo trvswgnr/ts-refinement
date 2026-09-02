@@ -138,9 +138,19 @@ export function analyzeFreeIdentifiers(
   visit(expression, rootScope);
 
   return {
-    disallowedNames: [...freeReferences.keys()]
-      .filter((name) => disallowedGlobals.has(name))
-      .sort(),
+    disallowedNames: [
+      ...[...freeReferences.keys()].filter((name) => disallowedGlobals.has(name)),
+      ...(freeReferences
+        .get("Math")
+        ?.some(
+          (reference) =>
+            tsModule.isPropertyAccessExpression(reference.parent) &&
+            reference.parent.expression === reference &&
+            reference.parent.name.text === "random",
+        )
+        ? ["Math.random"]
+        : []),
+    ].sort(),
     freeReferences,
     unresolvedNames: [...freeReferences.keys()]
       .filter((name) => !standardGlobals.has(name) && !disallowedGlobals.has(name))
