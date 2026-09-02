@@ -615,6 +615,14 @@ describe("Rolldown plugin", () => {
     expect(chunk?.code).toContain("outsideProgram = true");
   });
 
+  it("skips irrelevant modules before checking program membership", async () => {
+    const bundle = await build(fixtureFile("../irrelevant-outside.ts"));
+    const generated = await bundle.generate({ format: "esm" });
+    const chunk = generated.output.find((output) => output.type === "chunk");
+
+    expect(chunk?.code).toContain("irrelevant = true");
+  });
+
   it("still fails outside-program modules that do not match an ignore glob", async () => {
     const bundle = await build(fixtureFile("../outside-program.ts"), ["../other-*.ts"]);
 
@@ -625,7 +633,11 @@ describe("Rolldown plugin", () => {
     "normalizes %s suffixes before checking the program and ignore globs",
     async (suffix) => {
       const input = `${fixtureFile("../outside-program.ts")}${suffix}`;
-      const bundle = await build(input, ["../other-*.ts"], "export const outsideProgram = true;");
+      const bundle = await build(
+        input,
+        ["../other-*.ts"],
+        "export const outsideProgram = true as boolean;",
+      );
 
       await expect(bundle.generate({ format: "esm" })).rejects.toThrow(/outside-program\.ts/u);
     },

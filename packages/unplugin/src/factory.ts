@@ -23,8 +23,10 @@ function isTransformableTypeScript(fileName: string): boolean {
   return /\.[cm]?tsx?$/u.test(fileName) && !/\.d\.[cm]?ts$/u.test(fileName);
 }
 
+const refinementAssertionPattern = /\bas\s+|<\s*[A-Za-z_$][\w$]*/u;
+
 function canContainRefinementAssertion(source: string): boolean {
-  return /\bas\s+|<\s*[A-Za-z_$][\w$]*/u.test(source);
+  return refinementAssertionPattern.test(source);
 }
 
 function isJavaScriptAsset(fileName: string): boolean {
@@ -172,10 +174,14 @@ const factory: UnpluginFactory<RefinementTypesPluginOptions | undefined, false> 
     },
 
     transform: {
-      filter: { id: /\.[cm]?tsx?(?:[?#].*)?$/u },
+      filter: {
+        code: refinementAssertionPattern,
+        id: /\.[cm]?tsx?(?:[?#].*)?$/u,
+      },
       handler(code, id) {
         const fileName = resolve(cleanModuleId(id));
         if (!isTransformableTypeScript(fileName)) return null;
+        if (!canContainRefinementAssertion(code)) return null;
         if (state === null) state = createProgramState(ts, options);
         if (meta.framework === "esbuild") {
           for (const configFile of state.configFiles) this.addWatchFile(configFile);
@@ -196,7 +202,6 @@ const factory: UnpluginFactory<RefinementTypesPluginOptions | undefined, false> 
           else this.error({ id: fileName, message });
           return null;
         }
-        if (!canContainRefinementAssertion(code)) return null;
 
         state.updateSource(fileName, code);
         const context = state.context;

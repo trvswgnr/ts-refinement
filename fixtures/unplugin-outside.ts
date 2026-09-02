@@ -1,1 +1,1 @@
-export const outside = true;
+export const outside = true < Infinity;

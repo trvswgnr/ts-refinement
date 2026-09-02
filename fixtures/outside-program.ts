@@ -1,1 +1,1 @@
-export const outsideProgram = true;
+export const outsideProgram = true as boolean;
