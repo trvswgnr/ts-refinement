@@ -12,7 +12,6 @@ export interface ProgramState {
   readonly program: ts.Program;
   getScriptVersion(fileName: string): number;
   invalidateSource(fileName: string): void;
-  isConfigCurrent(): boolean;
   updateSource(fileName: string, source: string): void;
 }
 
@@ -99,13 +98,6 @@ export function createProgramState(
   const diskScripts = new Map<string, DiskScriptState>();
   const overlays = new Map<string, ScriptState>();
   const normalizeFileName = (fileName: string) => resolve(fileName);
-  const configMetadata = new Map(
-    initialConfig.configFiles.map((fileName) => {
-      const stats = statSync(fileName);
-      return [fileName, { mtimeMs: stats.mtimeMs, size: stats.size }] as const;
-    }),
-  );
-
   function readDiskScript(fileName: string): ScriptState | undefined {
     const normalizedFileName = normalizeFileName(fileName);
     const stats = statSync(normalizedFileName, { throwIfNoEntry: false });
@@ -192,20 +184,6 @@ export function createProgramState(
     invalidateSource(fileName) {
       overlays.delete(normalizeFileName(fileName));
       currentProgram = undefined;
-    },
-    isConfigCurrent() {
-      if (options.tsconfig === undefined) {
-        const discovered = tsModule.findConfigFile(
-          resolve(options.cwd ?? process.cwd()),
-          (fileName) => tsModule.sys.fileExists(fileName),
-          "tsconfig.json",
-        );
-        if (discovered === undefined || resolve(discovered) !== configPath) return false;
-      }
-      return [...configMetadata].every(([fileName, metadata]) => {
-        const stats = statSync(fileName, { throwIfNoEntry: false });
-        return stats?.mtimeMs === metadata.mtimeMs && stats.size === metadata.size;
-      });
     },
     updateSource(fileName, source) {
       const normalizedFileName = normalizeFileName(fileName);

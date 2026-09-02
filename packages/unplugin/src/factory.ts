@@ -140,9 +140,7 @@ const factory: UnpluginFactory<RefinementTypesPluginOptions | undefined, false> 
 
     buildStart() {
       registry.clear();
-      if (state === null || !state.isConfigCurrent()) {
-        state = createProgramState(ts, options);
-      }
+      state ??= createProgramState(ts, options);
       tracker.reset(state.configPath);
       if (meta.framework !== "esbuild") {
         for (const configFile of state.configFiles) this.addWatchFile(configFile);

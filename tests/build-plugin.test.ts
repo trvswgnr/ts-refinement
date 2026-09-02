@@ -56,6 +56,10 @@ interface MutableNestedTreeValue {
   value: number;
 }
 
+interface WatchChangeHandler {
+  (fileName: string, event: { event: "update" }): void | Promise<void>;
+}
+
 interface NestedUserValue {
   readonly age: number;
   readonly name?: string;
@@ -101,6 +105,16 @@ function createRefinementPlugin() {
     runtimeModule: fixtureFile("../../packages/runtime/src/index.ts"),
     tsconfig: "tsconfig.json",
   });
+}
+
+async function notifyWatchChange(
+  plugin: ReturnType<typeof createRefinementPlugin>,
+  fileName: string,
+): Promise<void> {
+  const hook = plugin.watchChange;
+  if (hook === undefined) throw new Error("refinement plugin has no watchChange hook");
+  const handler: WatchChangeHandler = "handler" in hook ? hook.handler : hook;
+  await handler(fileName, { event: "update" });
 }
 
 async function buildWithPriorTransform(
@@ -401,6 +415,7 @@ describe("Rolldown plugin", () => {
       expect(await initialBundle.watchFiles).toContain(firstBaseConfigPath);
 
       await writeFile(configPath, JSON.stringify({ extends: "./tsconfig.base-b.json" }));
+      await notifyWatchChange(refinementPlugin, configPath);
       const equivalentBundle = await rolldown({
         input: initialInput,
         plugins: [refinementPlugin],
@@ -413,6 +428,7 @@ describe("Rolldown plugin", () => {
         secondBaseConfigPath,
         JSON.stringify({ compilerOptions, include: ["changed.ts"] }),
       );
+      await notifyWatchChange(refinementPlugin, secondBaseConfigPath);
       const changedBundle = await rolldown({ input: changedInput, plugins: [refinementPlugin] });
       const changedGenerated = await changedBundle.generate({ format: "esm" });
       const changedChunk = changedGenerated.output.find((output) => output.type === "chunk");
@@ -451,6 +467,7 @@ describe("Rolldown plugin", () => {
         join(projectDirectory, "tsconfig.json"),
         JSON.stringify({ compilerOptions, include: ["changed.ts"] }),
       );
+      await notifyWatchChange(refinementPlugin, join(directory, "tsconfig.json"));
       const changedBundle = await rolldown({ input: changedInput, plugins: [refinementPlugin] });
       const changedGenerated = await changedBundle.generate({ format: "esm" });
       const changedChunk = changedGenerated.output.find((output) => output.type === "chunk");
