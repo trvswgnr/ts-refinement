@@ -19,6 +19,7 @@ export {
   provePredicates,
   type Proof,
 } from "./proof/evaluate.ts";
+export { entails } from "./proof/entail.ts";
 export { displayStaticValue, type StaticRuntimeValue, type StaticValue } from "./proof/values.ts";
 export {
   serializeExpression,
