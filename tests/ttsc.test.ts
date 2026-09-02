@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -51,6 +52,24 @@ describe("TypeScript-Go native plugin", () => {
     expect(emitted).toContain("new WeakSet");
     expect(emitted).toContain('path: ("" + __ts_refinement_path');
     expect(emitted).not.toContain("as Positive");
+
+    const manifest = JSON.parse(
+      readFileSync(resolve(validOutDir, ".ts-refinement-manifest.json"), "utf8"),
+    );
+    expect(manifest).toMatchObject({ schemaVersion: 1 });
+    expect(manifest.sites).toHaveLength(8);
+    expect(manifest.sites.every((site: { module: string }) => site.module === "index.ts")).toBe(
+      true,
+    );
+    expect(
+      manifest.sites.every((site: { id: string }) =>
+        emitted.includes(`ts-refinement-site:${manifest.buildId}:${site.id}`),
+      ),
+    ).toBe(true);
+    const emittedAsset = manifest.assets.find(
+      (asset: { file: string }) => asset.file === "fixtures/ttsc/valid/index.js",
+    );
+    expect(emittedAsset?.sha256).toBe(createHash("sha256").update(emitted).digest("hex"));
 
     const invalid = runTtsc("invalid", resolve(outputRoot, "invalid"));
     const diagnostics = `${invalid.stdout}${invalid.stderr}`;

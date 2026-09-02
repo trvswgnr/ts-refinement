@@ -9,6 +9,7 @@ import (
 
 	shimast "github.com/microsoft/typescript-go/shim/ast"
 	shimchecker "github.com/microsoft/typescript-go/shim/checker"
+	shimcompiler "github.com/microsoft/typescript-go/shim/compiler"
 	shimcore "github.com/microsoft/typescript-go/shim/core"
 	shimparser "github.com/microsoft/typescript-go/shim/parser"
 	shimprinter "github.com/microsoft/typescript-go/shim/printer"
@@ -116,11 +117,17 @@ func RunBuild(args []string) int {
 		_ = program.Close()
 		return 2
 	}
+	tracker, err := newNativeBuildTracker(options.cwd, options.tsconfig)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		_ = program.Close()
+		return 3
+	}
 
 	overlay := driver.NewOverlayFS(driver.DefaultFS())
 	refinementDiagnostics := []protocolDiagnostic{}
 	for _, file := range program.SourceFiles() {
-		transformed, fileDiagnostics := transformFile(program.Checker, file)
+		transformed, fileDiagnostics := transformFileWithTracker(program.Checker, file, tracker)
 		refinementDiagnostics = append(refinementDiagnostics, fileDiagnostics...)
 		if transformed != "" {
 			overlay.Set(file.FileName(), transformed)
@@ -153,7 +160,24 @@ func RunBuild(args []string) int {
 		}
 	}
 	defer emitProgram.Close()
-	_, emitDiagnostics, err := emitProgram.EmitAllRaw(nil)
+	manifestDirectory := options.cwd
+	if emitProgram.ParsedConfig != nil && emitProgram.ParsedConfig.ParsedConfig != nil {
+		if outDir := emitProgram.ParsedConfig.ParsedConfig.CompilerOptions.OutDir; outDir != "" {
+			manifestDirectory = outDir
+		}
+	}
+	assets := []nativeManifestAsset{}
+	_, emitDiagnostics, err := emitProgram.EmitAllRaw(
+		func(fileName, text string, _ *shimcompiler.WriteFileData) error {
+			if err := driver.DefaultWriteFile(fileName, text); err != nil {
+				return err
+			}
+			if asset, ok := nativeManifestAssetFor(manifestDirectory, fileName, text); ok {
+				assets = append(assets, asset)
+			}
+			return nil
+		},
+	)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 3
@@ -164,10 +188,24 @@ func RunBuild(args []string) int {
 			return 2
 		}
 	}
+	if len(assets) > 0 {
+		if err := tracker.write(manifestDirectory, assets); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 3
+		}
+	}
 	return 0
 }
 
 func transformFile(checker *shimchecker.Checker, file *shimast.SourceFile) (string, []protocolDiagnostic) {
+	return transformFileWithTracker(checker, file, nil)
+}
+
+func transformFileWithTracker(
+	checker *shimchecker.Checker,
+	file *shimast.SourceFile,
+	tracker *nativeBuildTracker,
+) (string, []protocolDiagnostic) {
 	if checker == nil || file == nil {
 		return "", nil
 	}
@@ -229,7 +267,11 @@ func transformFile(checker *shimchecker.Checker, file *shimast.SourceFile) (stri
 					addAssertionRemoval(plan, file, site)
 					if !proven {
 						hasRuntimeCheck = true
-						addRuntimeWrapper(plan, file, site, checks.Checks, checks.Recursions, runtimeAlias)
+						marker := ""
+						if tracker != nil {
+							marker = tracker.register(file, site, checks.Checks, checks.Recursions)
+						}
+						addRuntimeWrapper(plan, file, site, checks.Checks, checks.Recursions, runtimeAlias, marker)
 					}
 				}
 			}
@@ -359,8 +401,9 @@ func addRuntimeWrapper(
 	checks []analysis.Check,
 	recursions []analysis.Recursion,
 	errorAlias string,
+	marker string,
 ) {
-	validation := emitValidator(checks, recursions, errorAlias)
+	validation := emitValidator(checks, recursions, errorAlias, marker)
 	prefix := fmt.Sprintf(
 		"((__ts_refinement_value: any) => {\n%s\n    return __ts_refinement_value;\n  })(",
 		validation,

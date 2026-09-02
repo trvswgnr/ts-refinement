@@ -2,14 +2,15 @@ import { createHash } from "node:crypto";
 import { constants, accessSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
-import ts from "typescript";
+import { parse } from "acorn";
+import { simple } from "acorn-walk";
 import * as v from "valibot";
 
 import {
   refinementManifestSchemaVersion,
   refinementSiteMarker,
   type RefinementManifest,
-} from "@ts-refinement/analyzer";
+} from "./manifest.ts";
 
 const manifestSchema = v.strictObject({
   assets: v.array(
@@ -83,24 +84,27 @@ function containedAssetPath(directory: string, fileName: string): AssetPathResul
 }
 
 function parseMarkers(fileName: string, source: string): Set<string> | null {
-  const sourceFile = ts.createSourceFile(
-    fileName,
-    source,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.JS,
-  );
-  // SAFETY: createSourceFile records syntax diagnostics on this stable compiler-owned field.
-  const parsedSource = sourceFile as ts.SourceFile & {
-    readonly parseDiagnostics: readonly ts.Diagnostic[];
-  };
-  if (parsedSource.parseDiagnostics.length > 0) return null;
   const markers = new Set<string>();
-  function visit(node: ts.Node): void {
-    if (ts.isStringLiteralLike(node)) markers.add(node.text);
-    ts.forEachChild(node, visit);
+  try {
+    const program = parse(source, {
+      ecmaVersion: "latest",
+      sourceFile: fileName,
+      sourceType: "module",
+    });
+    simple(program, {
+      Literal(node) {
+        if (v.is(v.string(), node.value)) markers.add(node.value);
+      },
+      TemplateLiteral(node) {
+        const cooked = node.quasis[0]?.value.cooked;
+        if (node.expressions.length === 0 && v.is(v.string(), cooked)) {
+          markers.add(cooked);
+        }
+      },
+    });
+  } catch {
+    return null;
   }
-  visit(sourceFile);
   return markers;
 }
 

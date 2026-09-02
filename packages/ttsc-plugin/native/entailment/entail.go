@@ -15,6 +15,10 @@ type Predicate struct {
 	key    string
 }
 
+func (predicate Predicate) Key() string {
+	return predicate.key
+}
+
 func ParsePredicate(source string) (Predicate, error) {
 	root, err := parse(source)
 	if err != nil {

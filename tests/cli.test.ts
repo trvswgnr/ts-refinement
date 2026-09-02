@@ -101,6 +101,25 @@ describe("ts-refinement verify", () => {
       );
       expect(missingMarker.stdout).not.toContain("SHA-256 mismatch");
 
+      const interpolatedMarkerCode = originalCode.replaceAll(
+        JSON.stringify(marker),
+        `\`${marker}\${""}\``,
+      );
+      writeFileSync(assetPath, interpolatedMarkerCode);
+      writeFileSync(
+        manifestPath,
+        JSON.stringify({
+          ...originalManifest,
+          assets: [
+            {
+              file: "nested-runtime.js",
+              sha256: createHash("sha256").update(interpolatedMarkerCode).digest("hex"),
+            },
+          ],
+        }),
+      );
+      expect(invoke(["verify", directory]).stdout).toContain("Missing runtime marker");
+
       writeFileSync(assetPath, `${originalCode}\n`);
       writeFileSync(manifestPath, originalManifestSource);
       expect(invoke(["verify", directory]).stdout).toContain(

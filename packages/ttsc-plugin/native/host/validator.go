@@ -11,11 +11,16 @@ import (
 
 type traversalLeaf func(subject, path, indent string) []string
 
-func emitValidator(checks []analysis.Check, recursions []analysis.Recursion, errorAlias string) string {
+func emitValidator(
+	checks []analysis.Check,
+	recursions []analysis.Recursion,
+	errorAlias string,
+	marker string,
+) string {
 	if len(recursions) == 0 {
 		parts := make([]string, 0, len(checks))
 		for index, check := range checks {
-			parts = append(parts, emitCheck(check, fmt.Sprintf("%d", index), "__ts_refinement_value", `""`, "    ", errorAlias))
+			parts = append(parts, emitCheck(check, fmt.Sprintf("%d", index), "__ts_refinement_value", `""`, "    ", errorAlias, marker))
 		}
 		return strings.Join(parts, "\n")
 	}
@@ -50,6 +55,7 @@ func emitValidator(checks []analysis.Check, recursions []analysis.Recursion, err
 				"path",
 				"    ",
 				errorAlias,
+				marker,
 			))
 		}
 		for recursionIndex, recursion := range recursions {
@@ -79,7 +85,7 @@ func emitValidator(checks []analysis.Check, recursions []analysis.Recursion, err
 
 func emitCheck(
 	check analysis.Check,
-	namespace, rootSubject, rootPath, rootIndent, errorAlias string,
+	namespace, rootSubject, rootPath, rootIndent, errorAlias, marker string,
 ) string {
 	return emitTraversal(check.Path, namespace, rootSubject, rootPath, rootIndent, func(subject, path, indent string) []string {
 		conditions := make([]string, len(check.Definition.Predicates))
@@ -92,9 +98,14 @@ func emitCheck(
 		if len(check.Definition.Predicates) > 0 {
 			condition = strings.Join(conditions, " && ")
 		}
+		markerExpression := "undefined"
+		if marker != "" {
+			markerExpression = quoted(marker)
+		}
 		return []string{
 			fmt.Sprintf("%sif (!(%s)) {", indent, condition),
 			fmt.Sprintf("%s  throw new %s({", indent, errorAlias),
+			fmt.Sprintf("%s    marker: %s,", indent, markerExpression),
 			fmt.Sprintf("%s    path: %s || undefined,", indent, path),
 			fmt.Sprintf("%s    predicate: %s,", indent, quoted(strings.Join(predicates, " && "))),
 			fmt.Sprintf("%s    refinement: %s,", indent, quoted(check.Definition.Display)),

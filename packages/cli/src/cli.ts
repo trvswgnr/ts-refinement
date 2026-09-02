@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 
-import { refinementManifestFileName } from "@ts-refinement/analyzer";
+import { refinementManifestFileName } from "./manifest.ts";
 import { assertReadableOutputDirectory, verifyOutput } from "./verify.ts";
 
 const usage = `Usage:

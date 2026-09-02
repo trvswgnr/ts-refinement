@@ -110,13 +110,11 @@ async function validateMetadata() {
   assert.deepEqual(manifests.get("@ts-refinement/runtime").peerDependencies, undefined);
   assert.deepEqual(manifests.get("@ts-refinement/analyzer").dependencies, undefined);
   assert.deepEqual(manifests.get("@ts-refinement/cli").dependencies, {
-    "@ts-refinement/analyzer": "0.1.0",
+    acorn: "^8.18.0",
+    "acorn-walk": "^8.3.5",
     valibot: "1.4.2",
   });
-  assert.equal(
-    manifests.get("@ts-refinement/cli").peerDependencies["ts-refinement"],
-    manifests.get("ts-refinement").version,
-  );
+  assert.equal(manifests.get("@ts-refinement/cli").peerDependencies, undefined);
   assert.deepEqual(manifests.get("@ts-refinement/typescript-plugin").dependencies, {
     "@ts-refinement/analyzer": "0.1.0",
   });
@@ -264,7 +262,12 @@ async function validateNativeInstall(temporaryDirectory, artifacts) {
   await cp(join(repositoryRoot, "fixtures/package-consumer/native"), consumerDirectory, {
     recursive: true,
   });
-  const requiredNames = ["ts-refinement", "@ts-refinement/runtime", "@ts-refinement/ttsc"];
+  const requiredNames = [
+    "ts-refinement",
+    "@ts-refinement/cli",
+    "@ts-refinement/runtime",
+    "@ts-refinement/ttsc",
+  ];
   const nativeArtifacts = requiredNames.map((name) => {
     const artifact = artifacts.find((candidate) => candidate.name === name);
     assert.ok(artifact, `Missing package artifact '${name}'.`);
@@ -272,6 +275,7 @@ async function validateNativeInstall(temporaryDirectory, artifacts) {
   });
   await install(consumerDirectory, [...nativeArtifacts, "ttsc@0.28.5", "typescript@7.0.2"]);
   const ttsc = join(consumerDirectory, "node_modules", ".bin", "ttsc");
+  const refinement = join(consumerDirectory, "node_modules", ".bin", "ts-refinement");
   await run(
     ttsc,
     ["build", "--project", "tsconfig.json", "--emit", "--outDir", "dist"],
@@ -281,6 +285,7 @@ async function validateNativeInstall(temporaryDirectory, artifacts) {
   assert.match(emitted, /known = 5;/u);
   assert.match(emitted, /new __ts_refinement_error/u);
   assert.doesNotMatch(emitted, /as Positive/u);
+  await run(refinement, ["verify", "dist"], consumerDirectory);
 }
 
 await validateMetadata();
