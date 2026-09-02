@@ -303,6 +303,12 @@ describe("Rolldown plugin", () => {
     expect(() => nested.checkTree(tree)).toThrowError(
       expect.objectContaining({ path: ".children[0].children[0].value", value: 0 }),
     );
+    const cyclicTree: { children: NestedTreeValue[]; value: number } = {
+      children: [],
+      value: 1,
+    };
+    cyclicTree.children.push(cyclicTree);
+    expect(nested.checkTree(cyclicTree)).toBe(cyclicTree);
   });
 
   it("analyzes and maps the exact source supplied by a prior plugin", async () => {

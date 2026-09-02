@@ -48,6 +48,7 @@ describe("TypeScript-Go native plugin", () => {
     expect(emitted).toContain("runtimeChecked");
     expect(emitted).toContain("Object.keys");
     expect(emitted).toContain("__ts_refinement_validate0");
+    expect(emitted).toContain("new WeakSet");
     expect(emitted).toContain('path: ("" + __ts_refinement_path');
     expect(emitted).not.toContain("as Positive");
 

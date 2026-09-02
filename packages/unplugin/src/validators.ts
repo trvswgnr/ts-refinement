@@ -286,17 +286,23 @@ export function createValidatorRegistry(
                 "path",
                 "  ",
                 (nested, nestedPath, indent) => [
-                  `${indent}${targetFunction}(${nested}, ${nestedPath}, refinement, marker);`,
+                  `${indent}${targetFunction}(${nested}, ${nestedPath}, refinement, marker, seen);`,
                 ],
               ),
             ];
           });
-          return `function ${functionName}(subject, path, refinement, marker) {\n${[
-            ...emittedChecks,
-            ...emittedRecursions,
-          ].join("\n")}\n}`;
+          return `function ${functionName}(subject, path, refinement, marker, seen) {
+  if ((typeof subject === "object" && subject !== null) || typeof subject === "function") {
+    if (seen[${functionIndex}].has(subject)) return;
+    seen[${functionIndex}].add(subject);
+  }
+${[...emittedChecks, ...emittedRecursions].join("\n")}
+}`;
         });
-        validationCode = `${functions.join("\n\n")}\n\n  ${functionNames.get("[]")}(value, "", refinement, marker);`;
+        validationCode = `${functions.join("\n\n")}
+
+  const seen = Array.from({ length: ${targetPaths.size} }, () => new WeakSet());
+  ${functionNames.get("[]")}(value, "", refinement, marker, seen);`;
       }
       const moduleCode = `import { RefinementError } from ${JSON.stringify(runtimeModule)};
 

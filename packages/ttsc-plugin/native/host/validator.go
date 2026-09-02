@@ -31,7 +31,13 @@ func emitValidator(checks []analysis.Check, recursions []analysis.Recursion, err
 	}
 	functions := make([]string, 0, len(targetPaths))
 	for functionIndex, targetPath := range targetPaths {
-		lines := []string{fmt.Sprintf("  function __ts_refinement_validate%d(subject: any, path: string): void {", functionIndex)}
+		lines := []string{
+			fmt.Sprintf("  function __ts_refinement_validate%d(subject: any, path: string, seen: WeakSet<object>[]): void {", functionIndex),
+			"    if ((typeof subject === \"object\" && subject !== null) || typeof subject === \"function\") {",
+			fmt.Sprintf("      if (seen[%d].has(subject)) return;", functionIndex),
+			fmt.Sprintf("      seen[%d].add(subject);", functionIndex),
+			"    }",
+		}
 		for checkIndex, check := range checks {
 			relative := relativePath(check.Path, targetPath)
 			if relative == nil {
@@ -59,14 +65,16 @@ func emitValidator(checks []analysis.Check, recursions []analysis.Recursion, err
 				"path",
 				"    ",
 				func(nested, nestedPath, indent string) []string {
-					return []string{fmt.Sprintf("%s__ts_refinement_validate%d(%s, %s);", indent, targetIndex, nested, nestedPath)}
+					return []string{fmt.Sprintf("%s__ts_refinement_validate%d(%s, %s, seen);", indent, targetIndex, nested, nestedPath)}
 				},
 			))
 		}
 		lines = append(lines, "  }")
 		functions = append(functions, strings.Join(lines, "\n"))
 	}
-	return strings.Join(functions, "\n") + "\n  __ts_refinement_validate0(__ts_refinement_value, \"\");"
+	return strings.Join(functions, "\n") +
+		fmt.Sprintf("\n  const __ts_refinement_seen = Array.from({ length: %d }, () => new WeakSet<object>());", len(targetPaths)) +
+		"\n  __ts_refinement_validate0(__ts_refinement_value, \"\", __ts_refinement_seen);"
 }
 
 func emitCheck(
