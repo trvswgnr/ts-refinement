@@ -86,11 +86,12 @@ export function createValidatorRegistry(
         .join(" && ");
       const moduleCode = `import { RefinementError } from ${JSON.stringify(runtimeModule)};
 
-export function assert(value, refinement) {
+export function assert(value, refinement, marker) {
   if (!(${condition})) {
     throw new RefinementError({
       predicate: ${JSON.stringify(predicateLabel)},
       refinement,
+      marker,
       value,
     });
   }

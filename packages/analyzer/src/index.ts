@@ -7,6 +7,15 @@ export {
   type RefinementSite,
 } from "./analyze.ts";
 export {
+  refinementManifestSchemaVersion,
+  refinementManifestFileName,
+  refinementMarkerPrefix,
+  refinementSiteMarker,
+  type RefinementManifest,
+  type RefinementManifestAsset,
+  type RefinementManifestSite,
+} from "./manifest.ts";
+export {
   createDiagnostic,
   DiagnosticCode,
   formatDiagnosticCode,

@@ -3,6 +3,7 @@ import ts from "typescript";
 
 import { transformSource } from "../packages/unplugin/src/transform.ts";
 import { createValidatorRegistry } from "../packages/unplugin/src/validators.ts";
+import { createBuildTracker } from "../packages/unplugin/src/manifest.ts";
 
 import { fixtureFile, fixtureProgram } from "./helpers.ts";
 
@@ -201,5 +202,23 @@ describe("source transform", () => {
     expect(conditions).not.toMatch(
       /\b(?:LIMIT|MIN_AGE|NEGATIVE|ESCAPED|ENABLED|BIG_LIMIT|IMPORTED_LIMIT)\b/u,
     );
+  });
+
+  it("assigns distinct durable markers only to runtime-required nested sites", () => {
+    const state = fixtureProgram();
+    const sourceFile = state.program.getSourceFile(fixtureFile("nested-runtime.ts"));
+    if (sourceFile === undefined) throw new Error("fixture was not loaded");
+    const registry = createValidatorRegistry(ts, "@ts-refinement/runtime");
+    const tracker = createBuildTracker();
+    tracker.reset(state.configPath);
+    const output = transformSource(state.context, sourceFile, sourceFile.text, registry, tracker);
+
+    expect(output.diagnostics).toEqual([]);
+    expect(tracker.sites).toHaveLength(8);
+    expect(new Set(tracker.sites.map((site) => site.id)).size).toBe(8);
+    expect(tracker.sites.every((site) => site.module === "nested-runtime.ts")).toBe(true);
+    for (const site of tracker.sites) {
+      expect(output.code).toContain(`ts-refinement-site:${tracker.buildId}:${site.id}`);
+    }
   });
 });

@@ -1,10 +1,17 @@
-import { dirname, matchesGlob, relative, resolve } from "node:path";
+import { dirname, extname, matchesGlob, relative, resolve } from "node:path";
 
 import ts from "typescript";
 import { createUnplugin, type UnpluginFactory } from "unplugin";
 
 import type { RefinementTypesPluginOptions } from "./options.ts";
 import { createProgramState, type ProgramState } from "./program.ts";
+import {
+  createBuildTracker,
+  finalAssetsFromPaths,
+  writeBuildManifest,
+  writeFinalAssetManifest,
+  writeFinalAssetManifestSync,
+} from "./manifest.ts";
 import { transformSource } from "./transform.ts";
 import { createValidatorRegistry } from "./validators.ts";
 
@@ -16,6 +23,14 @@ function isTransformableTypeScript(fileName: string): boolean {
   return /\.[cm]?tsx?$/u.test(fileName) && !/\.d\.[cm]?ts$/u.test(fileName);
 }
 
+function isJavaScriptAsset(fileName: string): boolean {
+  return [".cjs", ".js", ".mjs"].includes(extname(fileName));
+}
+
+function isScriptModule(fileName: string): boolean {
+  return /\.[cm]?[jt]sx?$/u.test(fileName);
+}
+
 const factory: UnpluginFactory<RefinementTypesPluginOptions | undefined, false> = (
   options = {},
   meta,
@@ -23,17 +38,106 @@ const factory: UnpluginFactory<RefinementTypesPluginOptions | undefined, false> 
   const ignore = options.ignore ?? [];
   const runtimeModule = options.runtimeModule ?? "@ts-refinement/runtime";
   const registry = createValidatorRegistry(ts, runtimeModule);
+  const tracker = createBuildTracker();
   let state: ProgramState | null = null;
+  const rollupManifestHooks = {
+    writeBundle(outputOptions, bundle) {
+      return writeBuildManifest(tracker, outputOptions, bundle);
+    },
+  } satisfies Partial<import("rollup").Plugin>;
+  const rolldownManifestHooks = {
+    writeBundle(outputOptions, bundle) {
+      return writeBuildManifest(tracker, outputOptions, bundle);
+    },
+  } satisfies Partial<import("rolldown").Plugin>;
+  const viteManifestHooks = {
+    writeBundle(outputOptions, bundle) {
+      return writeBuildManifest(tracker, outputOptions, bundle);
+    },
+  } satisfies Partial<import("vite").Plugin>;
 
   return {
     name: "ts-refinement",
     enforce: "pre",
+    esbuild: {
+      setup(build) {
+        build.initialOptions.metafile = true;
+        build.onEnd(async (result) => {
+          if (result.errors.length > 0 || build.initialOptions.write === false) return;
+          const workingDirectory = resolve(build.initialOptions.absWorkingDir ?? process.cwd());
+          const directory = build.initialOptions.outfile
+            ? dirname(resolve(workingDirectory, build.initialOptions.outfile))
+            : build.initialOptions.outdir
+              ? resolve(workingDirectory, build.initialOptions.outdir)
+              : null;
+          if (directory === null) {
+            throw new Error("esbuild requires outfile or outdir to write a refinement manifest.");
+          }
+          const paths = Object.entries(result.metafile?.outputs ?? {})
+            .filter(([, output]) => Object.keys(output.inputs).some(isScriptModule))
+            .map(([fileName]) => resolve(workingDirectory, fileName));
+          await writeFinalAssetManifest(
+            tracker,
+            directory,
+            await finalAssetsFromPaths(directory, paths),
+          );
+        });
+      },
+    },
+    farm: {
+      writeResources: {
+        executor(parameters) {
+          const assets = Object.entries(parameters.resourcesMap)
+            .filter(([, resource]) => resource.resourceType === "js")
+            .map(([file, resource]) => ({ file, source: Uint8Array.from(resource.bytes) }));
+          const outputPath = parameters.config?.output?.path;
+          if (outputPath === undefined) {
+            throw new Error("Farm requires an output path to write a refinement manifest.");
+          }
+          writeFinalAssetManifestSync(tracker, resolve(outputPath), assets);
+        },
+      },
+    },
+    rolldown: rolldownManifestHooks,
+    rollup: rollupManifestHooks,
+    vite: viteManifestHooks,
+    webpack(compiler) {
+      compiler.hooks.afterEmit.tapPromise("ts-refinement-manifest", async (compilation) => {
+        if (compilation.errors.length > 0) return;
+        const chunkFiles = new Set([...compilation.chunks].flatMap((chunk) => [...chunk.files]));
+        const paths = compilation
+          .getAssets()
+          .filter((asset) => chunkFiles.has(asset.name) || isJavaScriptAsset(asset.name))
+          .map((asset) => resolve(compiler.outputPath, asset.name));
+        await writeFinalAssetManifest(
+          tracker,
+          compiler.outputPath,
+          await finalAssetsFromPaths(compiler.outputPath, paths),
+        );
+      });
+    },
+    rspack(compiler) {
+      compiler.hooks.afterEmit.tapPromise("ts-refinement-manifest", async (compilation) => {
+        if (compilation.errors.length > 0) return;
+        const chunkFiles = new Set([...compilation.chunks].flatMap((chunk) => [...chunk.files]));
+        const paths = compilation
+          .getAssets()
+          .filter((asset) => chunkFiles.has(asset.name) || isJavaScriptAsset(asset.name))
+          .map((asset) => resolve(compiler.outputPath, asset.name));
+        await writeFinalAssetManifest(
+          tracker,
+          compiler.outputPath,
+          await finalAssetsFromPaths(compiler.outputPath, paths),
+        );
+      });
+    },
 
     buildStart() {
       registry.clear();
       if (state === null || !state.isConfigCurrent()) {
         state = createProgramState(ts, options);
       }
+      tracker.reset(state.configPath);
       if (meta.framework !== "esbuild") {
         for (const configFile of state.configFiles) this.addWatchFile(configFile);
         for (const sourceFile of state.program.getSourceFiles()) {
@@ -84,7 +188,7 @@ const factory: UnpluginFactory<RefinementTypesPluginOptions | undefined, false> 
           else this.error({ id: fileName, message });
           return null;
         }
-        const output = transformSource(context, sourceFile, code, registry);
+        const output = transformSource(context, sourceFile, code, registry, tracker);
         const diagnostic = output.diagnostics[0];
         if (diagnostic !== undefined) {
           const position = sourceFile.getLineAndCharacterOfPosition(diagnostic.start);

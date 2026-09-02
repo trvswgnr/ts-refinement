@@ -1,4 +1,6 @@
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -7,6 +9,7 @@ import { rolldown } from "rolldown";
 import { describe, expect, it } from "vitest";
 
 import { refinementTypesPlugin } from "@ts-refinement/rolldown";
+import type { RefinementManifest } from "@ts-refinement/analyzer";
 import { fixtureDirectory, fixtureFile, fixtureProgram } from "./helpers.ts";
 
 interface RuntimeFixture {
@@ -247,7 +250,7 @@ describe("Rolldown plugin", () => {
     const changedChunk = changedGenerated.output.find((output) => output.type === "chunk");
     if (changedChunk === undefined) throw new Error("bundle did not emit a chunk");
     expect(changedChunk.code).toMatch(
-      /const knownGood = assert(?:\$\d+)?\(Math\.random\(\), "Positive"\);/u,
+      /const knownGood = assert(?:\$\d+)?\(Math\.random\(\), "Positive", "ts-refinement-site:[^"]+"\);/u,
     );
     expect(
       changedChunk.map?.sourcesContent?.some((source) =>
@@ -429,6 +432,66 @@ describe("Rolldown plugin", () => {
   it("fails the build for a statically false assertion", async () => {
     const bundle = await build(fixtureFile("build-invalid.ts"));
     await expect(bundle.generate({ format: "esm" })).rejects.toThrow(/RF1200/u);
+  });
+
+  it("writes a hashed manifest for distinct nested runtime sites only", async () => {
+    const directory = await realpath(await mkdtemp(join(tmpdir(), "ts-refinement-manifest-")));
+    try {
+      const bundle = await rolldown({
+        input: fixtureFile("nested-runtime.ts"),
+        plugins: [
+          createRefinementPlugin(),
+          {
+            name: "javascript-asset",
+            buildStart() {
+              this.emitFile({
+                fileName: "loader.js",
+                source: "export const loaded = true;\n",
+                type: "asset",
+              });
+            },
+          },
+        ],
+      });
+      await bundle.write({ dir: directory, format: "esm", sourcemap: true });
+      const code = await readFile(join(directory, "nested-runtime.js"), "utf8");
+      const loader = await readFile(join(directory, "loader.js"), "utf8");
+      // SAFETY: the plugin produced this JSON file from the RefinementManifest contract.
+      const manifest = JSON.parse(
+        await readFile(join(directory, ".ts-refinement-manifest.json"), "utf8"),
+      ) as RefinementManifest;
+
+      expect(manifest.schemaVersion).toBe(1);
+      expect(manifest.project.configPath).toBe(fixtureFile("tsconfig.json"));
+      expect(manifest.sites).toHaveLength(8);
+      expect(new Set(manifest.sites.map((site) => site.id)).size).toBe(8);
+      expect(manifest.assets).toEqual([
+        {
+          file: "loader.js",
+          sha256: createHash("sha256").update(loader).digest("hex"),
+        },
+        {
+          file: "nested-runtime.js",
+          sha256: createHash("sha256").update(code).digest("hex"),
+        },
+      ]);
+      for (const site of manifest.sites) {
+        expect(code).toContain(`ts-refinement-site:${manifest.buildId}:${site.id}`);
+      }
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("does not create a manifest when a static failure aborts the build", async () => {
+    const directory = await realpath(await mkdtemp(join(tmpdir(), "ts-refinement-manifest-")));
+    try {
+      const bundle = await build(fixtureFile("build-invalid.ts"));
+      await expect(bundle.write({ dir: directory, format: "esm" })).rejects.toThrow(/RF1200/u);
+      expect(existsSync(join(directory, ".ts-refinement-manifest.json"))).toBe(false);
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
   });
 
   it("fails before loading a validator for opaque normalized syntax", async () => {

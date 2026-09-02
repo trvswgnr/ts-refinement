@@ -35,6 +35,9 @@
     "build": "bunx --no-install tsdown --config ../../tsdown.config.ts --filter cli",
     "prepack": "bun run build"
   },
+  "dependencies": {
+    "valibot": "1.4.2"
+  },
   "peerDependencies": {
     "ts-refinement": "0.1.0",
     "typescript": ">=5.7 <7"
