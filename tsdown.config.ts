@@ -1,5 +1,7 @@
 import { defineConfig, type UserConfig } from "tsdown";
 
+import refinementTypes from "./packages/unplugin/src/rolldown.ts";
+
 const shared = {
   clean: true,
   deps: {
@@ -20,6 +22,7 @@ export default defineConfig([
     entry: ["packages/core/src/index.ts"],
     name: "core",
     outDir: "packages/core/dist",
+    plugins: [refinementTypes()],
   },
   {
     ...shared,

@@ -83,13 +83,6 @@ function containedAssetPath(directory: string, fileName: string): AssetPathResul
 }
 
 function parseMarkers(fileName: string, source: string): Set<string> | null {
-  const transpiled = ts.transpileModule(source, {
-    compilerOptions: { allowJs: true, target: ts.ScriptTarget.Latest },
-    fileName,
-    reportDiagnostics: true,
-  });
-  if ((transpiled.diagnostics?.length ?? 0) > 0) return null;
-
   const sourceFile = ts.createSourceFile(
     fileName,
     source,
@@ -97,6 +90,11 @@ function parseMarkers(fileName: string, source: string): Set<string> | null {
     true,
     ts.ScriptKind.JS,
   );
+  // SAFETY: createSourceFile records syntax diagnostics on this stable compiler-owned field.
+  const parsedSource = sourceFile as ts.SourceFile & {
+    readonly parseDiagnostics: readonly ts.Diagnostic[];
+  };
+  if (parsedSource.parseDiagnostics.length > 0) return null;
   const markers = new Set<string>();
   function visit(node: ts.Node): void {
     if (ts.isStringLiteralLike(node)) markers.add(node.text);

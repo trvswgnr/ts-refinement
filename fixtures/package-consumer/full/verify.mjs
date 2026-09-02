@@ -4,12 +4,24 @@ import { resolve } from "node:path";
 import { rolldown } from "rolldown";
 import refinementTypes from "@ts-refinement/rolldown";
 
-const [, , rolldownPackage] = await Promise.all([
-  import("ts-refinement"),
+const [, rolldownPackage] = await Promise.all([
   import("@ts-refinement/analyzer"),
   import("@ts-refinement/rolldown"),
   import("@ts-refinement/runtime"),
 ]);
+await import("ts-refinement").then(
+  () => {
+    throw new TypeError("The type-only ts-refinement package unexpectedly loaded at runtime.");
+  },
+  (error) => {
+    if (
+      !(error instanceof Error) ||
+      !/Package subpath.*not defined|No "exports" main/u.test(error.message)
+    ) {
+      throw error;
+    }
+  },
+);
 if (
   !(rolldownPackage.default instanceof Function) ||
   !(rolldownPackage.refinementTypesPlugin instanceof Function)
