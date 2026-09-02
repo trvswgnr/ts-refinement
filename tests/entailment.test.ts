@@ -140,10 +140,20 @@ describe("normalized predicate entailment", () => {
 
   it("models length as a finite nonnegative integer term", () => {
     expect(entails([predicate("s.length > 5")], [predicate("s.length > 0")])).toBe(true);
-    expect(entails([], [predicate("s.length >= 0")])).toBe(true);
-    expect(entails([], [predicate("Number.isInteger(s.length)")])).toBe(true);
+    expect(entails([], [predicate("s.length >= 0")])).toBe(false);
+    expect(entails([], [predicate("Number.isInteger(s.length)")])).toBe(false);
+    expect(
+      entails([predicate("Array.isArray(s)")], [predicate("Number.isInteger(s.length)")]),
+    ).toBe(true);
+    expect(entails([predicate('typeof s === "string"')], [predicate("s.length >= 0")])).toBe(true);
+    expect(
+      entails(
+        [predicate("Array.isArray(s)"), predicate("s.length % 4 === 0")],
+        [predicate("s.length % 2 === 0")],
+      ),
+    ).toBe(true);
     expect(entails([predicate("s.length % 4 === 0")], [predicate("s.length % 2 === 0")])).toBe(
-      true,
+      false,
     );
   });
 

@@ -15,9 +15,6 @@ interface Congruence {
 }
 
 interface Term {
-  readonly intrinsicFinite: boolean;
-  readonly intrinsicIntegral: boolean;
-  readonly intrinsicLower: Bound | null;
   readonly key: string;
 }
 
@@ -59,12 +56,8 @@ interface Affine {
   readonly transformed: boolean;
 }
 
-const subjectTerm: Term = {
-  intrinsicFinite: false,
-  intrinsicIntegral: false,
-  intrinsicLower: null,
-  key: "subject",
-};
+const subjectTerm: Term = { key: "subject" };
+const lengthTerm: Term = { key: "subject.length" };
 
 function termOf(expression: NormalizedExpression): Term | null {
   if (expression.kind === "subject") return subjectTerm;
@@ -75,12 +68,7 @@ function termOf(expression: NormalizedExpression): Term | null {
     expression.object.kind === "subject" &&
     expression.property === "length"
   ) {
-    return {
-      intrinsicFinite: true,
-      intrinsicIntegral: true,
-      intrinsicLower: { inclusive: true, value: 0 },
-      key: "subject.length",
-    };
+    return lengthTerm;
   }
   return null;
 }
@@ -589,6 +577,36 @@ function typeFact(expression: NormalizedExpression): TypeFact | null {
   return null;
 }
 
+function hasLengthTypeEvidence(expression: NormalizedExpression): boolean {
+  if (
+    expression.kind === "call" &&
+    !expression.optional &&
+    expression.arguments.length === 1 &&
+    expression.arguments[0]?.kind === "subject" &&
+    expression.callee.kind === "member" &&
+    !expression.callee.computed &&
+    !expression.callee.optional &&
+    expression.callee.object.kind === "free" &&
+    expression.callee.object.name === "Array" &&
+    expression.callee.property === "isArray"
+  ) {
+    return true;
+  }
+  if (expression.kind !== "binary" || expression.operator !== "===") return false;
+  const pairs = [
+    [expression.left, expression.right],
+    [expression.right, expression.left],
+  ] as const;
+  return pairs.some(
+    ([left, right]) =>
+      left.kind === "unary" &&
+      left.operator === "typeof" &&
+      left.operand.kind === "subject" &&
+      right.kind === "literal" &&
+      right.value === "string",
+  );
+}
+
 function absolute(value: Scalar): Scalar {
   return value < 0 ? -value : value;
 }
@@ -636,7 +654,7 @@ function parseCongruence(expression: NormalizedExpression): CongruenceFact | nul
   const positiveModulus = absolute(modulus);
   if (absolute(remainder) >= positiveModulus) return null;
   const term = termOf(remainderExpression.left);
-  if (term === null || (kind === "bigint" && term.intrinsicIntegral)) return null;
+  if (term === null || (kind === "bigint" && term.key === lengthTerm.key)) return null;
   return {
     kind,
     modulus: positiveModulus,
@@ -656,14 +674,13 @@ function domainKey(term: Term, kind: ScalarKind): string {
   return `${kind}:${term.key}`;
 }
 
-function createDomain(term: Term, kind: ScalarKind): Domain {
-  const lower = kind === "number" && term.intrinsicLower !== null ? term.intrinsicLower : null;
+function createDomain(kind: ScalarKind): Domain {
   return {
     bigintTyped: false,
     congruences: [],
-    finite: kind === "number" && term.intrinsicFinite,
-    integral: kind === "bigint" || (kind === "number" && term.intrinsicIntegral),
-    lower,
+    finite: false,
+    integral: kind === "bigint",
+    lower: null,
     upper: null,
   };
 }
@@ -761,7 +778,7 @@ export function entails(
     const key = domainKey(term, kind);
     let domain = domains.get(key);
     if (domain === undefined) {
-      domain = createDomain(term, kind);
+      domain = createDomain(kind);
       domains.set(key, domain);
     }
     return domain;
@@ -773,6 +790,14 @@ export function entails(
     const domain = getDomain(fact.term, "number");
     domain.finite = true;
     if (fact.kind === "integral") domain.integral = true;
+  }
+
+  for (const atom of sourceAtoms) {
+    if (!hasLengthTypeEvidence(atom)) continue;
+    const domain = getDomain(lengthTerm, "number");
+    domain.finite = true;
+    domain.integral = true;
+    domain.lower = strongerLower(domain.lower, { inclusive: true, value: 0 });
   }
 
   for (const atom of sourceAtoms) {
