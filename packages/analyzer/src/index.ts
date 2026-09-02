@@ -24,6 +24,7 @@ export { displayStaticValue, type StaticRuntimeValue, type StaticValue } from ".
 export {
   compileExpression,
   findOpaqueExpression,
+  foldFreeIdentifiers,
   serializeExpression,
   type NormalizedBinding,
   type NormalizedBindingElement,
@@ -35,6 +36,7 @@ export { normalizePredicate } from "./predicate/normalize.ts";
 export {
   emitPredicateWithSubject,
   parsePredicate,
+  parsePredicateCandidates,
   type ParsedPredicate,
   type PredicateParseResult,
 } from "./predicate/parse.ts";
@@ -44,7 +46,9 @@ export { filterEntailedRefinementDiagnostics } from "./refinement/filter-diagnos
 export {
   resolveRefinement,
   resolveRefinementMetadata,
+  resolvePredicateAtDeclaration,
   type AnalyzerContext,
+  type PredicateResolution,
   type RefinementDefinition,
   type RefinementResolution,
   type RefinementResolutionIssue,

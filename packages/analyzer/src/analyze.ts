@@ -10,10 +10,8 @@ import { evaluateSourceExpression, provePredicates, type Proof } from "./proof/e
 import { displayStaticValue } from "./proof/values.ts";
 import { collectGuardPredicates } from "./proof/guards.ts";
 import { entails } from "./proof/entail.ts";
-import { findOpaqueExpression } from "./predicate/ir.ts";
-import { normalizePredicate } from "./predicate/normalize.ts";
-import { parsePredicate } from "./predicate/parse.ts";
 import {
+  resolvePredicateAtDeclaration,
   resolveRefinementMetadata,
   type AnalyzerContext,
   type RefinementDefinition,
@@ -89,30 +87,16 @@ export function getRefinementDefinitionDiagnostics(
         context.ts.isLiteralTypeNode(predicateType) &&
         context.ts.isStringLiteral(predicateType.literal)
       ) {
-        const parsed = parsePredicate(context.ts, predicateType.literal.text);
-        if (!parsed.ok) {
-          const location = nodeLocation(predicateType.literal);
-          diagnostics.push(
-            ...parsed.diagnostics.map((diagnostic) => ({
-              ...diagnostic,
-              length: location.length,
-              start: location.start,
-            })),
-          );
-        } else {
-          const opaque = findOpaqueExpression(
-            normalizePredicate(context.ts, parsed.predicate).expression,
-          );
-          if (opaque !== null) {
-            diagnostics.push(
-              createDiagnostic(
-                DiagnosticCode.UnsupportedRuntimeSyntax,
-                `Refinement expression syntax '${opaque.syntaxKind}' cannot be compiled for runtime validation.`,
-                nodeLocation(predicateType.literal),
-              ),
-            );
-          }
-        }
+        const resolved = resolvePredicateAtDeclaration(
+          context,
+          predicateType.literal.text,
+          predicateType,
+        );
+        diagnostics.push(
+          ...resolved.issues.map((issue) =>
+            createDiagnostic(issue.code, issue.message, nodeLocation(predicateType.literal)),
+          ),
+        );
       }
     }
     context.ts.forEachChild(node, visit);
