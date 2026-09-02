@@ -170,4 +170,36 @@ describe("source transform", () => {
     expect(output.code?.match(/refinement-types:validator:/gu)).toHaveLength(2);
     expect(register).toHaveBeenCalledTimes(2);
   });
+
+  it("emits folded capture literals without module identifier references", () => {
+    const state = fixtureProgram();
+    const sourceFile = state.program.getSourceFile(fixtureFile("capture-runtime.ts"));
+    if (sourceFile === undefined) throw new Error("fixture was not loaded");
+    const registry = createValidatorRegistry(ts, "@ts-refinement/runtime");
+    const register = vi.spyOn(registry, "register");
+    const output = transformSource(state.context, sourceFile, sourceFile.text, registry);
+
+    expect(output.diagnostics).toEqual([]);
+    expect(output.code?.match(/refinement-types:validator:/gu)).toHaveLength(9);
+    expect(register).toHaveBeenCalledTimes(11);
+    const entries = register.mock.results.flatMap((result) =>
+      result.type === "return" ? [result.value] : [],
+    );
+    expect(new Set(entries.map((entry) => entry.key)).size).toBe(9);
+    const modules = [...new Set(entries.map((entry) => entry.moduleCode))].join("\n");
+    expect(modules).toContain("value >= 2");
+    expect(modules).toContain("value >= 5");
+    expect(modules).toContain("value >= 18");
+    expect(modules).toContain("value > -3");
+    expect(modules).toContain('value === "line\\n\\\"quote"');
+    expect(modules).toContain("value > 0 === true");
+    expect(modules).toContain("value < 42n");
+    expect(modules).toContain("value >= 7");
+    const conditions = entries
+      .map((entry) => entry.moduleCode.match(/if \(!\(\((.*)\)\)\)/u)?.[1] ?? "")
+      .join("\n");
+    expect(conditions).not.toMatch(
+      /\b(?:LIMIT|MIN_AGE|NEGATIVE|ESCAPED|ENABLED|BIG_LIMIT|IMPORTED_LIMIT)\b/u,
+    );
+  });
 });

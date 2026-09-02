@@ -41,7 +41,8 @@ export function normalizePredicate(
     cache = new Map();
     normalizerCaches.set(tsModule, cache);
   }
-  const cached = cache.get(predicate.source);
+  const cacheKey = JSON.stringify([predicate.source, predicate.subject]);
+  const cached = cache.get(cacheKey);
   if (cached !== undefined) return cached;
 
   const subjectReferences = new Set(predicate.subjectReferences);
@@ -333,6 +334,6 @@ export function normalizePredicate(
     source: predicate.source,
     subject: predicate.subject,
   } satisfies NormalizedPredicate;
-  cache.set(predicate.source, normalized);
+  cache.set(cacheKey, normalized);
   return normalized;
 }

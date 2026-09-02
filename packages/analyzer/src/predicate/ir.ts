@@ -300,6 +300,104 @@ export function findOpaqueExpression(
   throw new Error("Unsupported normalized expression.");
 }
 
+export function foldFreeIdentifiers(
+  expression: NormalizedExpression,
+  captures: ReadonlyMap<string, LiteralValue>,
+): NormalizedExpression {
+  function foldBinding(binding: NormalizedBinding): NormalizedBinding {
+    switch (binding.kind) {
+      case "array-binding":
+        return {
+          elements: binding.elements.map((element) =>
+            element === null ? null : foldBindingElement(element),
+          ),
+          kind: "array-binding",
+        };
+      case "binding":
+        return binding;
+      case "object-binding":
+        return {
+          elements: binding.elements.map((element) => ({
+            ...foldBindingElement(element),
+            computed: element.computed,
+            property:
+              typeof element.property === "string" || element.property === null
+                ? element.property
+                : foldFreeIdentifiers(element.property, captures),
+          })),
+          kind: "object-binding",
+        };
+    }
+
+    throw new Error("Unsupported normalized binding.");
+  }
+
+  function foldBindingElement(element: NormalizedBindingElement): NormalizedBindingElement {
+    return {
+      binding: foldBinding(element.binding),
+      initializer:
+        element.initializer === null ? null : foldFreeIdentifiers(element.initializer, captures),
+      rest: element.rest,
+    };
+  }
+
+  switch (expression.kind) {
+    case "array":
+      return {
+        elements: expression.elements.map((element) => foldFreeIdentifiers(element, captures)),
+        kind: "array",
+      };
+    case "binary":
+      return {
+        ...expression,
+        left: foldFreeIdentifiers(expression.left, captures),
+        right: foldFreeIdentifiers(expression.right, captures),
+      };
+    case "call":
+      return {
+        ...expression,
+        arguments: expression.arguments.map((argument) => foldFreeIdentifiers(argument, captures)),
+        callee: foldFreeIdentifiers(expression.callee, captures),
+      };
+    case "conditional":
+      return {
+        condition: foldFreeIdentifiers(expression.condition, captures),
+        kind: "conditional",
+        whenFalse: foldFreeIdentifiers(expression.whenFalse, captures),
+        whenTrue: foldFreeIdentifiers(expression.whenTrue, captures),
+      };
+    case "free":
+      return captures.has(expression.name)
+        ? { kind: "literal", value: captures.get(expression.name) }
+        : expression;
+    case "function":
+      return {
+        ...expression,
+        body: foldFreeIdentifiers(expression.body, captures),
+        parameters: expression.parameters.map(foldBindingElement),
+      };
+    case "member":
+      return {
+        ...expression,
+        object: foldFreeIdentifiers(expression.object, captures),
+        property:
+          typeof expression.property === "string"
+            ? expression.property
+            : foldFreeIdentifiers(expression.property, captures),
+      };
+    case "unary":
+      return { ...expression, operand: foldFreeIdentifiers(expression.operand, captures) };
+    case "literal":
+    case "local":
+    case "opaque":
+    case "regexp":
+    case "subject":
+      return expression;
+  }
+
+  throw new Error("Unsupported normalized expression.");
+}
+
 function binaryOperator(tsModule: typeof ts, operator: string): ts.BinaryOperatorToken {
   switch (operator) {
     case "**":
@@ -383,6 +481,12 @@ function literalExpression(tsModule: typeof ts, value: LiteralValue): ts.Express
     return tsModule.factory.createPrefixUnaryExpression(
       tsModule.SyntaxKind.MinusToken,
       tsModule.factory.createNumericLiteral(0),
+    );
+  }
+  if (value < 0) {
+    return tsModule.factory.createPrefixUnaryExpression(
+      tsModule.SyntaxKind.MinusToken,
+      tsModule.factory.createNumericLiteral(-value),
     );
   }
   return tsModule.factory.createNumericLiteral(value);

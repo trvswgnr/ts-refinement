@@ -1,10 +1,16 @@
 import type * as ts from "typescript";
 
 import { DiagnosticCode } from "../diagnostics.ts";
-import { findOpaqueExpression } from "../predicate/ir.ts";
+import { disallowedGlobals, standardGlobals } from "../predicate/globals.ts";
+import {
+  findOpaqueExpression,
+  foldFreeIdentifiers,
+  serializeExpression,
+  type LiteralValue,
+  type NormalizedPredicate,
+} from "../predicate/ir.ts";
 import { normalizePredicate } from "../predicate/normalize.ts";
-import { parsePredicate } from "../predicate/parse.ts";
-import type { NormalizedPredicate } from "../predicate/ir.ts";
+import { parsePredicateCandidates, type ParsedPredicate } from "../predicate/parse.ts";
 
 export interface AnalyzerContext {
   readonly checker: ts.TypeChecker;
@@ -22,6 +28,11 @@ export interface RefinementDefinition {
 export interface RefinementResolutionIssue {
   readonly code: number;
   readonly message: string;
+}
+
+export interface PredicateResolution {
+  readonly issues: readonly RefinementResolutionIssue[];
+  readonly predicate: NormalizedPredicate | null;
 }
 
 export type RefinementResolution =
@@ -78,10 +89,286 @@ function extractPredicateSources(
   return tags.map((tag) => tag.getName());
 }
 
-function resolveRefinementMetadataUncached(
+function resolvedSymbol(context: AnalyzerContext, node: ts.EntityName): ts.Symbol | undefined {
+  const symbol = context.checker.getSymbolAtLocation(node);
+  if (symbol === undefined || (symbol.flags & context.ts.SymbolFlags.Alias) === 0) return symbol;
+  return context.checker.getAliasedSymbol(symbol);
+}
+
+function isRefinedAlias(context: AnalyzerContext, symbol: ts.Symbol): boolean {
+  return (symbol.declarations ?? []).some((declaration) => {
+    if (!context.ts.isTypeAliasDeclaration(declaration) || declaration.name.text !== "Refined") {
+      return false;
+    }
+
+    let containsMarker = false;
+    function visit(node: ts.Node): void {
+      if (context.ts.isIdentifier(node) && node.text === "refinementBrand") {
+        containsMarker = true;
+        return;
+      }
+      context.ts.forEachChild(node, visit);
+    }
+    visit(declaration);
+    return containsMarker;
+  });
+}
+
+interface PredicateOrigin {
+  readonly scope: ts.Node;
+  readonly source: string;
+}
+
+function originForRefinedReference(
   context: AnalyzerContext,
-  targetType: ts.Type,
-): RefinementResolution {
+  node: ts.TypeReferenceNode,
+): PredicateOrigin | null {
+  const predicate = node.typeArguments?.[1];
+  if (
+    predicate === undefined ||
+    !context.ts.isLiteralTypeNode(predicate) ||
+    !context.ts.isStringLiteral(predicate.literal)
+  ) {
+    return null;
+  }
+  return { scope: predicate, source: predicate.literal.text };
+}
+
+function aliasDeclarations(
+  context: AnalyzerContext,
+  symbol: ts.Symbol,
+): readonly ts.TypeAliasDeclaration[] {
+  return (symbol.declarations ?? []).filter(context.ts.isTypeAliasDeclaration);
+}
+
+function predicateOrigins(context: AnalyzerContext, type: ts.Type): readonly PredicateOrigin[] {
+  const origins: PredicateOrigin[] = [];
+  const visited = new Set<ts.TypeAliasDeclaration>();
+
+  function visitType(node: ts.TypeNode): void {
+    if (context.ts.isParenthesizedTypeNode(node)) {
+      visitType(node.type);
+      return;
+    }
+    if (context.ts.isIntersectionTypeNode(node)) {
+      for (const part of node.types) visitType(part);
+      return;
+    }
+    if (!context.ts.isTypeReferenceNode(node)) return;
+
+    const symbol = resolvedSymbol(context, node.typeName);
+    if (symbol === undefined) return;
+    if (isRefinedAlias(context, symbol)) {
+      const base = node.typeArguments?.[0];
+      if (base !== undefined) visitType(base);
+      const origin = originForRefinedReference(context, node);
+      if (origin !== null) origins.push(origin);
+      return;
+    }
+
+    for (const declaration of aliasDeclarations(context, symbol)) {
+      if (visited.has(declaration)) continue;
+      visited.add(declaration);
+      visitType(declaration.type);
+    }
+  }
+
+  for (const declaration of type.aliasSymbol?.declarations ?? []) {
+    if (!context.ts.isTypeAliasDeclaration(declaration)) continue;
+    visited.add(declaration);
+    visitType(declaration.type);
+  }
+  return origins;
+}
+
+type CaptureResolution =
+  | { readonly ok: false }
+  | { readonly ok: true; readonly value: LiteralValue };
+
+function isStringLiteralType(tsModule: typeof ts, type: ts.Type): type is ts.StringLiteralType {
+  return (type.flags & tsModule.TypeFlags.StringLiteral) !== 0;
+}
+
+function isNumberLiteralType(tsModule: typeof ts, type: ts.Type): type is ts.NumberLiteralType {
+  return (type.flags & tsModule.TypeFlags.NumberLiteral) !== 0;
+}
+
+function isBigIntLiteralType(tsModule: typeof ts, type: ts.Type): type is ts.BigIntLiteralType {
+  return (type.flags & tsModule.TypeFlags.BigIntLiteral) !== 0;
+}
+
+function unwrapLiteralInitializer(context: AnalyzerContext, node: ts.Expression): ts.Expression {
+  let current = node;
+  for (;;) {
+    if (context.ts.isParenthesizedExpression(current)) {
+      current = current.expression;
+    } else if (context.ts.isAsExpression(current)) {
+      current = current.expression;
+    } else if (context.ts.isSatisfiesExpression(current)) {
+      current = current.expression;
+    } else {
+      return current;
+    }
+  }
+}
+
+function literalInitializer(context: AnalyzerContext, node: ts.Expression): CaptureResolution {
+  const literal = unwrapLiteralInitializer(context, node);
+  if (context.ts.isStringLiteral(literal) || context.ts.isNoSubstitutionTemplateLiteral(literal)) {
+    return { ok: true, value: literal.text };
+  }
+  if (context.ts.isNumericLiteral(literal)) return { ok: true, value: Number(literal.text) };
+  if (context.ts.isBigIntLiteral(literal)) {
+    return { ok: true, value: BigInt(literal.text.slice(0, -1)) };
+  }
+  if (literal.kind === context.ts.SyntaxKind.TrueKeyword) return { ok: true, value: true };
+  if (literal.kind === context.ts.SyntaxKind.FalseKeyword) return { ok: true, value: false };
+  if (literal.kind === context.ts.SyntaxKind.NullKeyword) return { ok: true, value: null };
+  if (
+    context.ts.isPrefixUnaryExpression(literal) &&
+    literal.operator === context.ts.SyntaxKind.MinusToken
+  ) {
+    const operand = unwrapLiteralInitializer(context, literal.operand);
+    if (context.ts.isNumericLiteral(operand)) {
+      return { ok: true, value: -Number(operand.text) };
+    }
+    if (context.ts.isBigIntLiteral(operand)) {
+      return { ok: true, value: -BigInt(operand.text.slice(0, -1)) };
+    }
+  }
+  return { ok: false };
+}
+
+function literalTypeValue(context: AnalyzerContext, type: ts.Type): CaptureResolution {
+  if (isStringLiteralType(context.ts, type)) return { ok: true, value: type.value };
+  if (isNumberLiteralType(context.ts, type)) return { ok: true, value: type.value };
+  if (isBigIntLiteralType(context.ts, type)) {
+    const { value } = type;
+    return { ok: true, value: BigInt(`${value.negative ? "-" : ""}${value.base10Value}`) };
+  }
+  if ((type.flags & context.ts.TypeFlags.BooleanLiteral) !== 0) {
+    return { ok: true, value: context.checker.typeToString(type) === "true" };
+  }
+  if ((type.flags & context.ts.TypeFlags.Null) !== 0) return { ok: true, value: null };
+  return { ok: false };
+}
+
+function immutableLiteralCapture(context: AnalyzerContext, symbol: ts.Symbol): CaptureResolution {
+  const target =
+    (symbol.flags & context.ts.SymbolFlags.Alias) === 0
+      ? symbol
+      : context.checker.getAliasedSymbol(symbol);
+  const declaration = (target.declarations ?? []).find(context.ts.isVariableDeclaration);
+  if (declaration === undefined || !context.ts.isIdentifier(declaration.name)) {
+    return { ok: false };
+  }
+  const declarationList = declaration.parent;
+  if (
+    !context.ts.isVariableDeclarationList(declarationList) ||
+    (declarationList.flags & context.ts.NodeFlags.Const) === 0 ||
+    !context.ts.isVariableStatement(declarationList.parent) ||
+    !context.ts.isSourceFile(declarationList.parent.parent)
+  ) {
+    return { ok: false };
+  }
+
+  if (declaration.initializer === undefined) return { ok: false };
+  const initialized = literalInitializer(context, declaration.initializer);
+  const typed = literalTypeValue(
+    context,
+    context.checker.getTypeOfSymbolAtLocation(target, declaration.name),
+  );
+  return initialized.ok && typed.ok && Object.is(initialized.value, typed.value)
+    ? typed
+    : { ok: false };
+}
+
+export function resolvePredicateAtDeclaration(
+  context: AnalyzerContext,
+  source: string,
+  scope: ts.Node,
+): PredicateResolution {
+  const parsed = parsePredicateCandidates(context.ts, source);
+  if (!parsed.ok) {
+    return {
+      issues: parsed.diagnostics.map((diagnostic) => ({
+        code: diagnostic.code,
+        message: diagnostic.message.replace(/^RF\d+: /u, ""),
+      })),
+      predicate: null,
+    };
+  }
+
+  const captures = new Map<string, LiteralValue>();
+  const unresolved: string[] = [];
+  const issues: RefinementResolutionIssue[] = [];
+  for (const name of parsed.predicate.freeReferences.keys()) {
+    if (standardGlobals.has(name) || disallowedGlobals.has(name)) continue;
+    const symbol = context.checker.resolveName(name, scope, context.ts.SymbolFlags.Value, true);
+    if (symbol === undefined) {
+      unresolved.push(name);
+      continue;
+    }
+    const capture = immutableLiteralCapture(context, symbol);
+    if (!capture.ok) {
+      issues.push({
+        code: DiagnosticCode.ExternalCapture,
+        message: `Predicate capture '${name}' must resolve to an immutable primitive literal.`,
+      });
+    } else {
+      captures.set(name, capture.value);
+    }
+  }
+
+  if (unresolved.length > 1) {
+    issues.push({
+      code: DiagnosticCode.CannotInferSubject,
+      message: `Cannot infer refinement subject. Unresolved identifiers: ${unresolved.sort().join(", ")}.`,
+    });
+  }
+  if (issues.length > 0) return { issues, predicate: null };
+
+  const subject = unresolved[0] ?? null;
+  const contextual: ParsedPredicate = {
+    ...parsed.predicate,
+    subject,
+    subjectReferences: subject === null ? [] : (parsed.predicate.freeReferences.get(subject) ?? []),
+  };
+  const normalized = normalizePredicate(context.ts, contextual);
+  const expression = foldFreeIdentifiers(normalized.expression, captures);
+  const predicate: NormalizedPredicate = {
+    ...normalized,
+    expression,
+    key: serializeExpression(expression),
+  };
+  const opaque = findOpaqueExpression(predicate.expression);
+  return opaque === null
+    ? { issues: [], predicate }
+    : {
+        issues: [
+          {
+            code: DiagnosticCode.UnsupportedRuntimeSyntax,
+            message: `Refinement expression syntax '${opaque.syntaxKind}' cannot be compiled for runtime validation.`,
+          },
+        ],
+        predicate: null,
+      };
+}
+
+interface RefinementParts {
+  readonly baseTypes: readonly ts.Type[];
+  readonly constituents: readonly ts.Type[];
+  readonly foundMarker: boolean;
+  readonly issues: readonly RefinementResolutionIssue[];
+  readonly predicateSources: readonly string[];
+}
+
+interface ResolvedPredicates {
+  readonly issues: readonly RefinementResolutionIssue[];
+  readonly predicates: readonly NormalizedPredicate[];
+}
+
+function collectRefinementParts(context: AnalyzerContext, targetType: ts.Type): RefinementParts {
   const constituents = flattenIntersection(context.ts, targetType);
   const baseTypes: ts.Type[] = [];
   const predicateSources: string[] = [];
@@ -94,7 +381,6 @@ function resolveRefinementMetadataUncached(
       baseTypes.push(constituent);
       continue;
     }
-
     foundMarker = true;
     const sources = extractPredicateSources(context, marker);
     if (sources === null) {
@@ -107,44 +393,74 @@ function resolveRefinementMetadataUncached(
     }
   }
 
-  if (!foundMarker) return { isRefinement: false };
+  return { baseTypes, constituents, foundMarker, issues, predicateSources };
+}
 
-  if (baseTypes.length === 0) {
+function resolvePredicateSources(
+  context: AnalyzerContext,
+  targetType: ts.Type,
+  constituents: readonly ts.Type[],
+  predicateSources: readonly string[],
+): ResolvedPredicates {
+  const issues: RefinementResolutionIssue[] = [];
+  const predicates: NormalizedPredicate[] = [];
+  const remainingSources = [...predicateSources];
+  const fallbackMarker = constituents
+    .map((constituent) => markerForType(context, constituent))
+    .find((marker) => marker !== null);
+  const fallbackScope = targetType.aliasSymbol?.declarations?.[0] ?? fallbackMarker?.declaration;
+
+  function resolveAt(source: string, scope: ts.Node | undefined): void {
+    if (scope === undefined) {
+      issues.push({
+        code: DiagnosticCode.UnableToResolveMetadata,
+        message: "Unable to resolve the refinement predicate declaration.",
+      });
+      return;
+    }
+    const resolved = resolvePredicateAtDeclaration(context, source, scope);
+    issues.push(...resolved.issues);
+    if (resolved.predicate !== null) predicates.push(resolved.predicate);
+  }
+
+  for (const origin of predicateOrigins(context, targetType)) {
+    const markerIndex = remainingSources.indexOf(origin.source);
+    if (markerIndex !== -1) remainingSources.splice(markerIndex, 1);
+    resolveAt(origin.source, origin.scope);
+  }
+  for (const source of remainingSources) resolveAt(source, fallbackScope);
+
+  return { issues, predicates };
+}
+
+function resolveRefinementMetadataUncached(
+  context: AnalyzerContext,
+  targetType: ts.Type,
+): RefinementResolution {
+  const parts = collectRefinementParts(context, targetType);
+  if (!parts.foundMarker) return { isRefinement: false };
+
+  const issues = [...parts.issues];
+  if (parts.baseTypes.length === 0) {
     issues.push({
       code: DiagnosticCode.UnableToResolveMetadata,
       message: "Unable to resolve the unrefined base type.",
     });
   }
 
-  const predicates: NormalizedPredicate[] = [];
-  for (const source of predicateSources) {
-    const parsed = parsePredicate(context.ts, source);
-    if (!parsed.ok) {
-      for (const diagnostic of parsed.diagnostics) {
-        issues.push({
-          code: diagnostic.code,
-          message: diagnostic.message.replace(/^RF\d+: /u, ""),
-        });
-      }
-    } else {
-      const predicate = normalizePredicate(context.ts, parsed.predicate);
-      const opaque = findOpaqueExpression(predicate.expression);
-      if (opaque === null) {
-        predicates.push(predicate);
-      } else {
-        issues.push({
-          code: DiagnosticCode.UnsupportedRuntimeSyntax,
-          message: `Refinement expression syntax '${opaque.syntaxKind}' cannot be compiled for runtime validation.`,
-        });
-      }
-    }
-  }
+  const resolved = resolvePredicateSources(
+    context,
+    targetType,
+    parts.constituents,
+    parts.predicateSources,
+  );
+  issues.push(...resolved.issues);
 
-  if (issues.length > 0 || baseTypes.length === 0) {
+  if (issues.length > 0 || parts.baseTypes.length === 0) {
     return { definition: null, isRefinement: true, issues };
   }
 
-  const baseType = baseTypes[0];
+  const baseType = parts.baseTypes[0];
   if (baseType === undefined) {
     return {
       definition: null,
@@ -161,9 +477,9 @@ function resolveRefinementMetadataUncached(
   return {
     definition: {
       baseType,
-      baseTypes,
+      baseTypes: parts.baseTypes,
       displayName: targetType.aliasSymbol?.getName(),
-      predicates,
+      predicates: resolved.predicates,
     },
     isRefinement: true,
     issues: [],

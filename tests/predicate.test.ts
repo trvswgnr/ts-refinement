@@ -8,6 +8,7 @@ import {
   emitPredicateWithSubject,
   normalizePredicate,
   parsePredicate,
+  parsePredicateCandidates,
   standardGlobals,
   type NormalizedExpression,
 } from "@ts-refinement/analyzer";
@@ -309,6 +310,17 @@ describe("predicate parsing and subject inference", () => {
     const parsed = parsePredicate(ts, "true");
     expect(parsed.ok).toBe(true);
     if (parsed.ok) expect(parsed.predicate.subject).toBeNull();
+  });
+
+  it("retains ambiguous free identifiers for contextual capture resolution", () => {
+    expect(parsePredicate(ts, "n >= MIN_AGE").diagnostics[0]?.code).toBe(1002);
+
+    const candidates = parsePredicateCandidates(ts, "n >= MIN_AGE");
+    expect(candidates.ok).toBe(true);
+    if (candidates.ok) {
+      expect(candidates.predicate.subject).toBeNull();
+      expect([...candidates.predicate.freeReferences.keys()]).toEqual(["n", "MIN_AGE"]);
+    }
   });
 
   it("rejects ambiguity, malformed syntax, and mutation", () => {

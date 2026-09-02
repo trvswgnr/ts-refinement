@@ -183,4 +183,67 @@ describe("TypeScript refinement analysis", () => {
     ]);
     expect(results.every((result) => result.diagnostics.length === 0)).toBe(true);
   });
+
+  it("folds literal captures in their refinement declaration modules", () => {
+    const state = fixtureProgram();
+    const source = state.program.getSourceFile(fixtureFile("capture-runtime.ts"));
+    if (source === undefined) throw new Error("fixture was not loaded");
+
+    const results = analyzeSourceFile(state.context, source);
+    expect(results).toHaveLength(11);
+    expect(results.every((result) => result.diagnostics.length === 0)).toBe(true);
+    const predicates = results.map((result) => result.site.definition?.predicates[0]);
+    expect(predicates.every((predicate) => predicate !== undefined)).toBe(true);
+    expect(predicates[0]?.key).not.toBe(predicates[1]?.key);
+    expect(predicates[2]?.key).toBe(predicates[3]?.key);
+    expect(predicates.map((predicate) => predicate?.expression)).toMatchObject([
+      { right: { kind: "literal", value: 2 } },
+      { right: { kind: "literal", value: 5 } },
+      { right: { kind: "literal", value: 18 } },
+      { right: { kind: "literal", value: 18 } },
+      { right: { kind: "literal", value: -3 } },
+      { right: { kind: "literal", value: 'line\n"quote' } },
+      { right: { kind: "literal", value: true } },
+      { right: { kind: "literal", value: 42n } },
+      { right: { kind: "literal", value: 7 } },
+      { right: { kind: "literal", value: 2 } },
+      { right: { kind: "literal", value: 2 } },
+    ]);
+    expect(results[10]?.site.definition?.predicates).toMatchObject([
+      { expression: { right: { kind: "literal", value: 2 } } },
+      { expression: { right: { kind: "literal", value: 5 } } },
+    ]);
+  });
+
+  it("reports invalid captures at their predicate declarations", () => {
+    const state = fixtureProgram();
+    const source = state.program.getSourceFile(fixtureFile("capture-invalid.ts"));
+    if (source === undefined) throw new Error("fixture was not loaded");
+
+    const diagnostics = getRefinementDefinitionDiagnostics(state.context, source);
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
+      1003, 1003, 1003, 1003, 1003, 1003, 1003, 1003, 1003, 1002,
+    ]);
+    expect(diagnostics.slice(0, 9).map((diagnostic) => diagnostic.message)).toEqual(
+      [
+        "MUTABLE",
+        "FUNCTION",
+        "OBJECT",
+        "ARRAY",
+        "BROAD",
+        "IMPORTED_BROAD",
+        "MISSING_CAPTURE",
+        "ASSERTED",
+        "AMBIENT",
+      ].map(
+        (name) =>
+          `RF1003: Predicate capture '${name}' must resolve to an immutable primitive literal.`,
+      ),
+    );
+    for (const diagnostic of diagnostics) {
+      expect(source.text.slice(diagnostic.start, diagnostic.start + diagnostic.length)).toMatch(
+        /^".*"$/u,
+      );
+    }
+  });
 });

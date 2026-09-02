@@ -85,14 +85,19 @@ function hasDisallowedSyntax(tsModule: typeof ts, expression: ts.Expression): bo
   return disallowed;
 }
 
-export function parsePredicate(tsModule: typeof ts, source: string): PredicateParseResult {
+function parsePredicateInternal(
+  tsModule: typeof ts,
+  source: string,
+  allowMultipleUnresolved: boolean,
+): PredicateParseResult {
   let cache = parserCaches.get(tsModule);
   if (cache === undefined) {
     cache = new Map();
     parserCaches.set(tsModule, cache);
   }
 
-  const cached = cache.get(source);
+  const cacheKey = `${allowMultipleUnresolved ? "candidates" : "subject"}\0${source}`;
+  const cached = cache.get(cacheKey);
   if (cached !== undefined) return cached;
 
   const wrapped = `const __predicate = (${source});`;
@@ -124,7 +129,7 @@ export function parsePredicate(tsModule: typeof ts, source: string): PredicatePa
       ],
       ok: false,
     };
-    cache.set(source, result);
+    cache.set(cacheKey, result);
     return result;
   }
 
@@ -139,7 +144,7 @@ export function parsePredicate(tsModule: typeof ts, source: string): PredicatePa
       ],
       ok: false,
     };
-    cache.set(source, result);
+    cache.set(cacheKey, result);
     return result;
   }
 
@@ -155,11 +160,11 @@ export function parsePredicate(tsModule: typeof ts, source: string): PredicatePa
       ],
       ok: false,
     };
-    cache.set(source, result);
+    cache.set(cacheKey, result);
     return result;
   }
 
-  if (free.unresolvedNames.length > 1) {
+  if (!allowMultipleUnresolved && free.unresolvedNames.length > 1) {
     const result: PredicateParseResult = {
       diagnostics: [
         createDiagnostic(
@@ -170,11 +175,11 @@ export function parsePredicate(tsModule: typeof ts, source: string): PredicatePa
       ],
       ok: false,
     };
-    cache.set(source, result);
+    cache.set(cacheKey, result);
     return result;
   }
 
-  const subject = free.unresolvedNames[0] ?? null;
+  const subject = free.unresolvedNames.length === 1 ? (free.unresolvedNames[0] ?? null) : null;
   const result: PredicateParseResult = {
     diagnostics: [],
     ok: true,
@@ -187,8 +192,19 @@ export function parsePredicate(tsModule: typeof ts, source: string): PredicatePa
       subjectReferences: subject === null ? [] : (free.freeReferences.get(subject) ?? []),
     },
   };
-  cache.set(source, result);
+  cache.set(cacheKey, result);
   return result;
+}
+
+export function parsePredicate(tsModule: typeof ts, source: string): PredicateParseResult {
+  return parsePredicateInternal(tsModule, source, false);
+}
+
+export function parsePredicateCandidates(
+  tsModule: typeof ts,
+  source: string,
+): PredicateParseResult {
+  return parsePredicateInternal(tsModule, source, true);
 }
 
 export function emitPredicateWithSubject(
