@@ -44,3 +44,28 @@ module captures are folded into generated code; rejected captures report RF90003
 Farm 1.7 emits a source-map asset but currently drops transform mappings, including mappings from
 passthrough plugins without ts-refinement. The Farm adapter forwards its transform map; source
 identity in Farm output depends on the compiler restoring transform-map composition.
+
+## Vitest
+
+Use the Vitest entry point when tests execute TypeScript through Vite's transform pipeline:
+
+```ts
+import { defineConfig } from "vitest/config";
+import refinementTypes from "@ts-refinement/unplugin/vitest";
+
+export default defineConfig({
+  plugins: [refinementTypes()],
+});
+```
+
+## Node loader
+
+Use the loader when Node executes TypeScript directly:
+
+```sh
+node --loader @ts-refinement/unplugin/loader src/index.ts
+```
+
+The loader discovers `tsconfig.json` from the current directory. Set `TS_REFINEMENT_CWD` or
+`TS_REFINEMENT_TSCONFIG` to override project discovery, and set `TS_REFINEMENT_RUNTIME_MODULE` when
+the transformed code should import `RefinementError` from a custom module.

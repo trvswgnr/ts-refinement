@@ -95,6 +95,8 @@ export default defineConfig({
 
 The same package exposes `vite`, `rollup`, `webpack`, `rspack`, `esbuild`, and `farm` adapter entry points. Each adapter accepts `cwd`, `tsconfig`, `runtimeModule`, and `ignore` options. TypeScript 7 projects use the native `ttsc` transform configured above.
 
+Vitest projects can register `@ts-refinement/unplugin/vitest` in `vitest.config.ts`. Direct Node execution can use `node --loader @ts-refinement/unplugin/loader src/index.ts`. Both paths apply the same runtime assertion transform as production bundler builds.
+
 ## Publish verification
 
 Publishable packages that expose refinements must validate the final JavaScript from `prepack`:
