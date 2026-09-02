@@ -10,7 +10,7 @@
   ],
   "type": "module",
   "scripts": {
-    "build": "tsdown",
+    "build": "bun run --cwd packages/analyzer build && tsdown",
     "fmt": "oxfmt --check .",
     "fmt:fix": "oxfmt .",
     "gate": "bun run typecheck && bun run lint && bun run fmt && bun run test:coverage && bun run test:package && bun run test:example",

@@ -1,6 +1,14 @@
 import { defineConfig, type UserConfig } from "tsdown";
 
-import refinementTypes from "./packages/unplugin/src/rolldown.ts";
+const filterIndex = process.argv.findIndex((argument) => argument === "--filter");
+const filter =
+  filterIndex === -1
+    ? process.argv.find((argument) => argument.startsWith("--filter="))?.slice("--filter=".length)
+    : process.argv[filterIndex + 1];
+const refinementTypes =
+  filter === undefined || filter === "core"
+    ? (await import("./packages/unplugin/src/rolldown.ts")).default
+    : null;
 
 const shared = {
   clean: true,
@@ -22,7 +30,7 @@ export default defineConfig([
     entry: ["packages/core/src/index.ts"],
     name: "core",
     outDir: "packages/core/dist",
-    plugins: [refinementTypes()],
+    plugins: refinementTypes === null ? [] : [refinementTypes()],
   },
   {
     ...shared,
