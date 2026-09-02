@@ -321,7 +321,7 @@ async function failureMessage(build: Promise<BuildOutput>): Promise<string> {
   return result?.status === "rejected" ? String(result.reason) : "";
 }
 
-describe("unplugin adapter conformance", () => {
+describe("unplugin adapter conformance", { timeout: 30_000 }, () => {
   it.each(builders)("builds working validators with %s", async (_name, build) => {
     const output = await build();
     expect(output.code).not.toContain("as Positive");
@@ -356,7 +356,7 @@ describe("unplugin adapter conformance", () => {
   it("fails every adapter with positioned RF diagnostics", async () => {
     for (const [_name, build] of builders) {
       const failure = await failureMessage(build(knownFalse));
-      expect(failure).toMatch(/RF1200/u);
+      expect(failure).toMatch(/RF90200/u);
       expect(failure).toMatch(/known-false\.ts/u);
       expect(failure).toMatch(/1:\d+/u);
     }

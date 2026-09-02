@@ -23,6 +23,10 @@ function isTransformableTypeScript(fileName: string): boolean {
   return /\.[cm]?tsx?$/u.test(fileName) && !/\.d\.[cm]?ts$/u.test(fileName);
 }
 
+function canContainRefinementAssertion(source: string): boolean {
+  return /\bas\s+|<\s*[A-Za-z_$][\w$]*/u.test(source);
+}
+
 function isJavaScriptAsset(fileName: string): boolean {
   return [".cjs", ".js", ".mjs"].includes(extname(fileName));
 }
@@ -146,6 +150,13 @@ const factory: UnpluginFactory<RefinementTypesPluginOptions | undefined, false> 
       }
     },
 
+    watchChange(id) {
+      if (state === null) return;
+      const fileName = resolve(cleanModuleId(id));
+      if (state.configFiles.includes(fileName)) state = null;
+      else state.invalidateSource(fileName);
+    },
+
     load: {
       filter: { id: /ts-refinement-validator-/u },
       handler(id) {
@@ -178,6 +189,14 @@ const factory: UnpluginFactory<RefinementTypesPluginOptions | undefined, false> 
           "/",
         );
         if (ignore.some((pattern) => matchesGlob(relativeFileName, pattern))) return null;
+
+        if (state.program.getSourceFile(fileName) === undefined) {
+          const message = `TypeScript module '${fileName}' is not included in the program configured by '${state.configPath}'.`;
+          if (meta.framework === "farm") throw new Error(message);
+          else this.error({ id: fileName, message });
+          return null;
+        }
+        if (!canContainRefinementAssertion(code)) return null;
 
         state.updateSource(fileName, code);
         const context = state.context;

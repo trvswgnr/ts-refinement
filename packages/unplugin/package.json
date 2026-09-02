@@ -59,6 +59,16 @@
       "import": "./dist/vite.mjs",
       "default": "./dist/vite.mjs"
     },
+    "./vitest": {
+      "types": "./dist/vitest.d.mts",
+      "import": "./dist/vitest.mjs",
+      "default": "./dist/vitest.mjs"
+    },
+    "./loader": {
+      "types": "./dist/loader.d.mts",
+      "import": "./dist/loader.mjs",
+      "default": "./dist/loader.mjs"
+    },
     "./webpack": {
       "types": "./dist/webpack.d.mts",
       "import": "./dist/webpack.mjs",
@@ -73,6 +83,7 @@
     "prepack": "bun run build"
   },
   "dependencies": {
+    "@ts-refinement/analyzer": "0.1.0",
     "magic-string": "^0.30.21",
     "unplugin": "^3.3.0"
   },

@@ -6,7 +6,8 @@ import { join } from "node:path";
 
 import { decodedMappings, originalPositionFor, TraceMap } from "@jridgewell/trace-mapping";
 import { rolldown } from "rolldown";
-import { describe, expect, it } from "vitest";
+import ts from "typescript";
+import { describe, expect, it, vi } from "vitest";
 
 import { refinementTypesPlugin } from "@ts-refinement/rolldown";
 import type { RefinementManifest } from "@ts-refinement/analyzer";
@@ -31,6 +32,40 @@ interface NestedRuntimeFixture {
   readonly checkChained: (value: number) => number;
   readonly checkNested: (value: number) => number;
   readonly checkNestedAngle: (value: number) => number;
+}
+
+interface NestedBoxValue {
+  readonly value: number;
+}
+
+type NestedPairValue = readonly [number, string?, ...number[]];
+type NestedResultValue =
+  | { readonly kind: "count"; readonly count: number }
+  | {
+      readonly kind: "user";
+      readonly user: { readonly age: number; readonly name?: string };
+    };
+
+interface NestedTreeValue {
+  readonly children: readonly NestedTreeValue[];
+  readonly value: number;
+}
+
+interface NestedUserValue {
+  readonly age: number;
+  readonly name?: string;
+}
+
+interface NestedRefinementFixture {
+  readonly checkBox: (value: NestedBoxValue) => NestedBoxValue;
+  readonly checkPair: (value: NestedPairValue) => NestedPairValue;
+  readonly checkResult: (value: NestedResultValue) => NestedResultValue;
+  readonly checkScores: (
+    value: Readonly<Record<string, number>>,
+  ) => Readonly<Record<string, number>>;
+  readonly checkTree: (value: NestedTreeValue) => NestedTreeValue;
+  readonly checkUser: (value: NestedUserValue) => NestedUserValue;
+  readonly checkValues: (value: number[]) => number[];
 }
 
 const rebuildTestTimeout = 15_000;
@@ -115,12 +150,21 @@ async function build(input: string, ignore: readonly string[] = [], source?: str
 
 describe("Rolldown plugin", () => {
   it("updates the in-memory program only when source text changes", () => {
+    const readFileSpy = vi.spyOn(ts.sys, "readFile");
     const state = fixtureProgram();
     const fileName = fixtureFile("valid.ts");
     const initialProgram = state.program;
     const source = initialProgram.getSourceFile(fileName)?.text;
     if (source === undefined) throw new Error("fixture was not loaded");
     const initialVersion = state.getScriptVersion(fileName);
+    const initialReadCount = readFileSpy.mock.calls.filter(([readFileName]) =>
+      readFileName.endsWith("valid.ts"),
+    ).length;
+
+    expect(state.getScriptVersion(fileName)).toBe(initialVersion);
+    expect(
+      readFileSpy.mock.calls.filter(([readFileName]) => readFileName.endsWith("valid.ts")),
+    ).toHaveLength(initialReadCount);
 
     state.updateSource(fileName, source);
     expect(state.getScriptVersion(fileName)).toBe(initialVersion);
@@ -212,6 +256,55 @@ describe("Rolldown plugin", () => {
     expect(calls).toBe(1);
   });
 
+  it("validates nested object and array refinements with failing paths", async () => {
+    const bundle = await build(fixtureFile("nested-refinements.ts"));
+    const generated = await bundle.generate({ format: "esm" });
+    const chunk = generated.output.find((output) => output.type === "chunk");
+    if (chunk === undefined) throw new Error("bundle did not emit a chunk");
+    const moduleUrl = `data:text/javascript;base64,${Buffer.from(chunk.code).toString("base64")}#${Date.now()}`;
+    // SAFETY: Rolldown generated this module from the typed nested refinement fixture.
+    const nested = (await import(moduleUrl)) as NestedRefinementFixture;
+
+    expect(nested.checkUser({ age: 1 })).toEqual({ age: 1 });
+    expect(nested.checkUser({ age: 1, name: "Ada" })).toEqual({ age: 1, name: "Ada" });
+    expect(() => nested.checkUser({ age: -1 })).toThrowError(
+      expect.objectContaining({ path: ".age", value: -1 }),
+    );
+    expect(() => nested.checkUser({ age: 1, name: "" })).toThrowError(
+      expect.objectContaining({ path: ".name", value: "" }),
+    );
+    expect(nested.checkValues([1, 2])).toEqual([1, 2]);
+    expect(() => nested.checkValues([1, -2, -3])).toThrowError(
+      expect.objectContaining({ path: "[1]", value: -2 }),
+    );
+    expect(nested.checkBox({ value: 1 })).toEqual({ value: 1 });
+    expect(() => nested.checkBox({ value: 0 })).toThrowError(
+      expect.objectContaining({ path: ".value", value: 0 }),
+    );
+    expect(nested.checkPair([1, "x", 2, 3])).toEqual([1, "x", 2, 3]);
+    expect(() => nested.checkPair([1, "", 2])).toThrowError(
+      expect.objectContaining({ path: "[1]", value: "" }),
+    );
+    expect(() => nested.checkPair([1, "x", 0])).toThrowError(
+      expect.objectContaining({ path: "[2]", value: 0 }),
+    );
+    expect(nested.checkResult({ count: 1, kind: "count" })).toEqual({ count: 1, kind: "count" });
+    expect(() => nested.checkResult({ count: -1, kind: "count" })).toThrowError(
+      expect.objectContaining({ path: ".count", value: -1 }),
+    );
+    expect(() => nested.checkResult({ kind: "user", user: { age: 0 } })).toThrowError(
+      expect.objectContaining({ path: ".user.age", value: 0 }),
+    );
+    expect(nested.checkScores({ alice: 1, bob: 2 })).toEqual({ alice: 1, bob: 2 });
+    expect(() => nested.checkScores({ alice: 1, bob: -2 })).toThrowError(
+      expect.objectContaining({ path: ".bob", value: -2 }),
+    );
+    const tree = { children: [{ children: [{ children: [], value: 0 }], value: 2 }], value: 1 };
+    expect(() => nested.checkTree(tree)).toThrowError(
+      expect.objectContaining({ path: ".children[0].children[0].value", value: 0 }),
+    );
+  });
+
   it("analyzes and maps the exact source supplied by a prior plugin", async () => {
     const banner = "// prepended by an earlier plugin";
     const bundle = await buildWithPriorTransform(
@@ -260,7 +353,7 @@ describe("Rolldown plugin", () => {
 
     assertion = "-5 as Positive";
     const invalidBundle = await buildWithPriorTransform(input, rewriteAssertion, refinementPlugin);
-    await expect(invalidBundle.generate({ format: "esm" })).rejects.toThrow(/RF1200/u);
+    await expect(invalidBundle.generate({ format: "esm" })).rejects.toThrow(/RF90200/u);
   });
 
   it("refreshes inherited config watches", { timeout: rebuildTestTimeout }, async () => {
@@ -431,7 +524,7 @@ describe("Rolldown plugin", () => {
 
   it("fails the build for a statically false assertion", async () => {
     const bundle = await build(fixtureFile("build-invalid.ts"));
-    await expect(bundle.generate({ format: "esm" })).rejects.toThrow(/RF1200/u);
+    await expect(bundle.generate({ format: "esm" })).rejects.toThrow(/RF90200/u);
   });
 
   it("writes a hashed manifest for distinct nested runtime sites only", async () => {
@@ -487,7 +580,7 @@ describe("Rolldown plugin", () => {
     const directory = await realpath(await mkdtemp(join(tmpdir(), "ts-refinement-manifest-")));
     try {
       const bundle = await build(fixtureFile("build-invalid.ts"));
-      await expect(bundle.write({ dir: directory, format: "esm" })).rejects.toThrow(/RF1200/u);
+      await expect(bundle.write({ dir: directory, format: "esm" })).rejects.toThrow(/RF90200/u);
       expect(existsSync(join(directory, ".ts-refinement-manifest.json"))).toBe(false);
     } finally {
       await rm(directory, { force: true, recursive: true });
@@ -496,7 +589,7 @@ describe("Rolldown plugin", () => {
 
   it("fails before loading a validator for opaque normalized syntax", async () => {
     const bundle = await build(fixtureFile("opaque-predicate.ts"));
-    await expect(bundle.generate({ format: "esm" })).rejects.toThrow(/RF1004.*ObjectLiteral/u);
+    await expect(bundle.generate({ format: "esm" })).rejects.toThrow(/RF90004.*ObjectLiteral/u);
   });
 
   it("fails when a TypeScript module is outside the configured program", async () => {

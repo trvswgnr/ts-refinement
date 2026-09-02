@@ -7,7 +7,7 @@ import {
   type AnalysisResult,
   type AnalyzerContext,
   type RefinementDiagnostic,
-} from "../../analyzer/src/index.ts";
+} from "@ts-refinement/analyzer";
 import type { ValidatorEntry, ValidatorRegistry } from "./validators.ts";
 import type { BuildTracker } from "./manifest.ts";
 
@@ -25,6 +25,19 @@ interface ValidatorMappingAnchor {
 interface SourcePosition {
   readonly column: number;
   readonly line: number;
+}
+
+interface AssertionEditState {
+  readonly allocatedNames: Set<string>;
+  readonly context: AnalyzerContext;
+  readonly imports: Map<ValidatorEntry, string>;
+  readonly magicString: MagicString;
+  readonly mappingAnchors: ValidatorMappingAnchor[];
+  readonly prefixes: Map<number, string[]>;
+  readonly registry: ValidatorRegistry;
+  readonly source: string;
+  readonly suffixes: Map<number, string[]>;
+  readonly tracker: BuildTracker | undefined;
 }
 
 function uniqueLocalName(
@@ -60,6 +73,45 @@ function importInsertionPoint(
   return position;
 }
 
+function applyAssertionEdit(state: AssertionEditState, analysis: AnalysisResult): void {
+  const node = analysis.site.node;
+  const isAsExpression = state.context.ts.isAsExpression(node);
+  if (isAsExpression) {
+    state.magicString.remove(node.expression.getEnd(), node.getEnd());
+  } else {
+    state.magicString.remove(node.getStart(), node.expression.getStart());
+  }
+
+  if (analysis.proof.kind === "true") return;
+  const { checks, definition } = analysis.site;
+  if (checks.length === 0) return;
+
+  const entry = state.registry.register(checks, analysis.site.recursions);
+  let localName = state.imports.get(entry);
+  if (localName === undefined) {
+    localName = uniqueLocalName(state.source, entry, state.allocatedNames);
+    state.imports.set(entry, localName);
+    state.allocatedNames.add(localName);
+  }
+  state.mappingAnchors.push({ localName, originalStart: node.getStart() });
+
+  const expressionStart = isAsExpression ? node.expression.getStart() : node.getStart();
+  const expressionEnd = node.expression.getEnd();
+  const atStart = state.prefixes.get(expressionStart) ?? [];
+  atStart.push(`${localName}((`);
+  state.prefixes.set(expressionStart, atStart);
+
+  const refinementArgument =
+    definition?.displayName === undefined ? "" : `, ${JSON.stringify(definition.displayName)}`;
+  const markerArgument =
+    state.tracker === undefined
+      ? ""
+      : `${definition?.displayName === undefined ? ", undefined" : ""}, ${JSON.stringify(state.tracker.registerSite(analysis))}`;
+  const atEnd = state.suffixes.get(expressionEnd) ?? [];
+  atEnd.unshift(`)${refinementArgument}${markerArgument})`);
+  state.suffixes.set(expressionEnd, atEnd);
+}
+
 function applyAssertionEdits(
   context: AnalyzerContext,
   source: string,
@@ -73,44 +125,21 @@ function applyAssertionEdits(
 ): void {
   const prefixes = new Map<number, string[]>();
   const suffixes = new Map<number, string[]>();
+  const state = {
+    allocatedNames,
+    context,
+    imports,
+    magicString,
+    mappingAnchors,
+    prefixes,
+    registry,
+    source,
+    suffixes,
+    tracker,
+  };
 
   for (const analysis of analyses) {
-    const node = analysis.site.node;
-    const isAsExpression = context.ts.isAsExpression(node);
-    if (isAsExpression) {
-      magicString.remove(node.expression.getEnd(), node.getEnd());
-    } else {
-      magicString.remove(node.getStart(), node.expression.getStart());
-    }
-
-    if (analysis.proof.kind === "true") continue;
-    const definition = analysis.site.definition;
-    if (definition === null) continue;
-
-    const entry = registry.register(definition);
-    let localName = imports.get(entry);
-    if (localName === undefined) {
-      localName = uniqueLocalName(source, entry, allocatedNames);
-      imports.set(entry, localName);
-      allocatedNames.add(localName);
-    }
-    mappingAnchors.push({ localName, originalStart: node.getStart() });
-
-    const expressionStart = isAsExpression ? node.expression.getStart() : node.getStart();
-    const expressionEnd = node.expression.getEnd();
-    const atStart = prefixes.get(expressionStart) ?? [];
-    atStart.push(`${localName}((`);
-    prefixes.set(expressionStart, atStart);
-
-    const refinementArgument =
-      definition.displayName === undefined ? "" : `, ${JSON.stringify(definition.displayName)}`;
-    const markerArgument =
-      tracker === undefined
-        ? ""
-        : `${definition.displayName === undefined ? ", undefined" : ""}, ${JSON.stringify(tracker.registerSite(analysis))}`;
-    const atEnd = suffixes.get(expressionEnd) ?? [];
-    atEnd.unshift(`)${refinementArgument}${markerArgument})`);
-    suffixes.set(expressionEnd, atEnd);
+    applyAssertionEdit(state, analysis);
   }
 
   for (const [start, atStart] of [...prefixes].sort(([left], [right]) => right - left)) {
@@ -197,7 +226,7 @@ export function transformSource(
   ];
   if (diagnostics.length > 0) return { code: null, diagnostics, map: null };
 
-  const eligible = analyses.filter((analysis) => analysis.site.definition !== null);
+  const eligible = analyses.filter((analysis) => analysis.site.checks.length > 0);
   if (eligible.length === 0) return { code: null, diagnostics: [], map: null };
 
   const imports = new Map<ValidatorEntry, string>();

@@ -1,8 +1,9 @@
+import { statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 import type * as ts from "typescript";
 
-import type { AnalyzerContext } from "../../analyzer/src/index.ts";
+import type { AnalyzerContext } from "@ts-refinement/analyzer";
 
 export interface ProgramState {
   readonly configFiles: readonly string[];
@@ -10,6 +11,7 @@ export interface ProgramState {
   readonly context: AnalyzerContext;
   readonly program: ts.Program;
   getScriptVersion(fileName: string): number;
+  invalidateSource(fileName: string): void;
   isConfigCurrent(): boolean;
   updateSource(fileName: string, source: string): void;
 }
@@ -22,7 +24,6 @@ export interface ProgramOptions {
 interface ProgramConfig {
   readonly configFiles: readonly string[];
   readonly configPath: string;
-  readonly fingerprint: string;
   readonly parsed: ts.ParsedCommandLine;
 }
 
@@ -70,17 +71,9 @@ function readProgramConfig(tsModule: typeof ts, options: ProgramOptions): Progra
       resolve(dirname(configPath), fileName),
     ),
   ];
-  const compilerOptions = Object.entries(parsed.options).filter(([name]) => name !== "configFile");
   return {
     configFiles: [...new Set(configFiles)],
     configPath,
-    fingerprint: JSON.stringify([
-      configPath,
-      configFiles,
-      parsed.fileNames,
-      compilerOptions,
-      parsed.projectReferences,
-    ]),
     parsed,
   };
 }
@@ -98,24 +91,49 @@ export function createProgramState(
     readonly version: number;
   }
 
-  const diskScripts = new Map<string, ScriptState>();
+  interface DiskScriptState extends ScriptState {
+    readonly mtimeMs: number;
+    readonly size: number;
+  }
+
+  const diskScripts = new Map<string, DiskScriptState>();
   const overlays = new Map<string, ScriptState>();
   const normalizeFileName = (fileName: string) => resolve(fileName);
+  const configMetadata = new Map(
+    initialConfig.configFiles.map((fileName) => {
+      const stats = statSync(fileName);
+      return [fileName, { mtimeMs: stats.mtimeMs, size: stats.size }] as const;
+    }),
+  );
 
   function readDiskScript(fileName: string): ScriptState | undefined {
     const normalizedFileName = normalizeFileName(fileName);
+    const stats = statSync(normalizedFileName, { throwIfNoEntry: false });
+    if (stats === undefined) {
+      diskScripts.delete(normalizedFileName);
+      return undefined;
+    }
+
+    const previous = diskScripts.get(normalizedFileName);
+    if (previous?.mtimeMs === stats.mtimeMs && previous.size === stats.size) return previous;
+
     const source = tsModule.sys.readFile(normalizedFileName);
     if (source === undefined) {
       diskScripts.delete(normalizedFileName);
       return undefined;
     }
 
-    const previous = diskScripts.get(normalizedFileName);
-    if (previous?.source === source) return previous;
+    if (previous?.source === source) {
+      const script = { ...previous, mtimeMs: stats.mtimeMs, size: stats.size };
+      diskScripts.set(normalizedFileName, script);
+      return script;
+    }
 
     const script = {
+      mtimeMs: stats.mtimeMs,
       snapshot: tsModule.ScriptSnapshot.fromString(source),
       source,
+      size: stats.size,
       version: (previous?.version ?? -1) + 1,
     };
     diskScripts.set(normalizedFileName, script);
@@ -146,13 +164,16 @@ export function createProgramState(
     useCaseSensitiveFileNames: () => tsModule.sys.useCaseSensitiveFileNames,
   };
   const languageService = tsModule.createLanguageService(host, tsModule.createDocumentRegistry());
+  let currentProgram: ts.Program | undefined;
 
   function getProgram(): ts.Program {
+    if (currentProgram !== undefined) return currentProgram;
     const program = languageService.getProgram();
     if (program === undefined) {
       throw new Error(`Unable to create a TypeScript program from '${configPath}'.`);
     }
-    return program;
+    currentProgram = program;
+    return currentProgram;
   }
 
   return {
@@ -168,8 +189,23 @@ export function createProgramState(
     getScriptVersion(fileName) {
       return getScript(fileName)?.version ?? 0;
     },
+    invalidateSource(fileName) {
+      overlays.delete(normalizeFileName(fileName));
+      currentProgram = undefined;
+    },
     isConfigCurrent() {
-      return readProgramConfig(tsModule, options).fingerprint === initialConfig.fingerprint;
+      if (options.tsconfig === undefined) {
+        const discovered = tsModule.findConfigFile(
+          resolve(options.cwd ?? process.cwd()),
+          (fileName) => tsModule.sys.fileExists(fileName),
+          "tsconfig.json",
+        );
+        if (discovered === undefined || resolve(discovered) !== configPath) return false;
+      }
+      return [...configMetadata].every(([fileName, metadata]) => {
+        const stats = statSync(fileName, { throwIfNoEntry: false });
+        return stats?.mtimeMs === metadata.mtimeMs && stats.size === metadata.size;
+      });
     },
     updateSource(fileName, source) {
       const normalizedFileName = normalizeFileName(fileName);
@@ -186,6 +222,7 @@ export function createProgramState(
         source,
         version: (previous?.version ?? -1) + 1,
       });
+      currentProgram = undefined;
     },
   };
 }
