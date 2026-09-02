@@ -38,6 +38,7 @@ export {
 } from "./predicate/parse.ts";
 export { analyzeFreeIdentifiers, type FreeIdentifierAnalysis } from "./predicate/scope.ts";
 export { standardGlobals } from "./predicate/globals.ts";
+export { filterEntailedRefinementDiagnostics } from "./refinement/filter-diagnostics.ts";
 export {
   resolveRefinement,
   resolveRefinementMetadata,

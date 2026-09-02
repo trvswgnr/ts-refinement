@@ -1,6 +1,9 @@
 import type * as ts from "typescript/lib/tsserverlibrary";
 
-import { getRefinementDiagnostics } from "../../analyzer/src/index.ts";
+import {
+  filterEntailedRefinementDiagnostics,
+  getRefinementDiagnostics,
+} from "../../analyzer/src/index.ts";
 
 const pluginName = "ts-refinement";
 
@@ -21,6 +24,7 @@ function init(modules: { readonly typescript: typeof ts }): ts.server.PluginModu
           program,
           ts: tsModule,
         };
+        const filtered = filterEntailedRefinementDiagnostics(context, sourceFile, existing);
         const refinements = getRefinementDiagnostics(context, sourceFile).map(
           (diagnostic): ts.Diagnostic => ({
             category: tsModule.DiagnosticCategory.Error,
@@ -32,7 +36,7 @@ function init(modules: { readonly typescript: typeof ts }): ts.server.PluginModu
             start: diagnostic.start,
           }),
         );
-        return [...existing, ...refinements];
+        return [...filtered, ...refinements];
       };
       return proxy;
     },
