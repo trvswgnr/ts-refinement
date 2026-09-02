@@ -53,6 +53,7 @@ interface Affine {
   readonly kind: ScalarKind;
   readonly offset: Scalar;
   readonly term: Term | null;
+  readonly transformed: boolean;
 }
 
 const subjectTerm: Term = {
@@ -95,8 +96,8 @@ function scalarLiteral(expression: NormalizedExpression): Scalar | null {
 
 function emptyAffine(kind: ScalarKind): Affine {
   return kind === "bigint"
-    ? { coefficient: 0n, kind, offset: 0n, term: null }
-    : { coefficient: 0, kind, offset: 0, term: null };
+    ? { coefficient: 0n, kind, offset: 0n, term: null, transformed: false }
+    : { coefficient: 0, kind, offset: 0, term: null, transformed: false };
 }
 
 function affineConstant(value: Scalar, kind: ScalarKind): Affine | null {
@@ -107,8 +108,8 @@ function affineConstant(value: Scalar, kind: ScalarKind): Affine | null {
 
 function affineTerm(term: Term, kind: ScalarKind): Affine {
   return kind === "bigint"
-    ? { coefficient: 1n, kind, offset: 0n, term }
-    : { coefficient: 1, kind, offset: 0, term };
+    ? { coefficient: 1n, kind, offset: 0n, term, transformed: false }
+    : { coefficient: 1, kind, offset: 0, term, transformed: false };
 }
 
 function addAffine(left: Affine, right: Affine, subtract: boolean): Affine | null {
@@ -123,6 +124,7 @@ function addAffine(left: Affine, right: Affine, subtract: boolean): Affine | nul
       kind: "bigint",
       offset: leftOffset + (subtract ? -rightOffset : rightOffset),
       term: left.term ?? right.term,
+      transformed: true,
     };
   }
   if (left.kind !== "number" || right.kind !== "number") return null;
@@ -133,7 +135,13 @@ function addAffine(left: Affine, right: Affine, subtract: boolean): Affine | nul
   const coefficient = leftCoefficient + (subtract ? -rightCoefficient : rightCoefficient);
   const offset = leftOffset + (subtract ? -rightOffset : rightOffset);
   if (!Number.isFinite(coefficient) || !Number.isFinite(offset)) return null;
-  return { coefficient, kind: "number", offset, term: left.term ?? right.term };
+  return {
+    coefficient,
+    kind: "number",
+    offset,
+    term: left.term ?? right.term,
+    transformed: true,
+  };
 }
 
 function multiplyAffine(left: Affine, right: Affine): Affine | null {
@@ -146,6 +154,7 @@ function multiplyAffine(left: Affine, right: Affine): Affine | null {
       kind: "bigint",
       offset: BigInt(expression.offset) * constant,
       term: expression.term,
+      transformed: true,
     };
   }
   if (left.kind !== "number" || right.kind !== "number") return null;
@@ -154,7 +163,7 @@ function multiplyAffine(left: Affine, right: Affine): Affine | null {
   const coefficient = Number(expression.coefficient) * constant;
   const offset = Number(expression.offset) * constant;
   if (!Number.isFinite(coefficient) || !Number.isFinite(offset)) return null;
-  return { coefficient, kind: "number", offset, term: expression.term };
+  return { coefficient, kind: "number", offset, term: expression.term, transformed: true };
 }
 
 function parseAffine(expression: NormalizedExpression, kind: ScalarKind): Affine | null {
@@ -165,7 +174,9 @@ function parseAffine(expression: NormalizedExpression, kind: ScalarKind): Affine
   if (literal !== null) return affineConstant(literal, kind);
 
   if (expression.kind === "unary" && expression.operator === "+") {
-    return kind === "number" ? parseAffine(expression.operand, kind) : null;
+    if (kind !== "number") return null;
+    const operand = parseAffine(expression.operand, kind);
+    return operand === null ? null : { ...operand, transformed: true };
   }
   if (expression.kind === "unary" && expression.operator === "-") {
     const operand = parseAffine(expression.operand, kind);
@@ -306,7 +317,7 @@ function numberComparison(
   if (affine.term === null || affine.kind !== "number" || !Number.isFinite(literal)) {
     return null;
   }
-  if (offset !== 0 || (coefficient !== 1 && coefficient !== -1)) {
+  if (affine.transformed || offset !== 0 || (coefficient !== 1 && coefficient !== -1)) {
     return integerNumberComparison(affine.term, coefficient, offset, literal, operator, wasNegated);
   }
   const normalizedOperator = coefficient === -1 ? reverseOperator(operator) : operator;

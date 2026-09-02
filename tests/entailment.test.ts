@@ -87,6 +87,7 @@ describe("normalized predicate entailment", () => {
     expect(entails([predicate("3n * n === 12n")], [predicate("n === 4n")])).toBe(false);
     expect(entails([predicate("3n * n === 11n")], [predicate("n === 3n")])).toBe(false);
     expect(entails([predicate("n + 1 > 5")], [predicate("n > 4")])).toBe(false);
+    expect(entails([predicate("n > 0")], [predicate("n - n + n > 0")])).toBe(false);
     expect(
       entails(
         [predicate("Number.isInteger(n)"), predicate("2 * n + 1 >= 11")],
