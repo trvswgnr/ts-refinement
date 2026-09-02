@@ -339,6 +339,8 @@ describe("predicate parsing and subject inference", () => {
   it("does not treat host-environment identifiers as standard globals", () => {
     expect(parsePredicate(ts, "Buffer.isBuffer(n)").diagnostics[0]?.code).toBe(90002);
     expect(parsePredicate(ts, "Math.random() < 0.5").diagnostics[0]?.code).toBe(90002);
+    expect(parsePredicate(ts, 'Math["random"]() < 0.5').diagnostics[0]?.code).toBe(90002);
+    expect(parsePredicate(ts, "Math[`random`]() < 0.5").diagnostics[0]?.code).toBe(90002);
     expect(parsePredicate(ts, "Date.now() > 0").diagnostics[0]?.code).toBe(90002);
     const parsed = parsePredicate(ts, "Math.abs(n) < 10");
     expect(parsed.ok).toBe(true);

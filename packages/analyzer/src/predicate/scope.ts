@@ -137,19 +137,25 @@ export function analyzeFreeIdentifiers(
 
   visit(expression, rootScope);
 
+  function isMathRandomReference(reference: ts.Identifier): boolean {
+    const parent = reference.parent;
+    if (tsModule.isPropertyAccessExpression(parent)) {
+      return parent.expression === reference && parent.name.text === "random";
+    }
+    if (!tsModule.isElementAccessExpression(parent) || parent.expression !== reference) {
+      return false;
+    }
+    const argument = parent.argumentExpression;
+    return (
+      (tsModule.isStringLiteral(argument) || tsModule.isNoSubstitutionTemplateLiteral(argument)) &&
+      argument.text === "random"
+    );
+  }
+
   return {
     disallowedNames: [
       ...[...freeReferences.keys()].filter((name) => disallowedGlobals.has(name)),
-      ...(freeReferences
-        .get("Math")
-        ?.some(
-          (reference) =>
-            tsModule.isPropertyAccessExpression(reference.parent) &&
-            reference.parent.expression === reference &&
-            reference.parent.name.text === "random",
-        )
-        ? ["Math.random"]
-        : []),
+      ...(freeReferences.get("Math")?.some(isMathRandomReference) ? ["Math.random"] : []),
     ].sort(),
     freeReferences,
     unresolvedNames: [...freeReferences.keys()]
