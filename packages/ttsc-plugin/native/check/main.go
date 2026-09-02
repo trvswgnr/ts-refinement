@@ -32,6 +32,8 @@ func run(args []string) int {
 		return host.RunLSPDiagnostics(args[1:])
 	case "lsp-code-actions":
 		return host.RunLSPCodeActions(args[1:])
+	case "lsp-execute-command":
+		return host.RunLSPExecuteCommand(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "@ts-refinement/ttsc check: unknown command %q\n", args[0])
 		return 2
