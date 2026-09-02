@@ -42,5 +42,5 @@ verifier directly from `prepack`:
 }
 ```
 
-RF1500 warns when this contract is missing. It is a warning in the initial release and is planned
+RF90500 warns when this contract is missing. It is a warning in the initial release and is planned
 to become an error in `0.3`.

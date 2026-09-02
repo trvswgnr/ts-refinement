@@ -3,6 +3,12 @@
     "lib": ["ESNext"],
     "module": "Preserve",
     "moduleResolution": "bundler",
+    "plugins": [
+      {
+        "transform": "@ts-refinement/typescript-plugin/transformer",
+        "transformProgram": true
+      }
+    ],
     "paths": {
       "ts-refinement": ["../../packages/core/src/index.ts"]
     },

@@ -1,7 +1,7 @@
 {
   "name": "@ts-refinement/cli",
   "version": "0.1.0",
-  "description": "Refinement-aware TypeScript project checker",
+  "description": "Publish-time verification for transformed ts-refinement output",
   "keywords": [
     "cli",
     "refinement-types",
@@ -36,6 +36,7 @@
     "prepack": "bun run build"
   },
   "dependencies": {
+    "@ts-refinement/analyzer": "0.1.0",
     "valibot": "1.4.2"
   },
   "peerDependencies": {

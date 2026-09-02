@@ -4,6 +4,12 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "noEmit": true,
+    "plugins": [
+      {
+        "transform": "@ts-refinement/typescript-plugin/transformer",
+        "transformProgram": true
+      }
+    ],
     "strict": true,
     "target": "ES2022"
   },

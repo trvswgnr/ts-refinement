@@ -9,7 +9,7 @@ import {
   refinementManifestSchemaVersion,
   refinementSiteMarker,
   type RefinementManifest,
-} from "../../analyzer/src/index.ts";
+} from "@ts-refinement/analyzer";
 
 const manifestSchema = v.strictObject({
   assets: v.array(

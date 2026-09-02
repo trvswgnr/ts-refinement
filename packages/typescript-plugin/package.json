@@ -22,6 +22,11 @@
       "types": "./dist/index.d.cts",
       "require": "./dist/index.cjs",
       "default": "./dist/index.cjs"
+    },
+    "./transformer": {
+      "types": "./dist/transformer.d.cts",
+      "require": "./dist/transformer.cjs",
+      "default": "./dist/transformer.cjs"
     }
   },
   "publishConfig": {
@@ -30,6 +35,9 @@
   "scripts": {
     "build": "bunx --no-install tsdown --config ../../tsdown.config.ts --filter typescript-plugin",
     "prepack": "bun run build"
+  },
+  "dependencies": {
+    "@ts-refinement/analyzer": "0.1.0"
   },
   "peerDependencies": {
     "ts-refinement": "0.1.0",

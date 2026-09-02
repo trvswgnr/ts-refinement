@@ -1,11 +1,6 @@
 import type * as ts from "typescript/lib/tsserverlibrary";
 
-import {
-  filterEntailedRefinementDiagnostics,
-  getRefinementDiagnostics,
-} from "../../analyzer/src/index.ts";
-
-const pluginName = "ts-refinement";
+import { refinementSemanticDiagnostics } from "./diagnostics.ts";
 
 function init(modules: { readonly typescript: typeof ts }): ts.server.PluginModule {
   const tsModule = modules.typescript;
@@ -19,27 +14,7 @@ function init(modules: { readonly typescript: typeof ts }): ts.server.PluginModu
         const sourceFile = program?.getSourceFile(fileName);
         if (program === undefined || sourceFile === undefined) return existing;
 
-        const context = {
-          checker: program.getTypeChecker(),
-          program,
-          ts: tsModule,
-        };
-        const filtered = filterEntailedRefinementDiagnostics(context, sourceFile, existing);
-        const refinements = getRefinementDiagnostics(context, sourceFile).map(
-          (diagnostic): ts.Diagnostic => ({
-            category:
-              diagnostic.severity === "warning"
-                ? tsModule.DiagnosticCategory.Warning
-                : tsModule.DiagnosticCategory.Error,
-            code: diagnostic.code,
-            file: sourceFile,
-            length: diagnostic.length,
-            messageText: diagnostic.message,
-            source: pluginName,
-            start: diagnostic.start,
-          }),
-        );
-        return [...filtered, ...refinements];
+        return refinementSemanticDiagnostics(tsModule, program, sourceFile, existing);
       };
       return proxy;
     },
