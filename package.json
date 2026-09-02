@@ -23,21 +23,29 @@
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.2",
+    "@farmfe/core": "1.7.11",
     "@jridgewell/trace-mapping": "^0.3.31",
     "@oxlint/plugins": "^1.80.0",
+    "@rspack/core": "2.2.2",
     "@types/bun": "^1.4.0",
     "@vitest/coverage-v8": "^4.1.11",
+    "esbuild": "0.28.2",
     "fast-check": "^4.9.0",
     "oxfmt": "^0.65.0",
     "oxlint": "^1.80.0",
     "oxlint-tsgolint": "^7.0.2001",
     "publint": "^0.3.24",
     "rolldown": "^1.2.6",
+    "rollup": "4.63.1",
+    "ts-loader": "9.5.4",
     "tsdown": "^0.22.14",
     "typescript": "^6.0.0",
     "typescript-5-7": "npm:typescript@5.7.3",
     "typescript-5-9": "npm:typescript@5.9.3",
-    "vitest": "^4.1.11"
+    "unplugin": "3.3.0",
+    "vite": "8.2.2",
+    "vitest": "^4.1.11",
+    "webpack": "5.110.3"
   },
   "engines": {
     "node": ">=22.18.0"

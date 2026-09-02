@@ -1,6 +1,7 @@
 # @ts-refinement/rolldown
 
-The official Rolldown-compatible build transform for ts-refinement. It also works with tsdown.
+The compatibility entry point for the Rolldown adapter from `@ts-refinement/unplugin`. It also
+works with tsdown and preserves the original default and `refinementTypesPlugin` exports.
 
 ```sh
 npm install ts-refinement @ts-refinement/runtime
@@ -17,6 +18,7 @@ export default defineConfig({
 });
 ```
 
-`magic-string` is a dependency of this package only. The shared analyzer is bundled into the transform so it does not add another installation-time dependency.
+New integrations can import `@ts-refinement/unplugin/rolldown` directly. This package depends on
+the unified integration and contains only the compatibility re-export.
 
 See the repository README for configuration and runtime behavior.

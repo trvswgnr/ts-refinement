@@ -18,6 +18,7 @@ const packages = [
   },
   { directory: "packages/cli", name: "@ts-refinement/cli", profile: "esm-only" },
   { directory: "packages/runtime", name: "@ts-refinement/runtime", profile: "esm-only" },
+  { directory: "packages/unplugin", name: "@ts-refinement/unplugin", profile: "esm-only" },
   {
     directory: "packages/rolldown-plugin",
     name: "@ts-refinement/rolldown",
@@ -97,7 +98,11 @@ async function validateMetadata() {
   );
   assert.deepEqual(manifests.get("@ts-refinement/typescript-plugin").dependencies, undefined);
   assert.deepEqual(manifests.get("@ts-refinement/rolldown").dependencies, {
+    "@ts-refinement/unplugin": "0.1.0",
+  });
+  assert.deepEqual(manifests.get("@ts-refinement/unplugin").dependencies, {
     "magic-string": "^0.30.21",
+    unplugin: "^3.3.0",
   });
   assert.equal(
     manifests.get("@ts-refinement/rolldown").peerDependencies["@ts-refinement/runtime"],

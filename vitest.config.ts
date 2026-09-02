@@ -19,6 +19,11 @@ export default defineConfig({
         find: "@ts-refinement/runtime",
         replacement: `${root}packages/runtime/src/index.ts`,
       },
+      {
+        find: /^@ts-refinement\/unplugin\/(.+)$/u,
+        replacement: `${root}packages/unplugin/src/$1.ts`,
+      },
+      { find: /^@ts-refinement\/unplugin$/u, replacement: `${root}packages/unplugin/src/index.ts` },
       { find: /^ts-refinement$/u, replacement: `${root}packages/core/src/index.ts` },
     ],
   },

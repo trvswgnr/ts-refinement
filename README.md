@@ -34,7 +34,7 @@ The source must already be assignable to the unrefined base type. Refining direc
 
 ```sh
 bun add ts-refinement @ts-refinement/runtime
-bun add --dev @ts-refinement/rolldown @ts-refinement/typescript-plugin typescript tsdown
+bun add --dev @ts-refinement/unplugin @ts-refinement/cli @ts-refinement/typescript-plugin typescript
 ```
 
 `ts-refinement` is type-only and has no runtime dependencies. Keep `@ts-refinement/runtime` in regular dependencies because transformed code can import it when the bundler externalizes package dependencies. Build and editor integrations belong in development dependencies.
@@ -46,7 +46,9 @@ The repository publishes independently installable packages with separate depend
 - `ts-refinement` - the dependency-free, type-only `Refined<Base, Predicate>` API
 - `@ts-refinement/runtime` - the dependency-free `RefinementError` API
 - `@ts-refinement/analyzer` - the shared parser, resolver, proof engine, and diagnostics for tooling authors
-- `@ts-refinement/rolldown` - the tsdown/Rolldown build transform; this is the only package that depends on `magic-string`
+- `@ts-refinement/cli` - the refinement-aware `ts-refinement check` command
+- `@ts-refinement/unplugin` - shared Vite, Rollup, Rolldown, webpack, Rspack, esbuild, and Farm adapters
+- `@ts-refinement/rolldown` - compatibility re-export of the Rolldown adapter
 - `@ts-refinement/typescript-plugin` - TypeScript language-service diagnostics
 
 The integration packages bundle the analyzer implementation they were tested with. This keeps the TypeScript plugin CommonJS-compatible and prevents ordinary users from installing the standalone analyzer package. All packages are released together at the same version, and integration peer dependencies require the matching core and runtime versions.
@@ -56,7 +58,7 @@ The integration packages bundle the analyzer implementation they were tested wit
 ```ts
 // tsdown.config.ts
 import { defineConfig } from "tsdown";
-import refinementTypes from "@ts-refinement/rolldown";
+import refinementTypes from "@ts-refinement/unplugin/rolldown";
 
 export default defineConfig({
   entry: ["src/index.ts"],
@@ -115,7 +117,7 @@ The initial proof engine handles primitive and array literals, trivial unary exp
 
 ## Development
 
-This repository is a Bun workspace that publishes five npm packages. TypeScript 5.7 through 6.x is supported; TypeScript 7's native compiler package does not expose the classic `Program`/`TypeChecker` and tsserver plugin APIs required by this initial implementation.
+This repository is a Bun workspace that publishes seven npm packages. TypeScript 5.7 through 6.x is supported; TypeScript 7's native compiler package does not expose the classic `Program`/`TypeChecker` and tsserver plugin APIs required by this initial implementation.
 
 ```sh
 bun install
