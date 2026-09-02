@@ -276,6 +276,7 @@ async function validateNativeInstall(temporaryDirectory, artifacts) {
   await install(consumerDirectory, [...nativeArtifacts, "ttsc@0.28.5", "typescript@7.0.2"]);
   const ttsc = join(consumerDirectory, "node_modules", ".bin", "ttsc");
   const refinement = join(consumerDirectory, "node_modules", ".bin", "ts-refinement");
+  await run(ttsc, ["check", "--project", "tsconfig.json"], consumerDirectory);
   await run(
     ttsc,
     ["build", "--project", "tsconfig.json", "--emit", "--outDir", "dist"],
