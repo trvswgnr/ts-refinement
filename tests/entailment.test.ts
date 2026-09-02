@@ -82,6 +82,8 @@ describe("normalized predicate entailment", () => {
     expect(entails([predicate("!(n <= 5n)")], [predicate("n > 5n")])).toBe(false);
     expect(entails([predicate("n >= 5n")], [predicate("n + 1n >= 6n")])).toBe(false);
     expect(entails([predicate("n + 0n >= 5n")], [predicate("n + 1n >= 6n")])).toBe(true);
+    expect(entails([predicate("-n < -10n")], [predicate("n + 0n > 10n")])).toBe(false);
+    expect(entails([predicate("-n > -10n")], [predicate("n + 0n < 10n")])).toBe(false);
     expect(entails([predicate("n > 5")], [predicate("n > 0n")])).toBe(false);
     expect(entails([predicate("n > 5n")], [predicate("n > 0")])).toBe(false);
   });

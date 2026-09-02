@@ -207,6 +207,23 @@ function multiplyAffine(left: Affine, right: Affine): Affine | null {
   };
 }
 
+function negateAffine(operand: Affine): Affine {
+  if (operand.kind === "bigint") {
+    return {
+      ...operand,
+      coefficient: -BigInt(operand.coefficient),
+      offset: -BigInt(operand.offset),
+      transformed: true,
+    };
+  }
+  return {
+    ...operand,
+    coefficient: -Number(operand.coefficient),
+    offset: -Number(operand.offset),
+    transformed: true,
+  };
+}
+
 function parseAffine(expression: NormalizedExpression, kind: ScalarKind): Affine | null {
   const term = termOf(expression);
   if (term !== null) return affineTerm(term, kind);
@@ -221,9 +238,7 @@ function parseAffine(expression: NormalizedExpression, kind: ScalarKind): Affine
   }
   if (expression.kind === "unary" && expression.operator === "-") {
     const operand = parseAffine(expression.operand, kind);
-    if (operand === null) return null;
-    const negativeOne = affineConstant(kind === "bigint" ? -1n : -1, kind);
-    return negativeOne === null ? null : multiplyAffine(operand, negativeOne);
+    return operand === null ? null : negateAffine(operand);
   }
   if (expression.kind !== "binary") return null;
   if (!["+", "-", "*"].includes(expression.operator)) return null;
