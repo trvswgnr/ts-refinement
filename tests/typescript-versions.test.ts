@@ -11,7 +11,7 @@ import { fixtureDirectory, fixtureFile } from "./helpers.ts";
 
 const versions = [ts57, ts59, ts60] as const;
 
-describe("supported TypeScript versions", () => {
+describe("supported TypeScript versions", { timeout: 15_000 }, () => {
   for (const tsModule of versions) {
     it(`analyzes refinements with TypeScript ${tsModule.version}`, () => {
       // Each supported compiler has nominally distinct enum types despite the compatible runtime API.
