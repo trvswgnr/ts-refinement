@@ -86,6 +86,20 @@ describe("source transform", () => {
     expect(output.code ?? "").not.toContain("globalThis.PWNED");
   });
 
+  it("rejects opaque normalized syntax before registering a validator", () => {
+    const state = fixtureProgram();
+    const sourceFile = state.program.getSourceFile(fixtureFile("opaque-predicate.ts"));
+    if (sourceFile === undefined) throw new Error("fixture was not loaded");
+    const registry = createValidatorRegistry(ts, "@ts-refinement/runtime");
+    const register = vi.spyOn(registry, "register");
+    const output = transformSource(state.context, sourceFile, sourceFile.text, registry);
+
+    expect(output.code).toBeNull();
+    expect(output.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([1004]);
+    expect(output.diagnostics[0]?.message).toContain("ObjectLiteralExpression");
+    expect(register).not.toHaveBeenCalled();
+  });
+
   it("keeps module directives ahead of generated imports", () => {
     const state = fixtureProgram();
     const sourceFile = state.program.getSourceFile(fixtureFile("directives.ts"));

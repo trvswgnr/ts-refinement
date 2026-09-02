@@ -1,6 +1,7 @@
 import type * as ts from "typescript";
 
 import { DiagnosticCode } from "../diagnostics.ts";
+import { findOpaqueExpression } from "../predicate/ir.ts";
 import { normalizePredicate } from "../predicate/normalize.ts";
 import { parsePredicate } from "../predicate/parse.ts";
 import type { NormalizedPredicate } from "../predicate/ir.ts";
@@ -126,7 +127,16 @@ function resolveRefinementMetadataUncached(
         });
       }
     } else {
-      predicates.push(normalizePredicate(context.ts, parsed.predicate));
+      const predicate = normalizePredicate(context.ts, parsed.predicate);
+      const opaque = findOpaqueExpression(predicate.expression);
+      if (opaque === null) {
+        predicates.push(predicate);
+      } else {
+        issues.push({
+          code: DiagnosticCode.UnsupportedRuntimeSyntax,
+          message: `Refinement expression syntax '${opaque.syntaxKind}' cannot be compiled for runtime validation.`,
+        });
+      }
     }
   }
 

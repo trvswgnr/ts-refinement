@@ -22,6 +22,8 @@ export {
 export { entails } from "./proof/entail.ts";
 export { displayStaticValue, type StaticRuntimeValue, type StaticValue } from "./proof/values.ts";
 export {
+  compileExpression,
+  findOpaqueExpression,
   serializeExpression,
   type NormalizedBinding,
   type NormalizedBindingElement,

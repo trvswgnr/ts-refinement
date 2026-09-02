@@ -194,6 +194,7 @@ export function normalizePredicate(
     if (tsModule.isStringLiteral(node) || tsModule.isNoSubstitutionTemplateLiteral(node)) {
       return { kind: "literal", value: node.text };
     }
+    if (tsModule.isRegularExpressionLiteral(node)) return { kind: "regexp", text: node.text };
     if (node.kind === tsModule.SyntaxKind.TrueKeyword) return { kind: "literal", value: true };
     if (node.kind === tsModule.SyntaxKind.FalseKeyword) return { kind: "literal", value: false };
     if (node.kind === tsModule.SyntaxKind.NullKeyword) return { kind: "literal", value: null };
@@ -260,6 +261,7 @@ export function normalizePredicate(
 
     if (tsModule.isPropertyAccessExpression(node)) {
       return {
+        chain: tsModule.isPropertyAccessChain(node),
         computed: false,
         kind: "member",
         object: normalize(node.expression, bindings),
@@ -270,6 +272,7 @@ export function normalizePredicate(
 
     if (tsModule.isElementAccessExpression(node)) {
       return {
+        chain: tsModule.isElementAccessChain(node),
         computed: true,
         kind: "member",
         object: normalize(node.expression, bindings),
@@ -288,6 +291,7 @@ export function normalizePredicate(
           normalize(argument, bindings, normalizeFirstArgument && index === 0),
         ),
         callee: normalize(node.expression, bindings),
+        chain: tsModule.isCallChain(node),
         kind: "call",
         optional: node.questionDotToken !== undefined,
       };

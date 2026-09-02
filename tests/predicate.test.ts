@@ -1,7 +1,10 @@
+import { runInNewContext } from "node:vm";
+
 import { describe, expect, it } from "vitest";
 import ts from "typescript";
 
 import {
+  compileExpression,
   emitPredicateWithSubject,
   normalizePredicate,
   parsePredicate,
@@ -142,17 +145,86 @@ describe("predicate parsing and subject inference", () => {
     });
   });
 
-  it("canonicalizes opaque syntax from each subtree only", () => {
-    const opaqueSubtrees = normalized("/x/.test(n) && /y/.test(n)");
-    expect(opaqueSubtrees.expression).toMatchObject({
+  it("normalizes regular expressions as first-class IR", () => {
+    const regularExpressions = normalized("/x/.test(n) && /y/.test(n)");
+    expect(regularExpressions.expression).toMatchObject({
       kind: "binary",
-      left: { callee: { object: { kind: "opaque", text: "/x/" } } },
-      right: { callee: { object: { kind: "opaque", text: "/y/" } } },
+      left: { callee: { object: { kind: "regexp", text: "/x/" } } },
+      right: { callee: { object: { kind: "regexp", text: "/y/" } } },
     });
 
     expect(normalized("xs.every(a => ({ value: a }).value > 0)").key).not.toBe(
       normalized("xs.every(b => ({ value: b }).value > 0)").key,
     );
+  });
+
+  it("compiles normalized predicates with equivalent runtime semantics", () => {
+    const corpus: readonly { readonly source: string; readonly values: readonly unknown[] }[] = [
+      { source: "/^[a-z]+$/.test(s)", values: ["valid", "Not-valid", ""] },
+      { source: "Object.is(n, -0) || n === Infinity", values: [-0, 0, Infinity, -Infinity] },
+      { source: "!(n < 0) && (n > 2 ? n * 2 >= 8 : n + 1 === 3)", values: [-1, 2, 4] },
+      { source: 's?.["trim"]().length > 0', values: [" value ", "", null] },
+      { source: "[n, n + 1][0] === n", values: [0, 2] },
+      {
+        source: "xs.every(({ value }, index = 0) => value > index)",
+        values: [[{ value: 1 }, { value: 2 }], [{ value: 0 }]],
+      },
+      {
+        source: "xs.every(a => xs.some(b => a > b))",
+        values: [[2, 1], [1, 2], []],
+      },
+    ];
+
+    for (const { source, values } of corpus) {
+      const predicate = normalized(source);
+      const compiled = compileExpression(ts, predicate.expression, "value");
+      if (predicate.subject === null) throw new Error(`expected a subject for '${source}'`);
+      for (const value of values) {
+        const directResult = runInNewContext(`(${source})`, { [predicate.subject]: value });
+        const compiledResult = runInNewContext(`(${compiled})`, { value });
+        expect(compiledResult, `${source} for ${JSON.stringify(value)}`).toBe(directResult);
+      }
+    }
+  });
+
+  it("rejects opaque normalized syntax instead of emitting source text", () => {
+    const predicate = normalized("xs.every((x) => ({ value: x }).value > 0)");
+    expect(() => compileExpression(ts, predicate.expression, "value")).toThrow(
+      /ObjectLiteralExpression/u,
+    );
+  });
+
+  it("preserves normalized literal values and rejects unapproved free identifiers", () => {
+    const values = [
+      1n,
+      true,
+      null,
+      undefined,
+      NaN,
+      Infinity,
+      -Infinity,
+      -0,
+      '"\n\\',
+      String.fromCharCode(0x2028),
+    ] as const;
+
+    for (const value of values) {
+      const compiled = compileExpression(ts, { kind: "literal", value }, "value");
+      expect(Object.is(runInNewContext(`(${compiled})`), value), String(value)).toBe(true);
+    }
+    expect(() => compileExpression(ts, { kind: "free", name: "globalThis" }, "value")).toThrow(
+      /Unapproved free identifier/u,
+    );
+  });
+
+  it("preserves parentheses that terminate optional chains", () => {
+    const source = "(n?.a).b === undefined";
+    const predicate = normalized(source);
+    const compiled = compileExpression(ts, predicate.expression, "value");
+
+    expect(compiled).toBe("(value?.a).b === undefined");
+    expect(() => runInNewContext(`(${source})`, { n: null })).toThrow(/reading 'b'/u);
+    expect(() => runInNewContext(`(${compiled})`, { value: null })).toThrow(/reading 'b'/u);
   });
 
   it("distinguishes subject holes from identically spelled local names", () => {

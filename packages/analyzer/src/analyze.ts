@@ -10,6 +10,8 @@ import { evaluateSourceExpression, provePredicates, type Proof } from "./proof/e
 import { displayStaticValue } from "./proof/values.ts";
 import { collectGuardPredicates } from "./proof/guards.ts";
 import { entails } from "./proof/entail.ts";
+import { findOpaqueExpression } from "./predicate/ir.ts";
+import { normalizePredicate } from "./predicate/normalize.ts";
 import { parsePredicate } from "./predicate/parse.ts";
 import {
   resolveRefinementMetadata,
@@ -97,6 +99,19 @@ export function getRefinementDefinitionDiagnostics(
               start: location.start,
             })),
           );
+        } else {
+          const opaque = findOpaqueExpression(
+            normalizePredicate(context.ts, parsed.predicate).expression,
+          );
+          if (opaque !== null) {
+            diagnostics.push(
+              createDiagnostic(
+                DiagnosticCode.UnsupportedRuntimeSyntax,
+                `Refinement expression syntax '${opaque.syntaxKind}' cannot be compiled for runtime validation.`,
+                nodeLocation(predicateType.literal),
+              ),
+            );
+          }
         }
       }
     }

@@ -94,7 +94,7 @@ VS Code may need to be switched to the workspace TypeScript version. The languag
 
 ## Predicate rules
 
-Predicates are parsed as JavaScript expressions. The compiler never executes predicate JavaScript. The static interpreter only evaluates operations it explicitly models; valid but unsupported expressions fall back to runtime validation.
+Predicates are parsed as JavaScript expressions. The compiler never executes predicate JavaScript. The static interpreter only evaluates operations it explicitly models; inconclusive expressions represented by the normalized runtime IR fall back to runtime validation. Accepted syntax outside that IR reports RF1004 instead of emitting source text.
 
 This initial implementation permits the inferred subject, standard ECMAScript globals, and locally bound identifiers. It rejects malformed expressions, assignments, updates, `await`, `yield`, dynamic imports, and ambiguous free identifiers. Node and browser globals such as `Buffer`, `process`, `window`, and `document` are not implicit standard globals.
 
@@ -108,6 +108,7 @@ The initial proof engine handles primitive and array literals, trivial unary exp
 | RF1001 | Predicate is not a concrete string literal          |
 | RF1002 | Subject cannot be inferred unambiguously            |
 | RF1003 | Predicate attempts a disallowed external capture    |
+| RF1004 | Predicate syntax cannot be compiled from runtime IR |
 | RF1101 | Source is not assignable to the unrefined base type |
 | RF1200 | Predicate is statically disproven                   |
 | RF1400 | Refinement metadata cannot be resolved              |
