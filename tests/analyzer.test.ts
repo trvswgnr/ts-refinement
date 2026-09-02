@@ -166,4 +166,21 @@ describe("TypeScript refinement analysis", () => {
     ]);
     expect(results.every((result) => result.diagnostics.length === 0)).toBe(true);
   });
+
+  it("proves refinement re-assertions from source type metadata", () => {
+    const state = fixtureProgram();
+    const source = state.program.getSourceFile(fixtureFile("reassertions.ts"));
+    if (source === undefined) throw new Error("fixture was not loaded");
+
+    const results = analyzeSourceFile(state.context, source);
+    expect(results.map((result) => result.proof.kind)).toEqual([
+      "true",
+      "true",
+      "true",
+      "true",
+      "unknown",
+      "unknown",
+    ]);
+    expect(results.every((result) => result.diagnostics.length === 0)).toBe(true);
+  });
 });

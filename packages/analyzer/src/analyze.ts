@@ -148,13 +148,17 @@ function analyzeAssertionUncached(
     return { diagnostics, proof: { kind: "unknown" }, site };
   }
 
-  const sourceValue = evaluateSourceExpression(context.ts, context.checker, node.expression);
-  const staticProof = provePredicates(definition.predicates, sourceValue);
   const sourceResolution = resolveRefinementMetadata(context, sourceType);
   const sourcePredicates =
     sourceResolution.isRefinement && sourceResolution.definition !== null
       ? sourceResolution.definition.predicates
       : [];
+  if (sourcePredicates.length > 0 && entails(sourcePredicates, definition.predicates)) {
+    return { diagnostics, proof: { kind: "true" }, site };
+  }
+
+  const sourceValue = evaluateSourceExpression(context.ts, context.checker, node.expression);
+  const staticProof = provePredicates(definition.predicates, sourceValue);
   const proof =
     staticProof.kind === "unknown" &&
     entails([...sourcePredicates, ...collectGuardPredicates(context, node)], definition.predicates)

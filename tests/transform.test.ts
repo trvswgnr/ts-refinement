@@ -139,4 +139,21 @@ describe("source transform", () => {
     expect(output.code?.match(/__rf_[a-z0-9_]+\(\(n\), "Positive"\)/gu)).toHaveLength(16);
     expect(output.code?.match(/__rf_[a-z0-9_]+\(\(n\), "NonPositive"\)/gu)).toHaveLength(1);
   });
+
+  it("erases entailed re-assertions without registering unused validators", () => {
+    const state = fixtureProgram();
+    const sourceFile = state.program.getSourceFile(fixtureFile("reassertions.ts"));
+    if (sourceFile === undefined) throw new Error("fixture was not loaded");
+    const registry = createValidatorRegistry(ts, "@ts-refinement/runtime");
+    const register = vi.spyOn(registry, "register");
+    const output = transformSource(state.context, sourceFile, sourceFile.text, registry);
+
+    expect(output.diagnostics).toEqual([]);
+    expect(output.code).toContain("export const exact = positive;");
+    expect(output.code).toContain("export const stronger = greaterThanFive;");
+    expect(output.code).toContain("export const accumulated = bounded;");
+    expect(output.code).toContain("export const unsupportedIdentity = startsWithA;");
+    expect(output.code?.match(/refinement-types:validator:/gu)).toHaveLength(2);
+    expect(register).toHaveBeenCalledTimes(2);
+  });
 });
