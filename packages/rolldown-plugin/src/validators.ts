@@ -1,8 +1,7 @@
 import type * as ts from "typescript";
 
 import {
-  emitPredicateWithSubject,
-  parsePredicate,
+  compileExpression,
   type NormalizedPredicate,
   type RefinementDefinition,
 } from "../../analyzer/src/index.ts";
@@ -36,11 +35,7 @@ function stableHash(value: string): string {
 }
 
 function emitPredicate(tsModule: typeof ts, predicate: NormalizedPredicate): string {
-  const parsed = parsePredicate(tsModule, predicate.source);
-  if (!parsed.ok) {
-    throw new Error(`Unable to emit validated predicate '${predicate.source}'.`);
-  }
-  return emitPredicateWithSubject(tsModule, parsed.predicate, "value");
+  return compileExpression(tsModule, predicate.expression, "value");
 }
 
 export function createValidatorRegistry(

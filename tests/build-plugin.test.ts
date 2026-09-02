@@ -156,7 +156,7 @@ describe("Rolldown plugin", () => {
     expect(original.source?.endsWith("runtime-entry.ts")).toBe(true);
     expect(original.line).toBe(18);
     expect(original.column).toBe(9);
-    expect(chunk.code.match(/function assert/gu)).toHaveLength(7);
+    expect(chunk.code.match(/function assert/gu)).toHaveLength(6);
     expect(chunk.code).not.toContain("5 as Positive");
 
     const moduleUrl = `data:text/javascript;base64,${Buffer.from(chunk.code).toString("base64")}#${Date.now()}`;
@@ -185,7 +185,11 @@ describe("Rolldown plugin", () => {
       expect.objectContaining({ name: "RefinementError" }),
     );
     expect(fixture.checkParameterNamedA([1])).toEqual([1]);
-    expect(() => fixture.checkParameterNamedB([1])).toThrowError(
+    expect(fixture.checkParameterNamedB([1])).toEqual([1]);
+    expect(() => fixture.checkParameterNamedA([10])).toThrowError(
+      expect.objectContaining({ name: "RefinementError" }),
+    );
+    expect(() => fixture.checkParameterNamedB([10])).toThrowError(
       expect.objectContaining({ name: "RefinementError" }),
     );
     expect(() => fixture.checkConflicting(2)).toThrowError(
@@ -425,6 +429,11 @@ describe("Rolldown plugin", () => {
   it("fails the build for a statically false assertion", async () => {
     const bundle = await build(fixtureFile("build-invalid.ts"));
     await expect(bundle.generate({ format: "esm" })).rejects.toThrow(/RF1200/u);
+  });
+
+  it("fails before loading a validator for opaque normalized syntax", async () => {
+    const bundle = await build(fixtureFile("opaque-predicate.ts"));
+    await expect(bundle.generate({ format: "esm" })).rejects.toThrow(/RF1004.*ObjectLiteral/u);
   });
 
   it("fails when a TypeScript module is outside the configured program", async () => {

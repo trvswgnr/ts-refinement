@@ -3,6 +3,7 @@ export const DiagnosticCode = {
   PredicateNotConcrete: 1001,
   CannotInferSubject: 1002,
   ExternalCapture: 1003,
+  UnsupportedRuntimeSyntax: 1004,
   SourceNotAssignable: 1101,
   StaticallyDisproven: 1200,
   UnableToResolveMetadata: 1400,
