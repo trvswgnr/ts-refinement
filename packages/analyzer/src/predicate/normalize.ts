@@ -224,6 +224,14 @@ export function normalizePredicate(
     }
     if (tsModule.isArrowFunction(node)) return normalizeOpaque(node);
 
+    if (tsModule.isTypeOfExpression(node)) {
+      return {
+        kind: "unary",
+        operand: normalize(node.expression, bindings),
+        operator: "typeof",
+      };
+    }
+
     if (tsModule.isPrefixUnaryExpression(node)) {
       return {
         kind: "unary",

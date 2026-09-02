@@ -22,7 +22,11 @@ export default defineConfig({
   overrides: [
     {
       // AST dispatch is intentionally exhaustive; splitting the cases would obscure the language model.
-      files: ["packages/analyzer/src/predicate/*.ts", "packages/analyzer/src/proof/evaluate.ts"],
+      files: [
+        "packages/analyzer/src/predicate/*.ts",
+        "packages/analyzer/src/proof/entail.ts",
+        "packages/analyzer/src/proof/evaluate.ts",
+      ],
       rules: {
         complexity: ["error", 40],
       },
@@ -30,6 +34,7 @@ export default defineConfig({
     {
       files: [
         "packages/analyzer/src/predicate/ir.ts",
+        "packages/analyzer/src/proof/entail.ts",
         "packages/analyzer/src/proof/evaluate.ts",
         "packages/analyzer/src/proof/values.ts",
       ],
