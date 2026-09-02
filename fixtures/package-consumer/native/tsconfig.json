@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "lib": ["ESNext"],
+    "module": "Preserve",
+    "moduleResolution": "bundler",
+    "noEmit": true,
+    "plugins": [
+      { "transform": "@ts-refinement/ttsc/check" },
+      { "transform": "@ts-refinement/ttsc/transform" }
+    ],
+    "rootDir": ".",
+    "strict": true,
+    "target": "ESNext"
+  },
+  "include": ["index.ts"]
+}

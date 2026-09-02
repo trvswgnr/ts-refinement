@@ -47,6 +47,8 @@ export default defineConfig([
     entry: [
       "packages/unplugin/src/index.ts",
       "packages/unplugin/src/vite.ts",
+      "packages/unplugin/src/vitest.ts",
+      "packages/unplugin/src/loader.ts",
       "packages/unplugin/src/rollup.ts",
       "packages/unplugin/src/rolldown.ts",
       "packages/unplugin/src/webpack.ts",
@@ -66,9 +68,22 @@ export default defineConfig([
   {
     ...shared,
     cjsDefault: true,
-    entry: ["packages/typescript-plugin/src/index.ts"],
+    entry: [
+      "packages/typescript-plugin/src/index.ts",
+      "packages/typescript-plugin/src/transformer.ts",
+    ],
     format: ["cjs"],
     name: "typescript-plugin",
     outDir: "packages/typescript-plugin/dist",
+  },
+  {
+    ...shared,
+    entry: [
+      "packages/ttsc-plugin/src/index.ts",
+      "packages/ttsc-plugin/src/check.ts",
+      "packages/ttsc-plugin/src/transform.ts",
+    ],
+    name: "ttsc-plugin",
+    outDir: "packages/ttsc-plugin/dist",
   },
 ]);
