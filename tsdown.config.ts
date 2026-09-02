@@ -29,6 +29,12 @@ export default defineConfig([
   },
   {
     ...shared,
+    entry: ["packages/cli/src/cli.ts", "packages/cli/src/index.ts"],
+    name: "cli",
+    outDir: "packages/cli/dist",
+  },
+  {
+    ...shared,
     entry: ["packages/runtime/src/index.ts"],
     name: "runtime",
     outDir: "packages/runtime/dist",

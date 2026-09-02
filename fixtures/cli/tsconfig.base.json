@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "lib": ["ESNext"],
+    "module": "Preserve",
+    "moduleResolution": "bundler",
+    "paths": {
+      "ts-refinement": ["../../packages/core/src/index.ts"]
+    },
+    "strict": true,
+    "target": "ESNext"
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "name": "@ts-refinement/cli",
+  "version": "0.1.0",
+  "description": "Refinement-aware TypeScript project checker",
+  "keywords": [
+    "cli",
+    "refinement-types",
+    "typescript",
+    "validation"
+  ],
+  "license": "MIT",
+  "bin": {
+    "ts-refinement": "./dist/index.mjs"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/cli.mjs",
+  "module": "./dist/cli.mjs",
+  "types": "./dist/cli.d.mts",
+  "exports": {
+    ".": {
+      "types": "./dist/cli.d.mts",
+      "import": "./dist/cli.mjs",
+      "default": "./dist/cli.mjs"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "bunx --no-install tsdown --config ../../tsdown.config.ts --filter cli",
+    "prepack": "bun run build"
+  },
+  "peerDependencies": {
+    "ts-refinement": "0.1.0",
+    "typescript": ">=5.7 <7"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  }
+}

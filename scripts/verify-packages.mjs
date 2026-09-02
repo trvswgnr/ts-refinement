@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { cp, mkdtemp, readFile, rm } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,6 +16,7 @@ const packages = [
     name: "@ts-refinement/analyzer",
     profile: "esm-only",
   },
+  { directory: "packages/cli", name: "@ts-refinement/cli", profile: "esm-only" },
   { directory: "packages/runtime", name: "@ts-refinement/runtime", profile: "esm-only" },
   {
     directory: "packages/rolldown-plugin",
@@ -89,6 +90,11 @@ async function validateMetadata() {
   assert.deepEqual(manifests.get("@ts-refinement/runtime").optionalDependencies, undefined);
   assert.deepEqual(manifests.get("@ts-refinement/runtime").peerDependencies, undefined);
   assert.deepEqual(manifests.get("@ts-refinement/analyzer").dependencies, undefined);
+  assert.deepEqual(manifests.get("@ts-refinement/cli").dependencies, undefined);
+  assert.equal(
+    manifests.get("@ts-refinement/cli").peerDependencies["ts-refinement"],
+    manifests.get("ts-refinement").version,
+  );
   assert.deepEqual(manifests.get("@ts-refinement/typescript-plugin").dependencies, undefined);
   assert.deepEqual(manifests.get("@ts-refinement/rolldown").dependencies, {
     "magic-string": "^0.30.21",
@@ -162,7 +168,43 @@ async function validateFullInstall(temporaryDirectory, artifacts) {
     "typescript@5.9.3",
   ]);
   const tsc = join(consumerDirectory, "node_modules", ".bin", "tsc");
+  const refinement = join(consumerDirectory, "node_modules", ".bin", "ts-refinement");
   await run(tsc, ["--project", "tsconfig.json"], consumerDirectory);
+  await run(refinement, ["check", "--project", "tsconfig.json"], consumerDirectory);
+
+  await writeFile(
+    join(consumerDirectory, "cli-invalid.ts"),
+    `import type { Refined } from "ts-refinement";
+type Positive = Refined<number, "n > 0">;
+type GreaterThanFive = Refined<number, "n > 5">;
+declare const positive: Positive;
+export const inverse: GreaterThanFive = positive;
+export const disproven = -1 as Positive;
+`,
+  );
+  await writeFile(
+    join(consumerDirectory, "cli-invalid-tsconfig.json"),
+    `${JSON.stringify({
+      compilerOptions: {
+        lib: ["ESNext"],
+        module: "NodeNext",
+        moduleResolution: "NodeNext",
+        noEmit: true,
+        strict: true,
+        target: "ES2022",
+      },
+      files: ["cli-invalid.ts"],
+    })}\n`,
+  );
+  await assert.rejects(
+    run(refinement, ["check", "--project", "cli-invalid-tsconfig.json"], consumerDirectory),
+    (error) => {
+      assert.equal(error.code, 1);
+      assert.match(error.stdout, /error TS2322:/u);
+      assert.match(error.stdout, /error RF1200:/u);
+      return true;
+    },
+  );
   await run("node", ["verify.mjs"], consumerDirectory);
 }
 
