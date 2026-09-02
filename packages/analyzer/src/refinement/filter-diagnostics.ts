@@ -421,9 +421,8 @@ function callSignaturesAreEntailed(
   source: ts.Type,
   target: ts.Type,
 ): boolean {
-  const sourceCalls = context.checker.getSignaturesOfType(source, context.ts.SignatureKind.Call);
   const targetCalls = context.checker.getSignaturesOfType(target, context.ts.SignatureKind.Call);
-  return targetCalls.length === 0 || sourceCalls.length > 0;
+  return targetCalls.length === 0 || context.checker.isTypeAssignableTo(source, target);
 }
 
 function refinementStructureIsEntailed(

@@ -178,9 +178,8 @@ func refinementStructureIsEntailed(checker *shimchecker.Checker, sourceType, tar
 			}
 		}
 
-		sourceCalls := shimchecker.Checker_getSignaturesOfType(checker, source, shimchecker.SignatureKindCall)
 		targetCalls := shimchecker.Checker_getSignaturesOfType(checker, target, shimchecker.SignatureKindCall)
-		return len(targetCalls) == 0 || len(sourceCalls) > 0
+		return len(targetCalls) == 0 || checker.IsTypeAssignableTo(source, target)
 	}
 	return visit(sourceType, targetType)
 }

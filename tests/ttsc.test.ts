@@ -9,7 +9,7 @@ const root = resolve(import.meta.dirname, "..");
 const ttsc = resolve(root, "node_modules/.bin/ttsc");
 const outputRoot = mkdtempSync(resolve(tmpdir(), "ts-refinement-ttsc-"));
 
-function runTtsc(project: "invalid" | "valid", outDir: string) {
+function runTtsc(project: "invalid" | "unrelated-invalid" | "valid", outDir: string) {
   return spawnSync(
     ttsc,
     [
@@ -57,5 +57,9 @@ describe("TypeScript-Go native plugin", () => {
     expect(diagnostics).toContain("error RF90200:");
     expect(diagnostics).toContain("does not satisfy refinement 'Positive'");
     expect(diagnostics).toContain("at '.age'");
+
+    const unrelatedInvalid = runTtsc("unrelated-invalid", resolve(outputRoot, "unrelated-invalid"));
+    expect(unrelatedInvalid.status).toBe(2);
+    expect(`${unrelatedInvalid.stdout}${unrelatedInvalid.stderr}`).toContain("TS2322:");
   }, 180_000);
 });

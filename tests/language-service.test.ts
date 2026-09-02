@@ -129,6 +129,24 @@ describe("TypeScript language-service plugin", () => {
     expect(diagnostics).toEqual([]);
   });
 
+  it("retains unrelated callable incompatibilities in refined structures", () => {
+    const languageService = createLanguageService();
+    const plugin = init({ typescript: ts });
+    // SAFETY: These are the complete language-service fields read by the plugin under test.
+    const proxy = plugin.create({
+      config: {},
+      languageService,
+      languageServiceHost: {},
+      project: {},
+      serverHost: ts.sys,
+    } as ts.server.PluginCreateInfo);
+
+    const diagnostics = proxy.getSemanticDiagnostics(
+      fixtureFile("entailment-callable-mismatch.ts"),
+    );
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual([2322]);
+  });
+
   it("preserves publish verification warnings as warning diagnostics", () => {
     const directory = resolve(import.meta.dirname, "../fixtures/publish/unconfigured");
     const languageService = createLanguageService(directory);
