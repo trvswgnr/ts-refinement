@@ -1,0 +1,12 @@
+{
+  "name": "publish-configured",
+  "version": "1.0.0",
+  "scripts": {
+    "prepack": "npm run build && ts-refinement verify ./dist"
+  },
+  "ts-refinement": {
+    "verify": {
+      "outDir": "dist"
+    }
+  }
+}

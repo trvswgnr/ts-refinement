@@ -1,8 +1,20 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { resolve } from "node:path";
+
 import { describe, expect, it } from "vitest";
+import ts from "typescript";
 
-import { analyzeSourceFile, getRefinementDefinitionDiagnostics } from "@ts-refinement/analyzer";
+import {
+  analyzeSourceFile,
+  getPublishVerificationDiagnostics,
+  getRefinementDefinitionDiagnostics,
+  hasConfiguredPublishVerification,
+} from "@ts-refinement/analyzer";
 
-import { fixtureFile, fixtureProgram } from "./helpers.ts";
+import { fixtureFile, fixtureProgram, projectProgram } from "./helpers.ts";
+
+const publishFixtureDirectory = resolve(import.meta.dirname, "../fixtures/publish");
 
 describe("TypeScript refinement analysis", () => {
   it("diagnoses invalid predicates at their declarations", () => {
@@ -244,6 +256,105 @@ describe("TypeScript refinement analysis", () => {
       expect(source.text.slice(diagnostic.start, diagnostic.start + diagnostic.length)).toMatch(
         /^".*"$/u,
       );
+    }
+  });
+
+  it("warns once per exported declaration whose public type contains refinements", () => {
+    const directory = resolve(publishFixtureDirectory, "unconfigured");
+    const state = projectProgram(directory);
+    const source = state.program.getSourceFile(resolve(directory, "index.ts"));
+    if (source === undefined) throw new Error("fixture was not loaded");
+
+    const diagnostics = getPublishVerificationDiagnostics(state.context, source);
+    expect(diagnostics).toHaveLength(8);
+    expect(diagnostics.every((diagnostic) => diagnostic.code === 1500)).toBe(true);
+    expect(diagnostics.every((diagnostic) => diagnostic.severity === "warning")).toBe(true);
+    expect(diagnostics.map((diagnostic) => diagnostic.message)).toEqual(
+      expect.arrayContaining(
+        [
+          "Direct",
+          "Nested",
+          "Accumulated",
+          "PublicAlias",
+          "StarRefined",
+          "inferred",
+          "accepts",
+          "default",
+        ].map((name) => expect.stringContaining(`Exported declaration '${name}'`)),
+      ),
+    );
+    expect(diagnostics.every((diagnostic) => diagnostic.message.includes("package.json"))).toBe(
+      true,
+    );
+  });
+
+  it("suppresses publish warnings for configured and private packages", () => {
+    for (const name of ["configured", "private"]) {
+      const directory = resolve(publishFixtureDirectory, name);
+      const state = projectProgram(directory);
+      const source = state.program.getSourceFile(resolve(directory, "index.ts"));
+      if (source === undefined) throw new Error("fixture was not loaded");
+      expect(getPublishVerificationDiagnostics(state.context, source)).toEqual([]);
+    }
+  });
+
+  it("recognizes only matching direct verifier commands", () => {
+    const directory = mkdtempSync(resolve(tmpdir(), "ts-refinement-package-"));
+    const packagePath = resolve(directory, "package.json");
+    const cases = [
+      ["ts-refinement verify dist", "dist", true],
+      ["npm run build && ./node_modules/.bin/ts-refinement verify './dist'", "dist", true],
+      ["ts-refinement verify other", "dist", false],
+      ["npm run verify", "dist", false],
+      ["echo ts-refinement verify dist", "dist", false],
+      ["tool --argument 'ts-refinement verify dist'", "dist", false],
+      ["ts-refinement verify dist && echo verified", "dist", true],
+      ["ts-refinement verify dist || true", "dist", false],
+      ["true || ts-refinement verify dist", "dist", false],
+      ["false && ts-refinement verify dist", "dist", false],
+      ["exit 1 && ts-refinement verify dist", "dist", false],
+      ["ts-refinement verify dist; echo done", "dist", false],
+    ] as const;
+    try {
+      for (const [prepack, outDir, expected] of cases) {
+        writeFileSync(
+          packagePath,
+          JSON.stringify({
+            name: "temporary-package",
+            scripts: { prepack },
+            "ts-refinement": { verify: { outDir } },
+          }),
+        );
+        expect(hasConfiguredPublishVerification(ts, packagePath), prepack).toBe(expected);
+      }
+      writeFileSync(
+        packagePath,
+        JSON.stringify({
+          name: "temporary-package",
+          scripts: { prepack: "ts-refinement verify dist" },
+        }),
+      );
+      expect(hasConfiguredPublishVerification(ts, packagePath)).toBe(false);
+      writeFileSync(
+        packagePath,
+        JSON.stringify({
+          name: "temporary-package",
+          "ts-refinement": { verify: { outDir: "dist" } },
+        }),
+      );
+      expect(hasConfiguredPublishVerification(ts, packagePath)).toBe(false);
+      writeFileSync(
+        packagePath,
+        '{"scripts":{"prepack":"ts-refinement verify dist"},"scripts":{"prepack":"echo skipped"},"ts-refinement":{"verify":{"outDir":"dist"}}}',
+      );
+      expect(hasConfiguredPublishVerification(ts, packagePath)).toBe(false);
+      writeFileSync(
+        packagePath,
+        '{"scripts":{"prepack":"ts-refinement verify dist"},"ts-refinement":{"verify":{"outDir":"dist"},"verify":{"outDir":"other"}}}',
+      );
+      expect(hasConfiguredPublishVerification(ts, packagePath)).toBe(false);
+    } finally {
+      rmSync(directory, { force: true, recursive: true });
     }
   });
 });

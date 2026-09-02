@@ -114,6 +114,7 @@ The initial proof engine handles primitive and array literals, trivial unary exp
 | RF1101 | Source is not assignable to the unrefined base type |
 | RF1200 | Predicate is statically disproven                   |
 | RF1400 | Refinement metadata cannot be resolved              |
+| RF1500 | Exported refinement lacks publish verification      |
 
 ## Development
 

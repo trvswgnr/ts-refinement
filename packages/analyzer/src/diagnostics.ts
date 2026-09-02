@@ -7,6 +7,7 @@ export const DiagnosticCode = {
   SourceNotAssignable: 1101,
   StaticallyDisproven: 1200,
   UnableToResolveMetadata: 1400,
+  PublishVerificationMissing: 1500,
 } as const;
 
 export type RefinementDiagnosticSeverity = "error" | "warning";
@@ -32,12 +33,13 @@ export function createDiagnostic(
   code: number,
   message: string,
   location: DiagnosticLocation,
+  severity: RefinementDiagnosticSeverity = "error",
 ): RefinementDiagnostic {
   return {
     code,
     length: location.length,
     message: `${formatDiagnosticCode(code)}: ${message}`,
-    severity: "error",
+    severity,
     start: location.start,
   };
 }
