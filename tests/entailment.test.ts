@@ -21,6 +21,7 @@ import {
   type NormalizedPredicate,
   type StaticRuntimeValue,
 } from "@ts-refinement/analyzer";
+import { numberPredicateSources } from "../spec/entailment-generators.ts";
 
 function predicate(source: string): NormalizedPredicate {
   const parsed = parsePredicate(ts, source);
@@ -185,25 +186,7 @@ describe("normalized predicate entailment", () => {
   });
 
   it("never proves an invalid supported number implication over generated samples", () => {
-    const atom = oneof(
-      tuple(constantFrom(">", ">=", "<", "<=", "==="), integer({ min: -20, max: 20 })).map(
-        ([operator, bound]) => `n ${operator} ${bound}`,
-      ),
-      tuple(constantFrom(">", ">=", "<", "<="), integer({ min: -20, max: 20 })).map(
-        ([operator, bound]) => `-n ${operator} ${bound}`,
-      ),
-      tuple(constantFrom(">", ">=", "<", "<="), integer({ min: -20, max: 20 })).map(
-        ([operator, bound]) => `2 * n + 1 ${operator} ${bound}`,
-      ),
-      constantFrom(
-        "Number.isFinite(n)",
-        "Number.isInteger(n)",
-        "!(n <= 0)",
-        "n % 2 === 0",
-        "n % 3 === 1",
-      ),
-    );
-    const conjunction = array(atom, { maxLength: 3 }).map(predicates);
+    const conjunction = numberPredicateSources.map(predicates);
     const value = oneof(
       constantFrom(NaN, Infinity, -Infinity, -0, 0, 0.5, -0.5),
       double({ noDefaultInfinity: true, noNaN: true }),

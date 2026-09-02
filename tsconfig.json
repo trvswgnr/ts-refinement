@@ -35,6 +35,13 @@
     "types": ["bun"],
     "verbatimModuleSyntax": true
   },
-  "include": ["packages/**/*.ts", "tests/**/*.ts", "tsdown.config.ts", "vitest.config.ts"],
+  "include": [
+    "packages/**/*.ts",
+    "scripts/**/*.ts",
+    "spec/**/*.ts",
+    "tests/**/*.ts",
+    "tsdown.config.ts",
+    "vitest.config.ts"
+  ],
   "exclude": ["node_modules", "packages/*/dist"]
 }

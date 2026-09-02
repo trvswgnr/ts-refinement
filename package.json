@@ -11,13 +11,16 @@
   "type": "module",
   "scripts": {
     "build": "bun run --cwd packages/analyzer build && tsdown",
+    "corpus:check": "bun run --cwd packages/analyzer build && bun scripts/generate-entailment-corpus.ts --check",
+    "corpus:update": "bun run --cwd packages/analyzer build && bun scripts/generate-entailment-corpus.ts",
     "fmt": "oxfmt --check .",
     "fmt:fix": "oxfmt .",
-    "gate": "bun run typecheck && bun run lint && bun run fmt && bun run test:coverage && bun run test:package && bun run test:example",
+    "gate": "bun run typecheck && bun run corpus:check && bun run test:native && bun run lint && bun run fmt && bun run test:coverage && bun run test:package && bun run test:example",
     "lint": "oxlint .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:example": "cd examples/tsdown && bunx tsdown",
+    "test:native": "cd packages/ttsc-plugin/native && go test ./...",
     "test:package": "bun run --workspaces --sequential --if-present build && node scripts/verify-packages.mjs",
     "typecheck": "bun run --cwd packages/analyzer build && bun run --cwd packages/typescript-plugin build && TSP_COMPILER_TS_PATH=./node_modules/typescript/lib/typescript.js tspc --noEmit"
   },
