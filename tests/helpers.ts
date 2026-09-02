@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 
 import ts from "typescript";
 
-import { createProgramState } from "../packages/rolldown-plugin/src/program.ts";
+import { createProgramState } from "../packages/unplugin/src/program.ts";
 
 export const fixtureDirectory = resolve(import.meta.dirname, "../fixtures/analysis");
 

@@ -5,7 +5,7 @@ import ts60 from "typescript";
 
 import { analyzeSourceFile, parsePredicate } from "@ts-refinement/analyzer";
 
-import { createProgramState } from "../packages/rolldown-plugin/src/program.ts";
+import { createProgramState } from "../packages/unplugin/src/program.ts";
 
 import { fixtureDirectory, fixtureFile } from "./helpers.ts";
 

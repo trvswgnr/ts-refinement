@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "lib": ["ESNext"],
+    "module": "Preserve",
+    "moduleResolution": "bundler",
+    "noEmit": true,
+    "paths": {
+      "ts-refinement": ["../../packages/core/src/index.ts"]
+    },
+    "strict": true,
+    "target": "ESNext"
+  },
+  "include": ["entry.ts", "known-false.ts", "types.d.ts", "runtime.mjs"]
+}

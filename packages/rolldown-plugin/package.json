@@ -34,7 +34,7 @@
     "prepack": "bun run build"
   },
   "dependencies": {
-    "magic-string": "^0.30.21"
+    "@ts-refinement/unplugin": "0.1.0"
   },
   "peerDependencies": {
     "@ts-refinement/runtime": "0.1.0",

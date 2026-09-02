@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import ts from "typescript";
 
-import { transformSource } from "../packages/rolldown-plugin/src/transform.ts";
-import { createValidatorRegistry } from "../packages/rolldown-plugin/src/validators.ts";
+import { transformSource } from "../packages/unplugin/src/transform.ts";
+import { createValidatorRegistry } from "../packages/unplugin/src/validators.ts";
 
 import { fixtureFile, fixtureProgram } from "./helpers.ts";
 
@@ -32,7 +32,7 @@ describe("source transform", () => {
     expect(output.map).not.toBeNull();
     expect(output.code).toContain("export const knownGood = 5;");
     expect(output.code).toContain("export const knownEven = 4;");
-    expect(output.code?.match(/refinement-types:validator:/gu)).toHaveLength(3);
+    expect(output.code?.match(/ts-refinement-validator-/gu)).toHaveLength(3);
 
     const positiveCalls = [
       ...(output.code?.matchAll(/(__rf_[a-z0-9_]+)\(\(dynamic\), "Positive(?:ByValue)?"\)/gu) ??
@@ -109,7 +109,7 @@ describe("source transform", () => {
 
     expect(output.diagnostics).toEqual([]);
     expect(output.code?.indexOf('"use client"')).toBeLessThan(
-      output.code?.indexOf("refinement-types:validator:") ?? -1,
+      output.code?.indexOf("ts-refinement-validator-") ?? -1,
     );
   });
 
@@ -149,7 +149,7 @@ describe("source transform", () => {
     expect(output.code).toContain("else return n;");
     expect(output.code).toContain("return n !== 5 ? null : (n);");
     expect(output.code).toContain("export const staticLiteral = 5;");
-    expect(output.code?.match(/refinement-types:validator:/gu)).toHaveLength(2);
+    expect(output.code?.match(/ts-refinement-validator-/gu)).toHaveLength(2);
     expect(output.code?.match(/__rf_[a-z0-9_]+\(\(n\), "Positive"\)/gu)).toHaveLength(16);
     expect(output.code?.match(/__rf_[a-z0-9_]+\(\(n\), "NonPositive"\)/gu)).toHaveLength(1);
   });
@@ -167,7 +167,7 @@ describe("source transform", () => {
     expect(output.code).toContain("export const stronger = greaterThanFive;");
     expect(output.code).toContain("export const accumulated = bounded;");
     expect(output.code).toContain("export const unsupportedIdentity = startsWithA;");
-    expect(output.code?.match(/refinement-types:validator:/gu)).toHaveLength(2);
+    expect(output.code?.match(/ts-refinement-validator-/gu)).toHaveLength(2);
     expect(register).toHaveBeenCalledTimes(2);
   });
 
@@ -180,7 +180,7 @@ describe("source transform", () => {
     const output = transformSource(state.context, sourceFile, sourceFile.text, registry);
 
     expect(output.diagnostics).toEqual([]);
-    expect(output.code?.match(/refinement-types:validator:/gu)).toHaveLength(9);
+    expect(output.code?.match(/ts-refinement-validator-/gu)).toHaveLength(9);
     expect(register).toHaveBeenCalledTimes(11);
     const entries = register.mock.results.flatMap((result) =>
       result.type === "return" ? [result.value] : [],

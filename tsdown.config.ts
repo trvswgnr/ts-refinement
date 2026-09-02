@@ -41,6 +41,21 @@ export default defineConfig([
   },
   {
     ...shared,
+    entry: [
+      "packages/unplugin/src/index.ts",
+      "packages/unplugin/src/vite.ts",
+      "packages/unplugin/src/rollup.ts",
+      "packages/unplugin/src/rolldown.ts",
+      "packages/unplugin/src/webpack.ts",
+      "packages/unplugin/src/rspack.ts",
+      "packages/unplugin/src/esbuild.ts",
+      "packages/unplugin/src/farm.ts",
+    ],
+    name: "unplugin",
+    outDir: "packages/unplugin/dist",
+  },
+  {
+    ...shared,
     entry: ["packages/rolldown-plugin/src/index.ts"],
     name: "rolldown-plugin",
     outDir: "packages/rolldown-plugin/dist",

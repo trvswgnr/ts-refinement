@@ -19,6 +19,8 @@
       "@ts-refinement/analyzer": ["./packages/analyzer/src/index.ts"],
       "@ts-refinement/rolldown": ["./packages/rolldown-plugin/src/index.ts"],
       "@ts-refinement/runtime": ["./packages/runtime/src/index.ts"],
+      "@ts-refinement/unplugin": ["./packages/unplugin/src/index.ts"],
+      "@ts-refinement/unplugin/*": ["./packages/unplugin/src/*.ts"],
       "@ts-refinement/typescript-plugin": ["./packages/typescript-plugin/src/index.ts"]
     },
     "skipLibCheck": true,

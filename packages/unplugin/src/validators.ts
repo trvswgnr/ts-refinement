@@ -6,7 +6,7 @@ import {
   type RefinementDefinition,
 } from "../../analyzer/src/index.ts";
 
-const publicValidatorPrefix = "refinement-types:validator:";
+const publicValidatorPrefix = "ts-refinement-validator-";
 const resolvedValidatorPrefix = `\0${publicValidatorPrefix}`;
 
 export interface ValidatorEntry {
