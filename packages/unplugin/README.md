@@ -31,9 +31,9 @@ interface RefinementTypesPluginOptions {
 
 The plugin analyzes the exact source supplied by the bundler, emits runtime checks for
 inconclusive assertions, preserves source maps, and fails builds on refinement diagnostics.
-Rollup-compatible write builds also emit `.ts-refinement-manifest.json` after final JavaScript
-assets exist. Run `ts-refinement verify OUTDIR` from `prepack` to validate its digests and runtime
-site markers.
+Successful write builds also emit `.ts-refinement-manifest.json` after final JavaScript assets
+exist. Run `ts-refinement verify OUTDIR` from `prepack` to validate its digests and runtime site
+markers.
 
 The compile-time analyzer never executes predicate JavaScript. Predicates for inconclusive
 assertions are compiled from normalized IR and execute in the consumer bundle. Primitive literal

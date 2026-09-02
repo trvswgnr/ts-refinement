@@ -2,7 +2,7 @@
 
 An implementation of refinement assertions for TypeScript that integrates with build tooling and your favorite code editor.
 
-Using VSCode? [Start here](./docs/vscode-quickstart.md).
+Using VS Code? [Start here](./docs/vscode-quickstart.md).
 
 A refinement attaches a predicate to an existing type:
 
@@ -152,4 +152,4 @@ bun install
 bun run gate
 ```
 
-`gate` runs type checking, linting, formatting verification, the analyzer/build/runtime/language-service tests, and all package builds.
+`gate` runs type checking, linting, formatting verification, the analyzer/build/runtime/language-service tests, all package builds, and the tsdown example build.
