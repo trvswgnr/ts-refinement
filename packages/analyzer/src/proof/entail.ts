@@ -22,6 +22,7 @@ interface Term {
 }
 
 interface Domain {
+  bigintTyped: boolean;
   readonly congruences: Congruence[];
   finite: boolean;
   integral: boolean;
@@ -33,6 +34,7 @@ interface Comparison {
   readonly bound: Bound;
   readonly kind: ScalarKind;
   readonly relation: "equal" | "lower" | "upper";
+  readonly requiresBigInt: boolean;
   readonly requiresIntegral: boolean;
   readonly term: Term;
   readonly wasNegated: boolean;
@@ -52,6 +54,7 @@ interface Affine {
   readonly coefficient: Scalar;
   readonly kind: ScalarKind;
   readonly offset: Scalar;
+  readonly requiresBigInt: boolean;
   readonly term: Term | null;
   readonly transformed: boolean;
 }
@@ -96,20 +99,48 @@ function scalarLiteral(expression: NormalizedExpression): Scalar | null {
 
 function emptyAffine(kind: ScalarKind): Affine {
   return kind === "bigint"
-    ? { coefficient: 0n, kind, offset: 0n, term: null, transformed: false }
-    : { coefficient: 0, kind, offset: 0, term: null, transformed: false };
+    ? {
+        coefficient: 0n,
+        kind,
+        offset: 0n,
+        requiresBigInt: false,
+        term: null,
+        transformed: false,
+      }
+    : {
+        coefficient: 0,
+        kind,
+        offset: 0,
+        requiresBigInt: false,
+        term: null,
+        transformed: false,
+      };
 }
 
 function affineConstant(value: Scalar, kind: ScalarKind): Affine | null {
   if (typeof value !== kind) return null;
   const affine = emptyAffine(kind);
-  return { ...affine, offset: value };
+  return { ...affine, offset: value, requiresBigInt: kind === "bigint" };
 }
 
 function affineTerm(term: Term, kind: ScalarKind): Affine {
   return kind === "bigint"
-    ? { coefficient: 1n, kind, offset: 0n, term, transformed: false }
-    : { coefficient: 1, kind, offset: 0, term, transformed: false };
+    ? {
+        coefficient: 1n,
+        kind,
+        offset: 0n,
+        requiresBigInt: false,
+        term,
+        transformed: false,
+      }
+    : {
+        coefficient: 1,
+        kind,
+        offset: 0,
+        requiresBigInt: false,
+        term,
+        transformed: false,
+      };
 }
 
 function addAffine(left: Affine, right: Affine, subtract: boolean): Affine | null {
@@ -123,6 +154,7 @@ function addAffine(left: Affine, right: Affine, subtract: boolean): Affine | nul
       coefficient: leftCoefficient + (subtract ? -rightCoefficient : rightCoefficient),
       kind: "bigint",
       offset: leftOffset + (subtract ? -rightOffset : rightOffset),
+      requiresBigInt: left.requiresBigInt || right.requiresBigInt,
       term: left.term ?? right.term,
       transformed: true,
     };
@@ -139,6 +171,7 @@ function addAffine(left: Affine, right: Affine, subtract: boolean): Affine | nul
     coefficient,
     kind: "number",
     offset,
+    requiresBigInt: false,
     term: left.term ?? right.term,
     transformed: true,
   };
@@ -153,6 +186,7 @@ function multiplyAffine(left: Affine, right: Affine): Affine | null {
       coefficient: BigInt(expression.coefficient) * constant,
       kind: "bigint",
       offset: BigInt(expression.offset) * constant,
+      requiresBigInt: left.requiresBigInt || right.requiresBigInt,
       term: expression.term,
       transformed: true,
     };
@@ -163,7 +197,14 @@ function multiplyAffine(left: Affine, right: Affine): Affine | null {
   const coefficient = Number(expression.coefficient) * constant;
   const offset = Number(expression.offset) * constant;
   if (!Number.isFinite(coefficient) || !Number.isFinite(offset)) return null;
-  return { coefficient, kind: "number", offset, term: expression.term, transformed: true };
+  return {
+    coefficient,
+    kind: "number",
+    offset,
+    requiresBigInt: false,
+    term: expression.term,
+    transformed: true,
+  };
 }
 
 function parseAffine(expression: NormalizedExpression, kind: ScalarKind): Affine | null {
@@ -243,6 +284,9 @@ function bigintComparison(
   wasNegated: boolean,
 ): Comparison | null {
   if (affine.term === null || affine.kind !== "bigint") return null;
+  if (!affine.requiresBigInt) {
+    return bareBigintComparison(affine, literal, operator, wasNegated);
+  }
   let coefficient = BigInt(affine.coefficient);
   if (coefficient === 0n) return null;
   let difference = literal - BigInt(affine.offset);
@@ -259,6 +303,7 @@ function bigintComparison(
         bound: { inclusive: true, value: floorDiv(difference, coefficient) + 1n },
         kind: "bigint",
         relation: "lower",
+        requiresBigInt: true,
         requiresIntegral: false,
         term: affine.term,
         wasNegated,
@@ -268,6 +313,7 @@ function bigintComparison(
         bound: { inclusive: true, value: ceilDiv(difference, coefficient) },
         kind: "bigint",
         relation: "lower",
+        requiresBigInt: true,
         requiresIntegral: false,
         term: affine.term,
         wasNegated,
@@ -277,6 +323,7 @@ function bigintComparison(
         bound: { inclusive: true, value: ceilDiv(difference, coefficient) - 1n },
         kind: "bigint",
         relation: "upper",
+        requiresBigInt: true,
         requiresIntegral: false,
         term: affine.term,
         wasNegated,
@@ -286,6 +333,7 @@ function bigintComparison(
         bound: { inclusive: true, value: floorDiv(difference, coefficient) },
         kind: "bigint",
         relation: "upper",
+        requiresBigInt: true,
         requiresIntegral: false,
         term: affine.term,
         wasNegated,
@@ -296,6 +344,7 @@ function bigintComparison(
         bound: { inclusive: true, value: difference / coefficient },
         kind: "bigint",
         relation: "equal",
+        requiresBigInt: true,
         requiresIntegral: false,
         term: affine.term,
         wasNegated,
@@ -304,6 +353,54 @@ function bigintComparison(
     default:
       return null;
   }
+}
+
+function bareBigintComparison(
+  affine: Affine,
+  literal: bigint,
+  operator: string,
+  wasNegated: boolean,
+): Comparison | null {
+  if (
+    affine.term === null ||
+    affine.transformed ||
+    affine.coefficient !== 1n ||
+    affine.offset !== 0n
+  ) {
+    return null;
+  }
+  if ([">", ">="].includes(operator)) {
+    return {
+      bound: { inclusive: operator === ">=", value: literal },
+      kind: "bigint",
+      relation: "lower",
+      requiresBigInt: false,
+      requiresIntegral: false,
+      term: affine.term,
+      wasNegated,
+    };
+  }
+  if (["<", "<="].includes(operator)) {
+    return {
+      bound: { inclusive: operator === "<=", value: literal },
+      kind: "bigint",
+      relation: "upper",
+      requiresBigInt: false,
+      requiresIntegral: false,
+      term: affine.term,
+      wasNegated,
+    };
+  }
+  if (operator !== "===") return null;
+  return {
+    bound: { inclusive: true, value: literal },
+    kind: "bigint",
+    relation: "equal",
+    requiresBigInt: false,
+    requiresIntegral: false,
+    term: affine.term,
+    wasNegated,
+  };
 }
 
 function numberComparison(
@@ -330,6 +427,7 @@ function numberComparison(
         bound: { inclusive: normalizedOperator === ">=", value: bound },
         kind: "number",
         relation: "lower",
+        requiresBigInt: false,
         requiresIntegral: false,
         term: affine.term,
         wasNegated,
@@ -340,6 +438,7 @@ function numberComparison(
         bound: { inclusive: normalizedOperator === "<=", value: bound },
         kind: "number",
         relation: "upper",
+        requiresBigInt: false,
         requiresIntegral: false,
         term: affine.term,
         wasNegated,
@@ -349,6 +448,7 @@ function numberComparison(
         bound: { inclusive: true, value: bound },
         kind: "number",
         relation: "equal",
+        requiresBigInt: false,
         requiresIntegral: false,
         term: affine.term,
         wasNegated,
@@ -416,6 +516,7 @@ function integerNumberComparison(
     bound: { inclusive: true, value },
     kind: "number",
     relation,
+    requiresBigInt: false,
     requiresIntegral: true,
     term,
     wasNegated,
@@ -543,6 +644,7 @@ function domainKey(term: Term, kind: ScalarKind): string {
 function createDomain(term: Term, kind: ScalarKind): Domain {
   const lower = kind === "number" && term.intrinsicLower !== null ? term.intrinsicLower : null;
   return {
+    bigintTyped: false,
     congruences: [],
     finite: kind === "number" && term.intrinsicFinite,
     integral: kind === "bigint" || (kind === "number" && term.intrinsicIntegral),
@@ -664,6 +766,15 @@ export function entails(
     const domain = getDomain(comparison.term, comparison.kind);
     if (comparison.requiresIntegral && !domain.integral) continue;
     if (comparison.wasNegated && comparison.kind === "number" && !domain.finite) continue;
+    if (comparison.wasNegated && comparison.kind === "bigint" && !comparison.requiresBigInt) {
+      continue;
+    }
+    if (
+      comparison.kind === "bigint" &&
+      (comparison.requiresBigInt || comparison.relation === "equal")
+    ) {
+      domain.bigintTyped = true;
+    }
     addComparison(domain, comparison);
   }
 
@@ -672,6 +783,7 @@ export function entails(
     if (fact === null) continue;
     const domain = getDomain(fact.term, fact.kind);
     if (fact.kind === "number" && !domain.integral) continue;
+    if (fact.kind === "bigint") domain.bigintTyped = true;
     domain.congruences.push({ modulus: fact.modulus, remainder: fact.remainder });
     const zero = fact.kind === "bigint" ? 0n : 0;
     if (fact.remainder > zero) {
@@ -696,6 +808,7 @@ export function entails(
     if (requestedComparison !== null) {
       const domain = getDomain(requestedComparison.term, requestedComparison.kind);
       if (requestedComparison.requiresIntegral && !domain.integral) return false;
+      if (requestedComparison.requiresBigInt && !domain.bigintTyped) return false;
       if (
         requestedComparison.wasNegated &&
         requestedComparison.kind === "number" &&

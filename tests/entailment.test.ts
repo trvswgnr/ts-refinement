@@ -77,6 +77,11 @@ describe("normalized predicate entailment", () => {
 
   it("keeps number and bigint domains independent", () => {
     expect(entails([predicate("n > 5n")], [predicate("n > 0n")])).toBe(true);
+    expect(entails([predicate("n > 5n")], [predicate("n >= 6n")])).toBe(false);
+    expect(entails([predicate("n < 5n")], [predicate("n <= 4n")])).toBe(false);
+    expect(entails([predicate("!(n <= 5n)")], [predicate("n > 5n")])).toBe(false);
+    expect(entails([predicate("n >= 5n")], [predicate("n + 1n >= 6n")])).toBe(false);
+    expect(entails([predicate("n + 0n >= 5n")], [predicate("n + 1n >= 6n")])).toBe(true);
     expect(entails([predicate("n > 5")], [predicate("n > 0n")])).toBe(false);
     expect(entails([predicate("n > 5n")], [predicate("n > 0")])).toBe(false);
   });
@@ -107,7 +112,7 @@ describe("normalized predicate entailment", () => {
       entails([predicate("Number.isInteger(n)"), predicate("!(n <= 5)")], [predicate("n > 5")]),
     ).toBe(true);
     expect(entails([predicate("!(n <= 5)")], [predicate("n > 5")])).toBe(false);
-    expect(entails([predicate("!(n <= 5n)")], [predicate("n > 5n")])).toBe(true);
+    expect(entails([predicate("!(n + 0n <= 5n)")], [predicate("n > 5n")])).toBe(true);
     expect(entails([predicate("n > 5")], [predicate("!(n <= 5)")])).toBe(true);
   });
 
