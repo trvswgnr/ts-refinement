@@ -1,30 +1,16 @@
 # @ts-refinement/cli
 
-The refinement-aware TypeScript project checker for ts-refinement.
+Publish-time verification for transformed ts-refinement output.
 
 ```sh
-npm install --save-dev @ts-refinement/cli typescript
-npx ts-refinement check
-```
-
-Pass `--project` or `-p` a `tsconfig.json` path or a directory containing one. The command reports
-ordinary TypeScript diagnostics together with refinement diagnostics and never emits files.
-
-Use this command in CI in place of bare `tsc --noEmit` when refinement implication affects
-assignability.
-
-Bare TypeScript still carries branded types, but it cannot delegate predicate implication to the
-analyzer. The checker does not transform code or insert runtime validators.
-
-Verify that a final package build retains every runtime-required assertion:
-
-```sh
+npm install --save-dev @ts-refinement/cli
 npx ts-refinement verify dist
 ```
 
 The command reads `dist/.ts-refinement-manifest.json` by default. Pass `--manifest` to select a
 different manifest path. Missing manifests, changed assets, malformed JavaScript, and missing
-runtime site markers fail verification.
+runtime site markers fail verification. It has no TypeScript compiler dependency and works with
+output produced by either the legacy unplugin adapters or the native `ttsc` transform.
 
 Publishable packages exposing refinements should configure the output directory and call the
 verifier directly from `prepack`:

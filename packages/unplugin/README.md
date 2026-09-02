@@ -1,6 +1,8 @@
 # @ts-refinement/unplugin
 
 One refinement transform for Vite, Rollup, Rolldown, webpack, Rspack, esbuild, and Farm.
+This analyzer-backed integration supports TypeScript 5.7 through 6.x. TypeScript 7 and newer uses
+the native `@ts-refinement/ttsc` transform.
 
 ```sh
 npm install --save-dev @ts-refinement/unplugin typescript

@@ -34,10 +34,10 @@ The source must already be assignable to the unrefined base type. Refining direc
 
 ```sh
 bun add ts-refinement @ts-refinement/runtime
-bun add --dev @ts-refinement/unplugin typescript tsdown
+bun add --dev @ts-refinement/cli typescript
 ```
 
-`ts-refinement` is type-only and has no runtime dependencies. Keep `@ts-refinement/runtime` in regular dependencies because transformed code can import it when the bundler externalizes package dependencies. Build and editor integrations belong in development dependencies.
+`ts-refinement` is type-only and has no runtime dependencies. Keep `@ts-refinement/runtime` in regular dependencies because transformed code can import it when the compiler or bundler externalizes package dependencies. `@ts-refinement/cli` verifies final JavaScript on every supported TypeScript generation. Build and editor integrations belong in development dependencies and depend on the compiler generation below.
 
 ## Packages
 
@@ -46,17 +46,21 @@ The repository publishes independently installable packages with separate depend
 - `ts-refinement` - the dependency-free, type-only `Refined<Base, Predicate>` API
 - `@ts-refinement/runtime` - the dependency-free `RefinementError` API
 - `@ts-refinement/analyzer` - the shared parser, resolver, proof engine, and diagnostics for tooling authors
-- `@ts-refinement/cli` - the refinement-aware `ts-refinement check` command
+- `@ts-refinement/cli` - publish-time verification for transformed JavaScript
 - `@ts-refinement/unplugin` - shared Vite, Rollup, Rolldown, webpack, Rspack, esbuild, and Farm adapters
 - `@ts-refinement/rolldown` - compatibility re-export of the Rolldown adapter
 - `@ts-refinement/typescript-plugin` - TypeScript language-service diagnostics
 - `@ts-refinement/ttsc` - native TypeScript-Go diagnostics and transforms
 
-The integration packages bundle the analyzer implementation they were tested with. This keeps the TypeScript plugin CommonJS-compatible and prevents ordinary users from installing the standalone analyzer package. All packages are released together at the same version, and integration peer dependencies require the matching core and runtime versions.
+Legacy integration packages pin the analyzer implementation they were tested with. The TypeScript plugin remains CommonJS-compatible for tsserver. All packages are released together at the same version, and integration peer dependencies require the matching core and runtime versions.
 
 ## Project setup
 
 TypeScript 5.7 through 6.x uses `tspc` with the Program Transformer:
+
+```sh
+bun add --dev @ts-refinement/typescript-plugin @ts-refinement/unplugin ts-patch tsdown
+```
 
 ```json
 {
@@ -77,6 +81,10 @@ TypeScript 5.7 through 6.x uses `tspc` with the Program Transformer:
 ```
 
 TypeScript 7 and newer uses `ttsc` with native check and transform stages:
+
+```sh
+bun add --dev @ts-refinement/ttsc ttsc
+```
 
 ```json
 {
@@ -118,11 +126,13 @@ refinementTypes({
 });
 ```
 
-The plugin recreates its TypeScript program at each build start and watches the tsconfig plus every source/type-definition file in the program. This favors correct watch rebuilds over premature incremental complexity.
+The plugin creates one TypeScript Program per build generation and retains it across module transforms. Source and config watch events invalidate the cached generation before the next build.
 
-Write builds emit `dist/.ts-refinement-manifest.json`. Publishable packages that expose refinements must run `ts-refinement verify dist` directly from `prepack`; the verifier checks final JavaScript digests and every runtime-required assertion marker.
+Unplugin write builds and native `ttsc build --emit` builds emit `.ts-refinement-manifest.json` in the output directory. Publishable packages that expose refinements must run `ts-refinement verify dist` directly from `prepack`; the verifier checks final JavaScript digests and every runtime-required assertion marker.
 
 ## Editor setup
+
+TypeScript 5.7 through 6.x uses the language-service plugin:
 
 ```json
 {
@@ -136,7 +146,15 @@ Write builds emit `dist/.ts-refinement-manifest.json`. Publishable packages that
 }
 ```
 
-VS Code may need to be switched to the workspace TypeScript version. On TypeScript 5.7 through 6.x, the language-service plugin adds editor diagnostics while `tspc` owns CI diagnostics. On TypeScript 7 and newer, the `ttsc` check plugin supplies editor and CI diagnostics. The unplugin adapters transform bundler builds, and `ts-refinement verify` validates publish output.
+VS Code may need to be switched to the workspace TypeScript version. The language-service plugin adds editor diagnostics while `tspc` owns CI diagnostics.
+
+TypeScript 7 and newer uses the [ttsc VS Code extension](https://ttsc.dev/docs/setup/vscode):
+
+```sh
+npx @ttsc/vscode
+```
+
+The extension reads the workspace's `ttsc`, TypeScript, and plugin configuration. The `@ts-refinement/ttsc` check plugin supplies editor diagnostics and quick fixes as well as CI diagnostics.
 
 ## Predicate rules
 
