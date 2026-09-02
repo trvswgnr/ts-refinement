@@ -119,4 +119,24 @@ describe("source transform", () => {
     expect(asRuntimeCall?.[1]).toBeDefined();
     expect(angleRuntimeCall?.[1]).toBe(asRuntimeCall?.[1]);
   });
+
+  it("erases stable guard proofs and retains validators after uncertain control flow", () => {
+    const state = fixtureProgram();
+    const sourceFile = state.program.getSourceFile(fixtureFile("branch-guards.ts"));
+    if (sourceFile === undefined) throw new Error("fixture was not loaded");
+    const registry = createValidatorRegistry(ts, "@ts-refinement/runtime");
+    const output = transformSource(state.context, sourceFile, sourceFile.text, registry);
+
+    expect(output.diagnostics).toEqual([]);
+    expect(output.code).toContain("if (n > 0) return n;");
+    expect(output.code?.match(/if \(n < 10\) return n;/gu)).toHaveLength(2);
+    expect(output.code).toContain("return n > 0 && (n);");
+    expect(output.code).toContain("return n > 0 ? (n) : null;");
+    expect(output.code).toContain("else return n;");
+    expect(output.code).toContain("return n !== 5 ? null : (n);");
+    expect(output.code).toContain("export const staticLiteral = 5;");
+    expect(output.code?.match(/refinement-types:validator:/gu)).toHaveLength(2);
+    expect(output.code?.match(/__rf_[a-z0-9_]+\(\(n\), "Positive"\)/gu)).toHaveLength(16);
+    expect(output.code?.match(/__rf_[a-z0-9_]+\(\(n\), "NonPositive"\)/gu)).toHaveLength(1);
+  });
 });

@@ -130,4 +130,40 @@ describe("TypeScript refinement analysis", () => {
     expect(results.map((result) => result.diagnostics[0]?.code)).toEqual([1200, 1200]);
     expect(results[0]?.diagnostics[0]?.message).toBe(results[1]?.diagnostics[0]?.message);
   });
+
+  it("proves assertions from stable branch guards", () => {
+    const state = fixtureProgram();
+    const source = state.program.getSourceFile(fixtureFile("branch-guards.ts"));
+    if (source === undefined) throw new Error("fixture was not loaded");
+
+    const results = analyzeSourceFile(state.context, source);
+    expect(results.map((result) => result.proof.kind)).toEqual([
+      "true",
+      "true",
+      "true",
+      "true",
+      "true",
+      "true",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "true",
+      "true",
+    ]);
+    expect(results.every((result) => result.diagnostics.length === 0)).toBe(true);
+  });
 });

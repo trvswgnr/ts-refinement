@@ -8,6 +8,8 @@ import {
 } from "./diagnostics.ts";
 import { evaluateSourceExpression, provePredicates, type Proof } from "./proof/evaluate.ts";
 import { displayStaticValue } from "./proof/values.ts";
+import { collectGuardPredicates } from "./proof/guards.ts";
+import { entails } from "./proof/entail.ts";
 import { parsePredicate } from "./predicate/parse.ts";
 import {
   resolveRefinementMetadata,
@@ -147,7 +149,17 @@ function analyzeAssertionUncached(
   }
 
   const sourceValue = evaluateSourceExpression(context.ts, context.checker, node.expression);
-  const proof = provePredicates(definition.predicates, sourceValue);
+  const staticProof = provePredicates(definition.predicates, sourceValue);
+  const sourceResolution = resolveRefinementMetadata(context, sourceType);
+  const sourcePredicates =
+    sourceResolution.isRefinement && sourceResolution.definition !== null
+      ? sourceResolution.definition.predicates
+      : [];
+  const proof =
+    staticProof.kind === "unknown" &&
+    entails([...sourcePredicates, ...collectGuardPredicates(context, node)], definition.predicates)
+      ? { kind: "true" as const }
+      : staticProof;
   if (proof.kind === "false") {
     const name = definition.displayName ?? context.checker.typeToString(targetType);
     const value = sourceValue.known ? displayStaticValue(sourceValue.value) : "<unknown>";
