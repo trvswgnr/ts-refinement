@@ -9,6 +9,7 @@ import {
   type RefinementDiagnostic,
 } from "../../analyzer/src/index.ts";
 import type { ValidatorEntry, ValidatorRegistry } from "./validators.ts";
+import type { BuildTracker } from "./manifest.ts";
 
 export interface TransformOutput {
   readonly code: string | null;
@@ -68,6 +69,7 @@ function applyAssertionEdits(
   imports: Map<ValidatorEntry, string>,
   allocatedNames: Set<string>,
   mappingAnchors: ValidatorMappingAnchor[],
+  tracker: BuildTracker | undefined,
 ): void {
   const prefixes = new Map<number, string[]>();
   const suffixes = new Map<number, string[]>();
@@ -102,8 +104,12 @@ function applyAssertionEdits(
 
     const refinementArgument =
       definition.displayName === undefined ? "" : `, ${JSON.stringify(definition.displayName)}`;
+    const markerArgument =
+      tracker === undefined
+        ? ""
+        : `${definition.displayName === undefined ? ", undefined" : ""}, ${JSON.stringify(tracker.registerSite(analysis))}`;
     const atEnd = suffixes.get(expressionEnd) ?? [];
-    atEnd.unshift(`)${refinementArgument})`);
+    atEnd.unshift(`)${refinementArgument}${markerArgument})`);
     suffixes.set(expressionEnd, atEnd);
   }
 
@@ -178,6 +184,7 @@ export function transformSource(
   sourceFile: ts.SourceFile,
   source: string,
   registry: ValidatorRegistry,
+  tracker?: BuildTracker,
 ): TransformOutput {
   if (sourceFile.text !== source) {
     throw new Error(`Source text invariant failed for '${sourceFile.fileName}'.`);
@@ -206,6 +213,7 @@ export function transformSource(
     imports,
     allocatedNames,
     mappingAnchors,
+    tracker,
   );
 
   if (imports.size > 0) {

@@ -6,11 +6,19 @@ import {
   filterEntailedRefinementDiagnostics,
   formatDiagnosticCode,
   getRefinementDiagnostics,
+  refinementManifestFileName,
   type AnalyzerContext,
 } from "../../analyzer/src/index.ts";
+import { assertReadableOutputDirectory, verifyOutput } from "./verify.ts";
 
 const refinementSource = "ts-refinement";
-const usage = "Usage: ts-refinement check [--project PROJECT]";
+const usage = `Usage:
+  ts-refinement check [--project PROJECT]
+  ts-refinement verify OUTDIR [--manifest MANIFEST]`;
+
+type CliCommand =
+  | { readonly kind: "check"; readonly project: string | undefined }
+  | { readonly directory: string; readonly kind: "verify"; readonly manifest: string | undefined };
 
 export interface CommandIO {
   readonly cwd: string;
@@ -22,7 +30,7 @@ function defaultIO(): CommandIO {
   return { cwd: process.cwd(), stderr: process.stderr, stdout: process.stdout };
 }
 
-function parseArguments(arguments_: readonly string[]): string | undefined {
+function parseCheckArguments(arguments_: readonly string[]): CliCommand {
   if (arguments_[0] !== "check") throw new Error(usage);
 
   let project: string | undefined;
@@ -33,7 +41,27 @@ function parseArguments(arguments_: readonly string[]): string | undefined {
     project = arguments_[index + 1];
     index += 1;
   }
-  return project;
+  return { kind: "check", project };
+}
+
+function parseVerifyArguments(arguments_: readonly string[]): CliCommand {
+  const directory = arguments_[1];
+  if (arguments_[0] !== "verify" || directory === undefined) throw new Error(usage);
+
+  let manifest: string | undefined;
+  for (let index = 2; index < arguments_.length; index += 1) {
+    if (arguments_[index] !== "--manifest" || manifest !== undefined) throw new Error(usage);
+    manifest = arguments_[index + 1];
+    if (manifest === undefined) throw new Error(usage);
+    index += 1;
+  }
+  return { directory, kind: "verify", manifest };
+}
+
+function parseArguments(arguments_: readonly string[]): CliCommand {
+  if (arguments_[0] === "check") return parseCheckArguments(arguments_);
+  if (arguments_[0] === "verify") return parseVerifyArguments(arguments_);
+  throw new Error(usage);
 }
 
 function resolveConfigPath(cwd: string, project: string | undefined): string {
@@ -155,10 +183,21 @@ function collectDiagnostics(parsed: ts.ParsedCommandLine): readonly ts.Diagnosti
 }
 
 export function runCli(arguments_: readonly string[], io: CommandIO = defaultIO()): number {
-  let project: string | undefined;
   try {
-    project = parseArguments(arguments_);
-    const configPath = resolveConfigPath(resolve(io.cwd), project);
+    const command = parseArguments(arguments_);
+    if (command.kind === "verify") {
+      const directory = resolve(io.cwd, command.directory);
+      assertReadableOutputDirectory(directory);
+      const manifestPath =
+        command.manifest === undefined
+          ? resolve(directory, refinementManifestFileName)
+          : resolve(io.cwd, command.manifest);
+      const failures = verifyOutput(directory, manifestPath);
+      if (failures.length > 0) io.stdout.write(`${failures.join("\n")}\n`);
+      return failures.length > 0 ? 1 : 0;
+    }
+
+    const configPath = resolveConfigPath(resolve(io.cwd), command.project);
     const parsed = parseConfig(configPath);
     const diagnostics = collectDiagnostics(parsed);
     if (diagnostics.length > 0) {

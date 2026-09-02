@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import { build as viteBuild } from "vite";
 import webpack from "webpack";
 
+import { verifyOutput } from "../packages/cli/src/verify.ts";
 import esbuildRefinement from "../packages/unplugin/src/esbuild.ts";
 import farmRefinement from "../packages/unplugin/src/farm.ts";
 import rolldownRefinement from "../packages/unplugin/src/rolldown.ts";
@@ -29,6 +30,7 @@ interface BuiltModule {
 
 interface BuildOutput {
   readonly code: string;
+  readonly manifest: string;
   readonly map: string;
   readonly sourceIdentity: boolean;
 }
@@ -42,23 +44,29 @@ const pluginOptions = { cwd: fixtureDirectory, runtimeModule, tsconfig: "tsconfi
 
 function outputFromChunk(
   output: readonly { readonly code?: string; readonly map?: unknown; readonly type: string }[],
+  manifest: string,
 ): BuildOutput {
   const chunk = output.find((item) => item.type === "chunk");
   if (chunk?.code === undefined || chunk.map === undefined || chunk.map === null) {
     throw new Error("build did not emit a mapped JavaScript chunk");
   }
-  return { code: chunk.code, map: JSON.stringify(chunk.map), sourceIdentity: true };
+  return { code: chunk.code, manifest, map: JSON.stringify(chunk.map), sourceIdentity: true };
 }
 
 async function buildRollup(
   input = entry,
   options: RefinementTypesPluginOptions = pluginOptions,
 ): Promise<BuildOutput> {
+  const directory = await mkdtemp(join(tmpdir(), "ts-refinement-rollup-"));
   const bundle = await rollup({ input, plugins: [rollupRefinement(options)] });
   try {
-    return outputFromChunk((await bundle.generate({ format: "es", sourcemap: true })).output);
+    const output = await bundle.write({ dir: directory, format: "es", sourcemap: true });
+    const manifestPath = join(directory, ".ts-refinement-manifest.json");
+    expect(verifyOutput(directory, manifestPath)).toEqual([]);
+    return outputFromChunk(output.output, await readFile(manifestPath, "utf8"));
   } finally {
     await bundle.close();
+    await rm(directory, { force: true, recursive: true });
   }
 }
 
@@ -66,11 +74,16 @@ async function buildRolldown(
   input = entry,
   options: RefinementTypesPluginOptions = pluginOptions,
 ): Promise<BuildOutput> {
+  const directory = await mkdtemp(join(tmpdir(), "ts-refinement-rolldown-"));
   const bundle = await rolldown({ input, plugins: [rolldownRefinement(options)] });
   try {
-    return outputFromChunk((await bundle.generate({ format: "esm", sourcemap: true })).output);
+    const output = await bundle.write({ dir: directory, format: "esm", sourcemap: true });
+    const manifestPath = join(directory, ".ts-refinement-manifest.json");
+    expect(verifyOutput(directory, manifestPath)).toEqual([]);
+    return outputFromChunk(output.output, await readFile(manifestPath, "utf8"));
   } finally {
     await bundle.close();
+    await rm(directory, { force: true, recursive: true });
   }
 }
 
@@ -78,54 +91,70 @@ async function buildVite(
   input = entry,
   options: RefinementTypesPluginOptions = pluginOptions,
 ): Promise<BuildOutput> {
-  const result = await viteBuild({
-    build: {
-      lib: { entry: input, fileName: "bundle", formats: ["es"] },
-      minify: false,
-      sourcemap: true,
-      write: false,
-    },
-    configFile: false,
-    logLevel: "silent",
-    plugins: [viteRefinement(options)],
-    root: fixtureDirectory,
-  });
-  const output = Array.isArray(result) ? result[0] : result;
-  if (output === undefined || !("output" in output)) throw new Error("Vite build had no output");
-  return outputFromChunk(output.output);
+  const directory = await mkdtemp(join(tmpdir(), "ts-refinement-vite-"));
+  try {
+    const result = await viteBuild({
+      build: {
+        emptyOutDir: true,
+        lib: { entry: input, fileName: "bundle", formats: ["es"] },
+        minify: false,
+        outDir: directory,
+        sourcemap: true,
+      },
+      configFile: false,
+      logLevel: "silent",
+      plugins: [viteRefinement(options)],
+      root: fixtureDirectory,
+    });
+    const output = Array.isArray(result) ? result[0] : result;
+    if (output === undefined || !("output" in output)) throw new Error("Vite build had no output");
+    const manifestPath = join(directory, ".ts-refinement-manifest.json");
+    expect(verifyOutput(directory, manifestPath)).toEqual([]);
+    return outputFromChunk(output.output, await readFile(manifestPath, "utf8"));
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
 }
 
 async function buildEsbuild(
   input = entry,
   options: RefinementTypesPluginOptions = pluginOptions,
 ): Promise<BuildOutput> {
-  const result = await esbuild.build({
-    absWorkingDir: fixtureDirectory,
-    bundle: true,
-    entryPoints: [input],
-    format: "esm",
-    logLevel: "silent",
-    outfile: "bundle.mjs",
-    platform: "node",
-    plugins: [esbuildRefinement(options)],
-    sourcemap: "external",
-    write: false,
-  });
-  const javascript = result.outputFiles.find((file) => file.path.endsWith(".mjs"));
-  const map = result.outputFiles.find((file) => file.path.endsWith(".mjs.map"));
-  if (javascript === undefined || map === undefined)
-    throw new Error("esbuild output was incomplete");
-  return { code: javascript.text, map: map.text, sourceIdentity: true };
+  const directory = await mkdtemp(join(tmpdir(), "ts-refinement-esbuild-"));
+  try {
+    await esbuild.build({
+      absWorkingDir: fixtureDirectory,
+      bundle: true,
+      entryPoints: [input],
+      format: "esm",
+      logLevel: "silent",
+      outfile: join(directory, "bundle.mjs"),
+      platform: "node",
+      plugins: [esbuildRefinement(options)],
+      sourcemap: "external",
+    });
+    const manifestPath = join(directory, ".ts-refinement-manifest.json");
+    expect(verifyOutput(directory, manifestPath)).toEqual([]);
+    return {
+      code: await readFile(join(directory, "bundle.mjs"), "utf8"),
+      manifest: await readFile(manifestPath, "utf8"),
+      map: await readFile(join(directory, "bundle.mjs.map"), "utf8"),
+      sourceIdentity: true,
+    };
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
 }
 
 async function buildWebpack(
   input = entry,
   options: RefinementTypesPluginOptions = pluginOptions,
+  fileName = "bundle.mjs",
 ): Promise<BuildOutput> {
   const directory = await mkdtemp(join(tmpdir(), "ts-refinement-webpack-"));
   const compiler = webpack({
     context: fixtureDirectory,
-    devtool: "source-map",
+    devtool: fileName.endsWith(".mjs") ? "source-map" : false,
     entry: input,
     experiments: { outputModule: true },
     mode: "development",
@@ -147,7 +176,7 @@ async function buildWebpack(
       ],
     },
     optimization: { minimize: false },
-    output: { filename: "bundle.mjs", library: { type: "module" }, module: true, path: directory },
+    output: { filename: fileName, library: { type: "module" }, module: true, path: directory },
     plugins: [webpackRefinement(options)],
     target: "node",
   });
@@ -160,10 +189,15 @@ async function buildWebpack(
       });
     });
     if (stats.hasErrors()) throw new Error(stats.toString({ all: false, errors: true }));
+    const manifestPath = join(directory, ".ts-refinement-manifest.json");
+    expect(verifyOutput(directory, manifestPath)).toEqual([]);
     return {
-      code: await readFile(join(directory, "bundle.mjs"), "utf8"),
-      map: await readFile(join(directory, "bundle.mjs.map"), "utf8"),
-      sourceIdentity: true,
+      code: await readFile(join(directory, fileName), "utf8"),
+      manifest: await readFile(manifestPath, "utf8"),
+      map: fileName.endsWith(".mjs")
+        ? await readFile(join(directory, `${fileName}.map`), "utf8")
+        : "{}",
+      sourceIdentity: fileName.endsWith(".mjs"),
     };
   } finally {
     await new Promise<void>((accept, reject) => {
@@ -176,11 +210,12 @@ async function buildWebpack(
 async function buildRspack(
   input = entry,
   options: RefinementTypesPluginOptions = pluginOptions,
+  fileName = "bundle.mjs",
 ): Promise<BuildOutput> {
   const directory = await mkdtemp(join(tmpdir(), "ts-refinement-rspack-"));
   const config = {
     context: fixtureDirectory,
-    devtool: "source-map",
+    devtool: fileName.endsWith(".mjs") ? "source-map" : false,
     entry: input,
     mode: "development",
     module: {
@@ -197,7 +232,7 @@ async function buildRspack(
       ],
     },
     optimization: { minimize: false },
-    output: { filename: "bundle.mjs", library: { type: "module" }, module: true, path: directory },
+    output: { filename: fileName, library: { type: "module" }, module: true, path: directory },
     plugins: [rspackRefinement(options)],
     target: "node",
   } satisfies rspackCore.Configuration;
@@ -211,10 +246,15 @@ async function buildRspack(
       });
     });
     if (stats.hasErrors()) throw new Error(stats.toString({ all: false, errors: true }));
+    const manifestPath = join(directory, ".ts-refinement-manifest.json");
+    expect(verifyOutput(directory, manifestPath)).toEqual([]);
     return {
-      code: await readFile(join(directory, "bundle.mjs"), "utf8"),
-      map: await readFile(join(directory, "bundle.mjs.map"), "utf8"),
-      sourceIdentity: true,
+      code: await readFile(join(directory, fileName), "utf8"),
+      manifest: await readFile(manifestPath, "utf8"),
+      map: fileName.endsWith(".mjs")
+        ? await readFile(join(directory, `${fileName}.map`), "utf8")
+        : "{}",
+      sourceIdentity: fileName.endsWith(".mjs"),
     };
   } finally {
     await new Promise<void>((accept, reject) => {
@@ -246,12 +286,21 @@ async function buildFarm(
     );
     const compiler = await createCompiler(config, logger);
     await compiler.compile();
+    compiler.writeResourcesToDisk();
     const resources = compiler.resources();
     const javascript = Object.entries(resources).find(([name]) => name.endsWith(".js"));
     const map = Object.entries(resources).find(([name]) => name.endsWith(".js.map"));
     if (javascript === undefined || map === undefined)
       throw new Error("Farm output was incomplete");
-    return { code: javascript[1].toString(), map: map[1].toString(), sourceIdentity: false };
+    const manifestPath = join(directory, ".ts-refinement-manifest.json");
+    expect(verifyOutput(directory, manifestPath)).toEqual([]);
+    const manifest = await readFile(manifestPath, "utf8");
+    return {
+      code: javascript[1].toString(),
+      manifest,
+      map: map[1].toString(),
+      sourceIdentity: false,
+    };
   } finally {
     await rm(directory, { force: true, recursive: true });
   }
@@ -279,6 +328,8 @@ describe("unplugin adapter conformance", () => {
     expect(output.code).toContain("RefinementError");
     expect(() => JSON.parse(output.map)).not.toThrow();
     if (output.sourceIdentity) expect(output.map).toContain("entry.ts");
+    expect(JSON.parse(output.manifest)).toMatchObject({ schemaVersion: 1 });
+    expect(output.manifest).toContain("entry.ts");
 
     const directory = await mkdtemp(join(tmpdir(), "ts-refinement-adapter-"));
     try {
@@ -325,6 +376,77 @@ describe("unplugin adapter conformance", () => {
     }
   });
 
+  it("leaves existing manifests untouched during memory-only builds", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "ts-refinement-memory-build-"));
+    const manifestPath = join(directory, ".ts-refinement-manifest.json");
+    const sentinel = "existing manifest\n";
+    async function expectSentinel(): Promise<void> {
+      expect(await readFile(manifestPath, "utf8")).toBe(sentinel);
+    }
+
+    try {
+      await writeFile(manifestPath, sentinel);
+      const rollupBundle = await rollup({
+        input: entry,
+        plugins: [rollupRefinement(pluginOptions)],
+      });
+      try {
+        await rollupBundle.generate({ dir: directory, format: "es" });
+      } finally {
+        await rollupBundle.close();
+      }
+      await expectSentinel();
+
+      const rolldownBundle = await rolldown({
+        input: entry,
+        plugins: [rolldownRefinement(pluginOptions)],
+      });
+      try {
+        await rolldownBundle.generate({ dir: directory, format: "esm" });
+      } finally {
+        await rolldownBundle.close();
+      }
+      await expectSentinel();
+
+      await viteBuild({
+        build: { lib: { entry, formats: ["es"] }, outDir: directory, write: false },
+        configFile: false,
+        logLevel: "silent",
+        plugins: [viteRefinement(pluginOptions)],
+        root: fixtureDirectory,
+      });
+      await expectSentinel();
+
+      await esbuild.build({
+        bundle: true,
+        entryPoints: [entry],
+        outdir: directory,
+        plugins: [esbuildRefinement(pluginOptions)],
+        write: false,
+      });
+      await expectSentinel();
+
+      const logger = new NoopLogger();
+      const config = await resolveConfig(
+        {
+          compilation: {
+            input: { index: entry },
+            output: { format: "esm", path: directory, targetEnv: "node" },
+          },
+          plugins: [farmRefinement(pluginOptions)],
+          root: fixtureDirectory,
+        },
+        "production",
+        logger,
+      );
+      const compiler = await createCompiler(config, logger);
+      await compiler.compile();
+      await expectSentinel();
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
   it("documents Farm 1.7 dropping passthrough transform mappings", async () => {
     const sentinel = "farm-source-map-sentinel.ts";
     const passthrough: JsPlugin = {
@@ -367,5 +489,35 @@ describe("unplugin adapter conformance", () => {
     expect(map).toBeDefined();
     expect(map).not.toContain(sentinel);
     expect(JSON.parse(map ?? "")).toEqual({ mappings: "", names: [], sources: [], version: 3 });
+  });
+
+  it("verifies extensionless webpack and Rspack JavaScript chunks", async () => {
+    const outputs = await Promise.all([
+      buildWebpack(entry, pluginOptions, "bundle"),
+      buildRspack(entry, pluginOptions, "bundle"),
+    ]);
+    for (const output of outputs) {
+      expect(JSON.parse(output.manifest)).toMatchObject({ assets: [{ file: "bundle" }] });
+    }
+  });
+
+  it("writes an esbuild manifest accepted by the CLI verifier", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "ts-refinement-esbuild-manifest-"));
+    try {
+      await esbuild.build({
+        absWorkingDir: fixtureDirectory,
+        bundle: true,
+        entryPoints: [entry],
+        format: "esm",
+        logLevel: "silent",
+        minify: true,
+        outfile: join(directory, "bundle"),
+        platform: "node",
+        plugins: [esbuildRefinement(pluginOptions)],
+      });
+      expect(verifyOutput(directory, join(directory, ".ts-refinement-manifest.json"))).toEqual([]);
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
   });
 });

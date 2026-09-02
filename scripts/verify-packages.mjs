@@ -91,7 +91,7 @@ async function validateMetadata() {
   assert.deepEqual(manifests.get("@ts-refinement/runtime").optionalDependencies, undefined);
   assert.deepEqual(manifests.get("@ts-refinement/runtime").peerDependencies, undefined);
   assert.deepEqual(manifests.get("@ts-refinement/analyzer").dependencies, undefined);
-  assert.deepEqual(manifests.get("@ts-refinement/cli").dependencies, undefined);
+  assert.deepEqual(manifests.get("@ts-refinement/cli").dependencies, { valibot: "1.4.2" });
   assert.equal(
     manifests.get("@ts-refinement/cli").peerDependencies["ts-refinement"],
     manifests.get("ts-refinement").version,
@@ -211,6 +211,7 @@ export const disproven = -1 as Positive;
     },
   );
   await run("node", ["verify.mjs"], consumerDirectory);
+  await run(refinement, ["verify", "dist"], consumerDirectory);
 }
 
 await validateMetadata();
