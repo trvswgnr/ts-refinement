@@ -21,4 +21,7 @@ export default defineConfig({
 New integrations can import `@ts-refinement/unplugin/rolldown` directly. This package depends on
 the unified integration and contains only the compatibility re-export.
 
+Use `ts-refinement check` for CI diagnostics and `ts-refinement verify` from `prepack`; this
+compatibility package only supplies the build transform.
+
 See the repository README for configuration and runtime behavior.

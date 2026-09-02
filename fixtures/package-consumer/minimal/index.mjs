@@ -1,4 +1,3 @@
-import "ts-refinement";
 import { RefinementError } from "@ts-refinement/runtime";
 
 const error = new RefinementError({ predicate: "n > 0", value: -1 });

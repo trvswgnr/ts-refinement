@@ -60,7 +60,8 @@ async function packAll(packDirectory) {
     assert.ok(result.files.some((file) => file.path === "LICENSE"));
     assert.ok(result.files.some((file) => file.path === "README.md"));
     assert.ok(
-      result.files.some((file) => file.path === "dist/index.mjs") ||
+      packageDefinition.name === "ts-refinement" ||
+        result.files.some((file) => file.path === "dist/index.mjs") ||
         packageDefinition.profile === "node16",
     );
     artifacts.push({
@@ -87,6 +88,18 @@ async function validateMetadata() {
   assert.deepEqual(manifests.get("ts-refinement").dependencies, undefined);
   assert.deepEqual(manifests.get("ts-refinement").optionalDependencies, undefined);
   assert.deepEqual(manifests.get("ts-refinement").peerDependencies, undefined);
+  assert.deepEqual(manifests.get("ts-refinement").exports, {
+    ".": { types: "./dist/index.d.mts" },
+  });
+  assert.equal(manifests.get("ts-refinement").main, undefined);
+  assert.equal(manifests.get("ts-refinement").module, undefined);
+  assert.deepEqual(manifests.get("ts-refinement")["ts-refinement"], {
+    verify: { outDir: "dist" },
+  });
+  assert.equal(
+    manifests.get("ts-refinement").scripts.prepack,
+    "bun run build && bun run --cwd ../cli build && ts-refinement verify dist",
+  );
   assert.deepEqual(manifests.get("@ts-refinement/runtime").dependencies, undefined);
   assert.deepEqual(manifests.get("@ts-refinement/runtime").optionalDependencies, undefined);
   assert.deepEqual(manifests.get("@ts-refinement/runtime").peerDependencies, undefined);

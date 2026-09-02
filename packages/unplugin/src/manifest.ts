@@ -184,7 +184,11 @@ export async function writeBuildManifest(
     tracker,
     directory,
     Object.values(bundle).flatMap((entry): readonly FinalJavaScriptAsset[] => {
-      if (entry.type === "chunk" && entry.code !== undefined) {
+      if (
+        entry.type === "chunk" &&
+        entry.code !== undefined &&
+        !/\.d\.[cm]?ts$/u.test(entry.fileName)
+      ) {
         return [{ file: entry.fileName, source: entry.code }];
       }
       if (

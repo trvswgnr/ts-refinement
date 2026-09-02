@@ -35,6 +35,10 @@ Rollup-compatible write builds also emit `.ts-refinement-manifest.json` after fi
 assets exist. Run `ts-refinement verify OUTDIR` from `prepack` to validate its digests and runtime
 site markers.
 
+The compile-time analyzer never executes predicate JavaScript. Predicates for inconclusive
+assertions are compiled from normalized IR and execute in the consumer bundle. Primitive literal
+module captures are folded into generated code; rejected captures report RF1003.
+
 Farm 1.7 emits a source-map asset but currently drops transform mappings, including mappings from
 passthrough plugins without ts-refinement. The Farm adapter forwards its transform map; source
 identity in Farm output depends on the compiler restoring transform-map composition.

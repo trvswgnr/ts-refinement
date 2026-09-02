@@ -10,6 +10,7 @@
         "@jridgewell/trace-mapping": "^0.3.31",
         "@oxlint/plugins": "^1.80.0",
         "@rspack/core": "2.2.2",
+        "@ts-refinement/cli": "workspace:*",
         "@types/bun": "^1.4.0",
         "@vitest/coverage-v8": "^4.1.11",
         "esbuild": "0.28.2",

@@ -19,7 +19,7 @@
     "test:coverage": "vitest run --coverage",
     "test:example": "cd examples/tsdown && bunx tsdown",
     "test:package": "bun run --workspaces --sequential --if-present build && node scripts/verify-packages.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "bun packages/cli/src/index.ts check"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.2",
@@ -27,6 +27,7 @@
     "@jridgewell/trace-mapping": "^0.3.31",
     "@oxlint/plugins": "^1.80.0",
     "@rspack/core": "2.2.2",
+    "@ts-refinement/cli": "workspace:*",
     "@types/bun": "^1.4.0",
     "@vitest/coverage-v8": "^4.1.11",
     "esbuild": "0.28.2",
