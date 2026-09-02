@@ -6,11 +6,15 @@ import { createProgramState } from "../packages/unplugin/src/program.ts";
 
 export const fixtureDirectory = resolve(import.meta.dirname, "../fixtures/analysis");
 
-export function fixtureProgram() {
+export function projectProgram(cwd: string) {
   return createProgramState(ts, {
-    cwd: fixtureDirectory,
+    cwd,
     tsconfig: "tsconfig.json",
   });
+}
+
+export function fixtureProgram() {
+  return projectProgram(fixtureDirectory);
 }
 
 export function fixtureFile(name: string): string {

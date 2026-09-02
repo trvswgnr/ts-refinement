@@ -124,6 +124,17 @@ describe("ts-refinement check", () => {
     expect(invoke(["check", "-p", directory])).toEqual({ code: 0, stderr: "", stdout: "" });
     expect(existsSync(outputDirectory)).toBe(false);
   });
+
+  it("prints publish verification warnings without failing the check", () => {
+    const unconfigured = resolve(import.meta.dirname, "../fixtures/publish/unconfigured");
+    const configured = resolve(import.meta.dirname, "../fixtures/publish/configured");
+
+    const warning = invoke(["check"], unconfigured);
+    expect(warning.code).toBe(0);
+    expect(warning.stderr).toBe("");
+    expect(warning.stdout.match(/warning RF1500:/gu)).toHaveLength(8);
+    expect(invoke(["check"], configured)).toEqual({ code: 0, stderr: "", stdout: "" });
+  });
 });
 
 describe("ts-refinement verify", () => {

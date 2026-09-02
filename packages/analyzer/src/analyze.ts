@@ -10,6 +10,7 @@ import { evaluateSourceExpression, provePredicates, type Proof } from "./proof/e
 import { displayStaticValue } from "./proof/values.ts";
 import { collectGuardPredicates } from "./proof/guards.ts";
 import { entails } from "./proof/entail.ts";
+import { getPublishVerificationDiagnostics } from "./publish.ts";
 import {
   resolvePredicateAtDeclaration,
   resolveRefinementMetadata,
@@ -219,5 +220,6 @@ export function getRefinementDiagnostics(
   return [
     ...getRefinementDefinitionDiagnostics(context, sourceFile),
     ...analyzeSourceFile(context, sourceFile).flatMap((result) => result.diagnostics),
+    ...getPublishVerificationDiagnostics(context, sourceFile),
   ];
 }

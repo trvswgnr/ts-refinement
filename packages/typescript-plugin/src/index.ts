@@ -27,7 +27,10 @@ function init(modules: { readonly typescript: typeof ts }): ts.server.PluginModu
         const filtered = filterEntailedRefinementDiagnostics(context, sourceFile, existing);
         const refinements = getRefinementDiagnostics(context, sourceFile).map(
           (diagnostic): ts.Diagnostic => ({
-            category: tsModule.DiagnosticCategory.Error,
+            category:
+              diagnostic.severity === "warning"
+                ? tsModule.DiagnosticCategory.Warning
+                : tsModule.DiagnosticCategory.Error,
             code: diagnostic.code,
             file: sourceFile,
             length: diagnostic.length,
