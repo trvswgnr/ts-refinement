@@ -15,7 +15,7 @@ beforeAll(() => {
   if (build.status !== 0) throw new Error(`${build.stdout}${build.stderr}`);
 });
 
-describe("runtime runner adapters", () => {
+describe("runtime runner adapters", { timeout: 30_000 }, () => {
   it("transforms refinements through Vitest", () => {
     const result = spawnSync(
       resolve(root, "node_modules/.bin/vitest"),

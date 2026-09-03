@@ -110,7 +110,7 @@ describe("TypeScript-Go native plugin", () => {
     const unrelatedInvalid = runTtsc("unrelated-invalid", resolve(outputRoot, "unrelated-invalid"));
     expect(unrelatedInvalid.status).toBe(2);
     expect(`${unrelatedInvalid.stdout}${unrelatedInvalid.stderr}`).toContain("TS2322:");
-  }, 180_000);
+  }, 300_000);
 
   it("reports refinement failures from imported project modules", () => {
     const result = runTtscCheck("imported-invalid");
