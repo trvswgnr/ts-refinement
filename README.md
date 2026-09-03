@@ -28,6 +28,8 @@ dynamic as Even; // unknown statically; a runtime validator is inserted
 
 The runtime validator evaluates the original expression once, returns its original value on success, and throws `RefinementError` on failure. Validators are deduplicated by normalized predicate semantics, including across modules in the same build.
 
+Nested validators short-circuit at the first failing leaf and expose its access path on `RefinementError.path`. Collection assertions visit each element until failure, so validating an array is O(n); avoid repeatedly asserting large collections in hot loops.
+
 The source must already be assignable to the unrefined base type. Refining directly from `unknown`, `any`, or an incompatible type produces RF90101; this project is not a general TypeScript runtime type reifier.
 
 ## Installation

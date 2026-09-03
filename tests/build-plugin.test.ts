@@ -381,6 +381,52 @@ describe("Rolldown plugin", () => {
     await expect(invalidBundle.generate({ format: "esm" })).rejects.toThrow(/RF90200/u);
   });
 
+  it("creates fresh program state for each build generation", async () => {
+    const directory = await realpath(await mkdtemp(join(tmpdir(), "ts-refinement-generation-")));
+    const initialInput = join(directory, "initial.ts");
+    const changedInput = join(directory, "changed.ts");
+    const configPath = join(directory, "tsconfig.json");
+    const source = (name: string) => `
+import type { Refined } from "ts-refinement";
+type Positive = Refined<number, "n > 0">;
+declare const value: number;
+export const ${name} = value as Positive;
+`;
+    const config = (input: string) => ({
+      compilerOptions: {
+        module: "Preserve",
+        moduleResolution: "bundler",
+        noEmit: true,
+        paths: { "ts-refinement": [fixtureFile("../../packages/core/src/index.ts")] },
+        strict: true,
+        target: "ESNext",
+      },
+      include: [input],
+    });
+
+    try {
+      await Promise.all([
+        writeFile(initialInput, source("initial")),
+        writeFile(changedInput, source("changed")),
+        writeFile(configPath, JSON.stringify(config("initial.ts"))),
+      ]);
+      const refinementPlugin = refinementTypesPlugin({
+        cwd: directory,
+        runtimeModule: fixtureFile("../../packages/runtime/src/index.ts"),
+      });
+      const initialBundle = await rolldown({ input: initialInput, plugins: [refinementPlugin] });
+      await initialBundle.generate({ format: "esm" });
+
+      await writeFile(configPath, JSON.stringify(config("changed.ts")));
+      const changedBundle = await rolldown({ input: changedInput, plugins: [refinementPlugin] });
+      const generated = await changedBundle.generate({ format: "esm" });
+      const chunk = generated.output.find((output) => output.type === "chunk");
+      expect(chunk?.code).toContain("changed = assert");
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
   it("refreshes inherited config watches", { timeout: rebuildTestTimeout }, async () => {
     const directory = await realpath(await mkdtemp(join(tmpdir(), "ts-refinement-config-")));
     const initialInput = join(directory, "initial.ts");
@@ -625,13 +671,13 @@ describe("Rolldown plugin", () => {
     await expect(bundle.generate({ format: "esm" })).rejects.toThrow(/RF90004.*ObjectLiteral/u);
   });
 
-  it("fails when a TypeScript module is outside the configured program", async () => {
+  it("skips definitely unrefined assertions before checking program membership", async () => {
     const input = fixtureFile("../outside-program.ts");
     const bundle = await build(input);
+    const generated = await bundle.generate({ format: "esm" });
+    const chunk = generated.output.find((output) => output.type === "chunk");
 
-    await expect(bundle.generate({ format: "esm" })).rejects.toThrow(
-      new RegExp(`${escapeRegExp(input)}.*${escapeRegExp(fixtureFile("tsconfig.json"))}`, "u"),
-    );
+    expect(chunk?.code).toContain("outsideProgram = true");
   });
 
   it("skips an outside-program module that matches an ignore glob", async () => {
@@ -651,7 +697,11 @@ describe("Rolldown plugin", () => {
   });
 
   it("still fails outside-program modules that do not match an ignore glob", async () => {
-    const bundle = await build(fixtureFile("../outside-program.ts"), ["../other-*.ts"]);
+    const bundle = await build(
+      fixtureFile("../outside-program.ts"),
+      ["../other-*.ts"],
+      "declare const value: number; export const outsideProgram = value as Positive;",
+    );
 
     await expect(bundle.generate({ format: "esm" })).rejects.toThrow(/outside-program\.ts/u);
   });
@@ -663,7 +713,7 @@ describe("Rolldown plugin", () => {
       const bundle = await build(
         input,
         ["../other-*.ts"],
-        "export const outsideProgram = true as boolean;",
+        "declare const value: number; export const outsideProgram = value as Positive;",
       );
 
       await expect(bundle.generate({ format: "esm" })).rejects.toThrow(/outside-program\.ts/u);

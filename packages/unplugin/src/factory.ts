@@ -25,8 +25,68 @@ function isTransformableTypeScript(fileName: string): boolean {
 
 const refinementAssertionPattern = /\bas\s+|<\s*[A-Za-z_$][\w$]*/u;
 
-function canContainRefinementAssertion(source: string): boolean {
-  return refinementAssertionPattern.test(source);
+function isDefinitelyUnrefinedType(node: ts.TypeNode): boolean {
+  switch (node.kind) {
+    case ts.SyntaxKind.AnyKeyword:
+    case ts.SyntaxKind.BigIntKeyword:
+    case ts.SyntaxKind.BooleanKeyword:
+    case ts.SyntaxKind.NeverKeyword:
+    case ts.SyntaxKind.NumberKeyword:
+    case ts.SyntaxKind.ObjectKeyword:
+    case ts.SyntaxKind.StringKeyword:
+    case ts.SyntaxKind.SymbolKeyword:
+    case ts.SyntaxKind.UndefinedKeyword:
+    case ts.SyntaxKind.UnknownKeyword:
+    case ts.SyntaxKind.VoidKeyword:
+    case ts.SyntaxKind.LiteralType:
+      return true;
+  }
+  if (ts.isTypeReferenceNode(node)) {
+    return node.typeName.getText() === "const";
+  }
+  if (ts.isParenthesizedTypeNode(node) || ts.isTypeOperatorNode(node)) {
+    return isDefinitelyUnrefinedType(node.type);
+  }
+  if (ts.isArrayTypeNode(node)) return isDefinitelyUnrefinedType(node.elementType);
+  if (ts.isTupleTypeNode(node)) {
+    return node.elements.every((element) => {
+      if (ts.isNamedTupleMember(element)) return isDefinitelyUnrefinedType(element.type);
+      if (ts.isOptionalTypeNode(element) || ts.isRestTypeNode(element)) {
+        return isDefinitelyUnrefinedType(element.type);
+      }
+      return isDefinitelyUnrefinedType(element);
+    });
+  }
+  if (ts.isUnionTypeNode(node) || ts.isIntersectionTypeNode(node)) {
+    return node.types.every(isDefinitelyUnrefinedType);
+  }
+  return false;
+}
+
+function canContainRefinementAssertion(source: string, fileName: string): boolean {
+  if (!refinementAssertionPattern.test(source)) return false;
+  const scriptKind = /x$/u.test(fileName) ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const sourceFile = ts.createSourceFile(
+    fileName,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    scriptKind,
+  );
+  let found = false;
+  function visit(node: ts.Node): void {
+    if (found) return;
+    if (
+      (ts.isAsExpression(node) || ts.isTypeAssertionExpression(node)) &&
+      !isDefinitelyUnrefinedType(node.type)
+    ) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+  return found;
 }
 
 function isJavaScriptAsset(fileName: string): boolean {
@@ -140,7 +200,7 @@ const factory: UnpluginFactory<RefinementTypesPluginOptions | undefined, false> 
 
     buildStart() {
       registry.clear();
-      state ??= createProgramState(ts, options);
+      state = createProgramState(ts, options);
       tracker.reset(state.configPath);
       if (meta.framework !== "esbuild") {
         for (const configFile of state.configFiles) this.addWatchFile(configFile);
@@ -179,7 +239,7 @@ const factory: UnpluginFactory<RefinementTypesPluginOptions | undefined, false> 
       handler(code, id) {
         const fileName = resolve(cleanModuleId(id));
         if (!isTransformableTypeScript(fileName)) return null;
-        if (!canContainRefinementAssertion(code)) return null;
+        if (!canContainRefinementAssertion(code, fileName)) return null;
         if (state === null) state = createProgramState(ts, options);
         if (meta.framework === "esbuild") {
           for (const configFile of state.configFiles) this.addWatchFile(configFile);
