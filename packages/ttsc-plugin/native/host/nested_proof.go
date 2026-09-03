@@ -174,11 +174,8 @@ func matchesIndexName(segment analysis.PathSegment, name string) bool {
 	case "string":
 		return true
 	case "number":
-		if name == "-0" {
-			return false
-		}
 		value, err := strconv.ParseFloat(name, 64)
-		return err == nil && strconv.FormatFloat(value, 'g', -1, 64) == name || name == "NaN" || name == "Infinity" || name == "-Infinity"
+		return err == nil && javascriptNumberString(value) == name || name == "NaN" || name == "Infinity" || name == "-Infinity"
 	case "template":
 		captures, ok := templateIndexCaptures(segment.Pattern, name)
 		if !ok {
@@ -200,6 +197,29 @@ func matchesIndexName(segment analysis.PathSegment, name string) bool {
 	default:
 		return false
 	}
+}
+
+func javascriptNumberString(value float64) string {
+	if value == 0 {
+		return "0"
+	}
+	absolute := math.Abs(value)
+	if absolute >= 1e-6 && absolute < 1e21 {
+		return strconv.FormatFloat(value, 'f', -1, 64)
+	}
+	formatted := strconv.FormatFloat(value, 'e', -1, 64)
+	mantissa, exponentText, found := strings.Cut(formatted, "e")
+	if !found {
+		return formatted
+	}
+	exponent, err := strconv.Atoi(exponentText)
+	if err != nil {
+		return formatted
+	}
+	if exponent >= 0 {
+		return fmt.Sprintf("%se+%d", mantissa, exponent)
+	}
+	return fmt.Sprintf("%se%d", mantissa, exponent)
 }
 
 func templateIndexCaptures(pattern *analysis.IndexPattern, name string) ([]string, bool) {
