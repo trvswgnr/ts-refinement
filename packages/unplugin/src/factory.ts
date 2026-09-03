@@ -103,8 +103,8 @@ function transformCandidate(
   if (sourceFile !== undefined && !state.mayContainRefinement(fileName)) {
     return { kind: "skip" };
   }
-  if (!canContainRefinementAssertion(source, fileName)) return { kind: "skip" };
   if (sourceFile === undefined) {
+    if (!canContainRefinementAssertion(source, fileName)) return { kind: "skip" };
     return {
       kind: "error",
       message: `TypeScript module '${fileName}' is not included in the program configured by '${state.configPath}'.`,
@@ -116,6 +116,7 @@ function transformCandidate(
       message: `TypeScript module '${fileName}' was changed before ts-refinement ran. Configure ts-refinement as the first source transform.`,
     };
   }
+  if (!canContainRefinementAssertion(source, fileName)) return { kind: "skip" };
   return { kind: "transform", sourceFile };
 }
 
@@ -263,7 +264,6 @@ const factory: UnpluginFactory<RefinementTypesPluginOptions | undefined, false> 
 
     transform: {
       filter: {
-        code: refinementAssertionPattern,
         id: /\.[cm]?tsx?(?:[?#].*)?$/u,
       },
       handler(code, id) {

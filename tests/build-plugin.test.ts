@@ -379,10 +379,9 @@ describe("Rolldown plugin", () => {
   });
 
   it("rejects source changed by an earlier plugin", async () => {
-    const banner = "// prepended by an earlier plugin";
     const bundle = await buildWithPriorTransform(
       fixtureFile("runtime-entry.ts"),
-      (source) => `${banner}\n${source}`,
+      (source) => source.replaceAll(/\s+as\s+[A-Za-z_$][\w$]*/gu, ""),
     );
     await expect(bundle.generate({ format: "esm", sourcemap: true })).rejects.toThrow(
       /first source transform/u,

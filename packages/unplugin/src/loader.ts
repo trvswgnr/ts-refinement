@@ -2,7 +2,6 @@ import { readFile } from "node:fs/promises";
 import type {
   LoadFnOutput,
   LoadHook,
-  ModuleSource,
   ResolveFnOutput,
   ResolveHook,
 } from "node:module";
@@ -30,15 +29,31 @@ function programState(): ProgramState {
   return state;
 }
 
-async function sourceText(fileName: string, source: ModuleSource | undefined): Promise<string> {
-  if (source === undefined) return readFile(fileName, "utf8");
-  if (source instanceof ArrayBuffer) return Buffer.from(source).toString("utf8");
-  if (ArrayBuffer.isView(source)) {
-    return Buffer.from(
-      source.buffer.slice(source.byteOffset, source.byteOffset + source.byteLength),
-    ).toString("utf8");
+function transpileSource(fileName: string, source: string, current: ProgramState): string {
+  const options = current.context.program.getCompilerOptions();
+  const transpiled = ts.transpileModule(source, {
+    compilerOptions: {
+      ...options,
+      declaration: false,
+      declarationMap: false,
+      emitDeclarationOnly: false,
+      inlineSourceMap: true,
+      inlineSources: true,
+      module: fileName.endsWith(".cts") ? ts.ModuleKind.CommonJS : ts.ModuleKind.ESNext,
+      noEmit: false,
+      noEmitOnError: false,
+      sourceMap: false,
+    },
+    fileName,
+    reportDiagnostics: true,
+  });
+  const diagnostic = transpiled.diagnostics?.find(
+    (candidate) => candidate.category === ts.DiagnosticCategory.Error,
+  );
+  if (diagnostic !== undefined) {
+    throw new Error(ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"));
   }
-  return source;
+  return transpiled.outputText;
 }
 
 export async function resolve(
@@ -67,10 +82,11 @@ export async function load(
     return { format: "module", shortCircuit: true, source: entry.moduleCode };
   }
 
-  const loaded = await nextLoad(url, context);
-  if (!url.startsWith("file:") || !/\.[cm]?tsx?$/u.test(new URL(url).pathname)) return loaded;
+  if (!url.startsWith("file:") || !/\.[cm]?tsx?$/u.test(new URL(url).pathname)) {
+    return nextLoad(url, context);
+  }
   const fileName = fileURLToPath(url);
-  const source = await sourceText(fileName, loaded.source);
+  const source = await readFile(fileName, "utf8");
   const current = programState();
   const sourceFile = current.context.program.getSourceFile(fileName);
   if (sourceFile === undefined) {
@@ -86,7 +102,11 @@ export async function load(
   const output = transformSource(current.context, sourceFile, source, registry);
   const diagnostic = output.diagnostics[0];
   if (diagnostic !== undefined) throw new Error(diagnostic.message);
-  return output.code === null ? loaded : { ...loaded, source: output.code };
+  return {
+    format: fileName.endsWith(".cts") ? "commonjs" : "module",
+    shortCircuit: true,
+    source: transpileSource(fileName, output.code ?? source, current),
+  };
 }
 
 export const loaderUrl = pathToFileURL(import.meta.filename).href;

@@ -50,4 +50,25 @@ describe("runtime runner adapters", () => {
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain("2\nRefinementError -1\n");
   });
+
+  it("loads TypeScript before delegating to Node", async () => {
+    const entry = pathToFileURL(resolve(root, "fixtures/unplugin/entry.ts")).href;
+    process.env["TS_REFINEMENT_CWD"] = resolve(root, "fixtures/unplugin");
+    process.env["TS_REFINEMENT_RUNTIME_MODULE"] = pathToFileURL(
+      resolve(root, "fixtures/unplugin/runtime.mjs"),
+    ).href;
+    process.env["TS_REFINEMENT_TSCONFIG"] = "tsconfig.json";
+    const { load } = await import(
+      `${pathToFileURL(resolve(root, "packages/unplugin/dist/loader.mjs")).href}?direct-load`
+    );
+
+    const output = await load(entry, {}, async () => {
+      throw new TypeError("Unknown file extension '.ts'");
+    });
+
+    expect(output.format).toBe("module");
+    expect(String(output.source)).toContain("function checkDynamic(value = 0)");
+    expect(String(output.source)).toContain("return __rf_");
+    expect(String(output.source)).not.toContain("value: number");
+  });
 });
