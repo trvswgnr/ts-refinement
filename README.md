@@ -61,7 +61,8 @@ Legacy integration packages pin the analyzer implementation they were tested wit
 TypeScript 5.7 through 6.x uses `tspc` with the Program Transformer:
 
 ```sh
-bun add --dev @ts-refinement/typescript-plugin @ts-refinement/unplugin ts-patch tsdown
+bun add ts-refinement @ts-refinement/runtime
+bun add --dev @ts-refinement/cli @ts-refinement/typescript-plugin @ts-refinement/unplugin ts-patch tsdown 'typescript@>=5.7 <7'
 ```
 
 ```json
@@ -85,14 +86,16 @@ bun add --dev @ts-refinement/typescript-plugin @ts-refinement/unplugin ts-patch 
 TypeScript 7 and newer uses `ttsc` with native check and transform stages:
 
 ```sh
-bun add --dev @ts-refinement/ttsc ttsc
+bun add ts-refinement @ts-refinement/runtime
+bun add --dev @ts-refinement/cli @ts-refinement/ttsc ttsc 'typescript@>=7'
 ```
 
 ```json
 {
   "scripts": {
     "build": "ttsc build --emit",
-    "check": "ttsc check"
+    "check": "ttsc check",
+    "prepack": "bun run build && ts-refinement verify dist"
   },
   "compilerOptions": {
     "plugins": [
