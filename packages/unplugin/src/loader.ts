@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import type { LoadFnOutput, LoadHook, ResolveFnOutput, ResolveHook } from "node:module";
+import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import remapping, { type SourceMapInput } from "@jridgewell/remapping";
@@ -17,6 +18,8 @@ const runtimeModule = process.env["TS_REFINEMENT_RUNTIME_MODULE"] ?? "@ts-refine
 const registry = createValidatorRegistry(ts, runtimeModule);
 let state: ProgramState | null = null;
 
+type NodeModuleFormat = "commonjs" | "module";
+
 function programState(): ProgramState {
   state ??= createProgramState(ts, {
     cwd: process.env["TS_REFINEMENT_CWD"],
@@ -25,11 +28,53 @@ function programState(): ProgramState {
   return state;
 }
 
+function parsedPackageFormat(packagePath: string, source: string): NodeModuleFormat {
+  const parsed = ts.parseJsonText(packagePath, source);
+  const statement = parsed.statements[0];
+  if (
+    statement === undefined ||
+    !ts.isExpressionStatement(statement) ||
+    !ts.isObjectLiteralExpression(statement.expression)
+  ) {
+    return "commonjs";
+  }
+  for (let index = statement.expression.properties.length - 1; index >= 0; index -= 1) {
+    const property = statement.expression.properties[index];
+    if (
+      property !== undefined &&
+      ts.isPropertyAssignment(property) &&
+      ((ts.isIdentifier(property.name) && property.name.text === "type") ||
+        (ts.isStringLiteral(property.name) && property.name.text === "type")) &&
+      ts.isStringLiteral(property.initializer)
+    ) {
+      return property.initializer.text === "module" ? "module" : "commonjs";
+    }
+  }
+  return "commonjs";
+}
+
+function packageFormat(fileName: string): NodeModuleFormat {
+  if (fileName.endsWith(".cts")) return "commonjs";
+  if (fileName.endsWith(".mts")) return "module";
+  let directory = dirname(fileName);
+  for (;;) {
+    const packagePath = join(directory, "package.json");
+    const source = ts.sys.readFile(packagePath);
+    if (source !== undefined) {
+      return parsedPackageFormat(packagePath, source);
+    }
+    const parent = dirname(directory);
+    if (parent === directory) return "commonjs";
+    directory = parent;
+  }
+}
+
 function transpileSource(
   fileName: string,
   source: string,
   current: ProgramState,
   inputMap: SourceMapInput | null,
+  format: NodeModuleFormat,
 ): string {
   const options = current.context.program.getCompilerOptions();
   const jsx =
@@ -45,10 +90,9 @@ function transpileSource(
       inlineSourceMap: false,
       inlineSources: true,
       jsx,
-      module: fileName.endsWith(".cts") ? ts.ModuleKind.CommonJS : ts.ModuleKind.ESNext,
-      moduleResolution: fileName.endsWith(".cts")
-        ? ts.ModuleResolutionKind.Node10
-        : ts.ModuleResolutionKind.Bundler,
+      module: format === "commonjs" ? ts.ModuleKind.Node16 : ts.ModuleKind.ESNext,
+      moduleResolution:
+        format === "commonjs" ? ts.ModuleResolutionKind.Node16 : ts.ModuleResolutionKind.Bundler,
       noEmit: false,
       noEmitOnError: false,
       sourceMap: true,
@@ -138,14 +182,16 @@ export async function load(
   const output = transformSource(current.context, sourceFile, source, registry);
   const diagnostic = output.diagnostics[0];
   if (diagnostic !== undefined) throw new Error(diagnostic.message);
+  const format = packageFormat(fileName);
   return {
-    format: fileName.endsWith(".cts") ? "commonjs" : "module",
+    format,
     shortCircuit: true,
     source: transpileSource(
       fileName,
       output.code ?? source,
       current,
       output.map?.toString() ?? null,
+      format,
     ),
   };
 }

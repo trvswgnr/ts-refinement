@@ -110,5 +110,16 @@ describe("runtime runner adapters", () => {
     );
     expect(String(jsx.source)).not.toContain("<section");
     expect(String(jsx.source)).toContain("react/jsx-runtime");
+
+    const commonjsEntry = pathToFileURL(resolve(root, "fixtures/unplugin/commonjs/value.ts")).href;
+    const commonjs = await load(
+      commonjsEntry,
+      { conditions: [], format: undefined, importAttributes: {} },
+      async () => {
+        throw new TypeError("Unknown file extension '.ts'");
+      },
+    );
+    expect(commonjs.format).toBe("commonjs");
+    expect(String(commonjs.source)).toContain("module.exports = value");
   });
 });

@@ -12,5 +12,5 @@
     "strict": true,
     "target": "ESNext"
   },
-  "include": ["*.ts", "*.tsx", "runtime.mjs"]
+  "include": ["*.ts", "*.tsx", "commonjs/*.ts", "runtime.mjs"]
 }
