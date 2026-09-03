@@ -49,6 +49,9 @@ export async function resolve(
   if (registry.isPublicId(specifier)) {
     return { shortCircuit: true, url: `${validatorProtocol}${specifier}` };
   }
+  if (context.parentURL?.startsWith(validatorProtocol) === true) {
+    return nextResolve(specifier, { ...context, parentURL: loaderUrl });
+  }
   return nextResolve(specifier, context);
 }
 

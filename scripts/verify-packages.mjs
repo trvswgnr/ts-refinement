@@ -204,8 +204,10 @@ async function validateFullInstall(temporaryDirectory, artifacts) {
     "rolldown@1.2.6",
     "ts-patch@4.0.1",
     "typescript@6.0.3",
+    "vitest@4.1.11",
   ]);
   const tspc = join(consumerDirectory, "node_modules", ".bin", "tspc");
+  const vitest = join(consumerDirectory, "node_modules", ".bin", "vitest");
   const refinement = join(consumerDirectory, "node_modules", ".bin", "ts-refinement");
   await run(
     "node",
@@ -213,6 +215,27 @@ async function validateFullInstall(temporaryDirectory, artifacts) {
     consumerDirectory,
   );
   await run(tspc, ["--project", "tsconfig.json"], consumerDirectory);
+  await run(tspc, ["--project", "tsconfig.emit.json"], consumerDirectory);
+  const tspcOutput = await readFile(
+    join(consumerDirectory, "tspc-dist", "refinement-build.js"),
+    "utf8",
+  );
+  assert.match(tspcOutput, /function checkPositive\(value\)/u);
+  assert.doesNotMatch(tspcOutput, /as Positive/u);
+  await run(vitest, ["run", "--config", "vitest.config.ts"], consumerDirectory);
+
+  const loaderRun = await run(
+    process.execPath,
+    [
+      "--loader",
+      "@ts-refinement/unplugin/loader",
+      "--input-type=module",
+      "--eval",
+      'const module = await import("./refinement-build.ts"); console.log(module.checkPositive(2)); try { module.checkPositive(-1); } catch (error) { console.log(error.name, error.value); }',
+    ],
+    consumerDirectory,
+  );
+  assert.match(loaderRun.stdout, /2\nRefinementError -1\n/u);
 
   await writeFile(
     join(consumerDirectory, "cli-invalid.ts"),
