@@ -131,6 +131,7 @@ async function validateMetadata() {
     "@ts-refinement/unplugin": "0.1.0",
   });
   assert.deepEqual(manifests.get("@ts-refinement/unplugin").dependencies, {
+    "@jridgewell/remapping": "^2.3.5",
     "@ts-refinement/analyzer": "0.1.0",
     "magic-string": "^0.30.21",
     unplugin: "^3.3.0",

@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import type { LoadFnOutput, LoadHook, ResolveFnOutput, ResolveHook } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import remapping, { type SourceMapInput } from "@jridgewell/remapping";
 import ts from "typescript";
 
 import { createProgramState, type ProgramState } from "./program.ts";
@@ -24,7 +25,12 @@ function programState(): ProgramState {
   return state;
 }
 
-function transpileSource(fileName: string, source: string, current: ProgramState): string {
+function transpileSource(
+  fileName: string,
+  source: string,
+  current: ProgramState,
+  inputMap: SourceMapInput | null,
+): string {
   const options = current.context.program.getCompilerOptions();
   const jsx =
     options.jsx === undefined || options.jsx === ts.JsxEmit.Preserve
@@ -36,7 +42,7 @@ function transpileSource(fileName: string, source: string, current: ProgramState
       declaration: false,
       declarationMap: false,
       emitDeclarationOnly: false,
-      inlineSourceMap: true,
+      inlineSourceMap: false,
       inlineSources: true,
       jsx,
       module: fileName.endsWith(".cts") ? ts.ModuleKind.CommonJS : ts.ModuleKind.ESNext,
@@ -45,7 +51,7 @@ function transpileSource(fileName: string, source: string, current: ProgramState
         : ts.ModuleResolutionKind.Bundler,
       noEmit: false,
       noEmitOnError: false,
-      sourceMap: false,
+      sourceMap: true,
     },
     fileName,
     reportDiagnostics: true,
@@ -56,7 +62,15 @@ function transpileSource(fileName: string, source: string, current: ProgramState
   if (diagnostic !== undefined) {
     throw new Error(ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"));
   }
-  return transpiled.outputText;
+  if (transpiled.sourceMapText === undefined) {
+    throw new Error(`TypeScript did not emit a source map for '${fileName}'.`);
+  }
+  const maps: SourceMapInput[] = [transpiled.sourceMapText];
+  if (inputMap !== null) maps.push(inputMap);
+  const map = remapping(maps, () => null);
+  const code = transpiled.outputText.replace(/\n?\/\/# sourceMappingURL=.*(?:\n)?$/u, "");
+  const encodedMap = Buffer.from(JSON.stringify(map)).toString("base64");
+  return `${code}\n//# sourceMappingURL=data:application/json;base64,${encodedMap}\n`;
 }
 
 export async function resolve(
@@ -127,7 +141,12 @@ export async function load(
   return {
     format: fileName.endsWith(".cts") ? "commonjs" : "module",
     shortCircuit: true,
-    source: transpileSource(fileName, output.code ?? source, current),
+    source: transpileSource(
+      fileName,
+      output.code ?? source,
+      current,
+      output.map?.toString() ?? null,
+    ),
   };
 }
 

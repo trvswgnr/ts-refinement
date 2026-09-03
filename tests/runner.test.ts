@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { originalPositionFor, TraceMap } from "@jridgewell/trace-mapping";
 import { beforeAll, describe, expect, it } from "vitest";
 
 const root = resolve(import.meta.dirname, "..");
@@ -58,32 +59,55 @@ describe("runtime runner adapters", () => {
       resolve(root, "fixtures/unplugin/runtime.mjs"),
     ).href;
     process.env["TS_REFINEMENT_TSCONFIG"] = "tsconfig.json";
-    const { load, resolve: resolveHook } = await import(
-      `${pathToFileURL(resolve(root, "packages/unplugin/dist/loader.mjs")).href}?direct-load`
-    );
+    const { load, resolve: resolveHook } = await import("../packages/unplugin/src/loader.ts");
 
-    const output = await load(entry, {}, async () => {
-      throw new TypeError("Unknown file extension '.ts'");
-    });
+    const output = await load(
+      entry,
+      { conditions: [], format: undefined, importAttributes: {} },
+      async () => {
+        throw new TypeError("Unknown file extension '.ts'");
+      },
+    );
 
     expect(output.format).toBe("module");
     expect(String(output.source)).toContain("function checkDynamic(value = 0)");
     expect(String(output.source)).toContain("return __rf_");
     expect(String(output.source)).not.toContain("value: number");
+    const source = String(output.source);
+    const validatorCall = source.indexOf("return __rf_") + "return ".length;
+    const precedingLines = source.slice(0, validatorCall).split("\n");
+    const encodedMap = source.match(
+      /sourceMappingURL=data:application\/json;base64,([^\n]+)/u,
+    )?.[1];
+    if (encodedMap === undefined) throw new Error("loader output has no inline source map");
+    expect(
+      originalPositionFor(new TraceMap(Buffer.from(encodedMap, "base64").toString("utf8")), {
+        column: precedingLines.at(-1)?.length ?? 0,
+        line: precedingLines.length,
+      }),
+    ).toMatchObject({ column: 9, line: 4 });
 
     const aliasEntry = pathToFileURL(resolve(root, "fixtures/unplugin/alias-entry.ts")).href;
-    const alias = await resolveHook("@fixture/alias-value", { parentURL: aliasEntry }, async () => {
-      throw new Error("Node could not resolve the TypeScript path alias.");
-    });
+    const alias = await resolveHook(
+      "@fixture/alias-value",
+      { conditions: [], importAttributes: {}, parentURL: aliasEntry },
+      async () => {
+        throw new Error("Node could not resolve the TypeScript path alias.");
+      },
+    );
     expect(alias).toEqual({
       shortCircuit: true,
       url: pathToFileURL(resolve(root, "fixtures/unplugin/alias-value.ts")).href,
     });
 
     const jsxEntry = pathToFileURL(resolve(root, "fixtures/unplugin/jsx-entry.tsx")).href;
-    const jsx = await load(jsxEntry, {}, async () => {
-      throw new TypeError("Unknown file extension '.tsx'");
-    });
+    const jsx = await load(
+      jsxEntry,
+      { conditions: [], format: undefined, importAttributes: {} },
+      async () => {
+        throw new TypeError("Unknown file extension '.tsx'");
+      },
+    );
     expect(String(jsx.source)).not.toContain("<section");
     expect(String(jsx.source)).toContain("react/jsx-runtime");
   });
