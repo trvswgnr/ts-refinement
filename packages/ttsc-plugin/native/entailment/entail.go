@@ -544,7 +544,7 @@ func Entails(source, target []Predicate, facts Facts) bool {
 		if fact.requiresIntegral && !target.integral {
 			continue
 		}
-		if fact.wasNegated && fact.kind == scalarNumber && !target.finite {
+		if fact.wasNegated && fact.kind == scalarNumber && fact.relation != "equal" && !target.finite {
 			continue
 		}
 		addComparison(target, fact)

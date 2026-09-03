@@ -22,6 +22,12 @@ func TestNegatedNumericBoundRequiresFiniteness(t *testing.T) {
 	if !Entails(finiteSource, target, Facts{}) {
 		t.Fatal("finite negated bound did not entail target")
 	}
+
+	equalSource := parsePredicatesForTest(t, "!(value !== 5)")
+	equalTarget := parsePredicatesForTest(t, "value === 5")
+	if !Entails(equalSource, equalTarget, Facts{}) {
+		t.Fatal("negated inequality did not entail strict equality")
+	}
 }
 
 func TestCongruenceEntailmentPreservesRemainderSign(t *testing.T) {
