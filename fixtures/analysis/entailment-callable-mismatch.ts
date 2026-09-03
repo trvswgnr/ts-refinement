@@ -16,3 +16,48 @@ export const parameterTarget: { readonly setValue: (value: Strong) => void } = p
 declare const narrowParameterSource: { readonly setValue: (value: Strong) => void };
 export const invalidParameterTarget: { readonly setValue: (value: Weak) => void } =
   narrowParameterSource;
+
+declare const broadRestSource: { readonly setValues: (...values: Weak[]) => void };
+export const validRestTarget: {
+  readonly setValues: (first: Strong, second: Weak) => void;
+} = broadRestSource;
+
+declare const narrowRestSource: { readonly setValues: (...values: Strong[]) => void };
+export const invalidRestTarget: {
+  readonly setValues: (first: Strong, second: Weak) => void;
+} = narrowRestSource;
+
+declare const broadTupleRestSource: {
+  readonly setValues: (...values: [Weak, Weak]) => void;
+};
+export const validTupleRestTarget: {
+  readonly setValues: (...values: [Strong, Weak]) => void;
+} = broadTupleRestSource;
+
+declare const narrowTupleRestSource: {
+  readonly setValues: (...values: [Strong, Strong]) => void;
+};
+export const invalidTupleRestTarget: {
+  readonly setValues: (...values: [Strong, Weak]) => void;
+} = narrowTupleRestSource;
+
+interface BroadConstructor {
+  readonly marker: Strong;
+  new (): Strong;
+}
+
+interface WeakConstructorTarget {
+  readonly marker: Weak;
+  new (): Weak;
+}
+
+declare const broadConstructor: BroadConstructor;
+export const validConstructorTarget: WeakConstructorTarget = broadConstructor;
+
+interface NarrowConstructorTarget {
+  readonly marker: Weak;
+  new (): Strong;
+}
+
+declare const weakConstructor: WeakConstructorTarget;
+export const invalidConstructorTarget: NarrowConstructorTarget = weakConstructor;

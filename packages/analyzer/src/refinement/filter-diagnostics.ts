@@ -480,17 +480,22 @@ function propertyNameMatchesIndex(
   return (keyType.flags & context.ts.TypeFlags.StringLike) !== 0;
 }
 
-function callSignaturesAreEntailed(
+function signaturesAreEntailed(
   context: AnalyzerContext,
   source: ts.Type,
   target: ts.Type,
+  kind: ts.SignatureKind,
   visit: EntailmentVisit,
 ): boolean {
-  const targetCalls = context.checker.getSignaturesOfType(target, context.ts.SignatureKind.Call);
-  if (targetCalls.length === 0 || context.checker.isTypeAssignableTo(source, target)) return true;
-  const sourceCalls = context.checker.getSignaturesOfType(source, context.ts.SignatureKind.Call);
-  return targetCalls.every((targetCall) =>
-    sourceCalls.some((sourceCall) => signatureIsEntailed(context, sourceCall, targetCall, visit)),
+  const targetSignatures = context.checker.getSignaturesOfType(target, kind);
+  if (targetSignatures.length === 0 || context.checker.isTypeAssignableTo(source, target)) {
+    return true;
+  }
+  const sourceSignatures = context.checker.getSignaturesOfType(source, kind);
+  return targetSignatures.every((targetSignature) =>
+    sourceSignatures.some((sourceSignature) =>
+      signatureIsEntailed(context, sourceSignature, targetSignature, visit),
+    ),
   );
 }
 
@@ -501,15 +506,6 @@ function signatureHasRestParameter(context: AnalyzerContext, signature: ts.Signa
     context.ts.isParameter(parameter) &&
     parameter.dotDotDotToken !== undefined
   );
-}
-
-function minimumArgumentCount(context: AnalyzerContext, signature: ts.Signature): number {
-  const parameters = signature.getParameters();
-  const optionalIndex = parameters.findIndex((parameter, index) => {
-    if ((parameter.flags & context.ts.SymbolFlags.Optional) !== 0) return true;
-    return index === parameters.length - 1 && signatureHasRestParameter(context, signature);
-  });
-  return optionalIndex === -1 ? parameters.length : optionalIndex;
 }
 
 function signatureSymbolType(
@@ -523,22 +519,82 @@ function signatureSymbolType(
   return context.checker.getTypeOfSymbolAtLocation(parameter, location);
 }
 
-function signatureParameterType(
+interface SignatureParameters {
+  readonly fixed: readonly ts.Type[];
+  readonly minimum: number;
+  readonly rest: ts.Type | null;
+}
+
+interface TupleParameters {
+  readonly minimum: number;
+  readonly rest: ts.Type | null;
+}
+
+function tupleTypeReference(context: AnalyzerContext, type: ts.Type): ts.TypeReference {
+  if (!context.checker.isTupleType(type)) throw new Error("Expected a tuple type.");
+  // SAFETY: isTupleType establishes a TypeReference backed by a TupleType target.
+  return type as ts.TypeReference;
+}
+
+function appendTupleParameters(
+  context: AnalyzerContext,
+  tuple: ts.TypeReference,
+  fixed: ts.Type[],
+): TupleParameters {
+  const elements = context.checker.getTypeArguments(tuple);
+  // SAFETY: tupleTypeReference is only called after isTupleType succeeds.
+  const target = tuple.target as ts.TupleType & {
+    readonly elementFlags?: readonly ts.ElementFlags[];
+  };
+  let minimum = 0;
+  for (const [index, element] of elements.entries()) {
+    const flags = target.elementFlags?.[index] ?? context.ts.ElementFlags.Required;
+    if ((flags & (context.ts.ElementFlags.Rest | context.ts.ElementFlags.Variadic)) !== 0) {
+      return { minimum, rest: element };
+    }
+    fixed.push(element);
+    if ((flags & context.ts.ElementFlags.Required) !== 0) minimum = fixed.length;
+  }
+  return { minimum, rest: null };
+}
+
+function signatureParameters(
   context: AnalyzerContext,
   signature: ts.Signature,
-  index: number,
-): ts.Type | null {
+): SignatureParameters | null {
   const parameters = signature.getParameters();
-  const restIndex = parameters.length - 1;
   const hasRest = signatureHasRestParameter(context, signature);
-  const parameter =
-    parameters[index] ?? (hasRest && index >= restIndex ? parameters[restIndex] : undefined);
-  const resolvedParameterType = signatureSymbolType(context, signature, parameter);
-  if (resolvedParameterType === null) return null;
-  if (!hasRest || index < restIndex) return resolvedParameterType;
-  return (
-    context.checker.getIndexTypeOfType(resolvedParameterType, context.ts.IndexKind.Number) ?? null
-  );
+  const fixed: ts.Type[] = [];
+  let minimum = 0;
+  let rest: ts.Type | null = null;
+  for (const [index, parameter] of parameters.entries()) {
+    const resolvedParameter = signatureSymbolType(context, signature, parameter);
+    if (resolvedParameter === null) return null;
+    if (hasRest && index === parameters.length - 1) {
+      if (context.checker.isTupleType(resolvedParameter)) {
+        const tuple = appendTupleParameters(
+          context,
+          tupleTypeReference(context, resolvedParameter),
+          fixed,
+        );
+        minimum = Math.max(minimum, tuple.minimum);
+        rest = tuple.rest;
+      } else {
+        rest =
+          context.checker.getIndexTypeOfType(resolvedParameter, context.ts.IndexKind.Number) ??
+          null;
+        if (rest === null) return null;
+      }
+      continue;
+    }
+    fixed.push(resolvedParameter);
+    if ((parameter.flags & context.ts.SymbolFlags.Optional) === 0) minimum = fixed.length;
+  }
+  return { fixed, minimum, rest };
+}
+
+function parameterAt(parameters: SignatureParameters, index: number): ts.Type | null {
+  return parameters.fixed[index] ?? (index >= parameters.fixed.length ? parameters.rest : null);
 }
 
 function signatureSupportsStructuralEntailment(
@@ -568,18 +624,23 @@ function signatureThisIsEntailed(
 }
 
 function signatureParametersAreEntailed(
-  context: AnalyzerContext,
-  source: ts.Signature,
-  target: ts.Signature,
+  source: SignatureParameters,
+  target: SignatureParameters,
   visit: EntailmentVisit,
 ): boolean {
-  for (let index = 0; index < source.getParameters().length; index += 1) {
-    const sourceParameter = signatureParameterType(context, source, index);
-    const targetParameter = signatureParameterType(context, target, index);
-    if (sourceParameter === null) return false;
-    if (targetParameter !== null && !visit(targetParameter, sourceParameter)) return false;
+  const fixedCount = Math.max(source.fixed.length, target.fixed.length);
+  for (let index = 0; index < fixedCount; index += 1) {
+    const sourceParameter = parameterAt(source, index);
+    const targetParameter = parameterAt(target, index);
+    if (
+      sourceParameter !== null &&
+      targetParameter !== null &&
+      !visit(targetParameter, sourceParameter)
+    ) {
+      return false;
+    }
   }
-  return true;
+  return source.rest === null || target.rest === null || visit(target.rest, source.rest);
 }
 
 function signatureIsEntailed(
@@ -590,11 +651,12 @@ function signatureIsEntailed(
 ): boolean {
   if (!signatureSupportsStructuralEntailment(context, source, target)) return false;
 
-  const sourceMinimum = minimumArgumentCount(context, source);
-  const targetMinimum = minimumArgumentCount(context, target);
-  if (sourceMinimum > targetMinimum) return false;
+  const sourceParameters = signatureParameters(context, source);
+  const targetParameters = signatureParameters(context, target);
+  if (sourceParameters === null || targetParameters === null) return false;
+  if (sourceParameters.minimum > targetParameters.minimum) return false;
   if (!signatureThisIsEntailed(context, source, target, visit)) return false;
-  if (!signatureParametersAreEntailed(context, source, target, visit)) return false;
+  if (!signatureParametersAreEntailed(sourceParameters, targetParameters, visit)) return false;
 
   const targetReturn = target.getReturnType();
   return (
@@ -621,16 +683,23 @@ function objectRefinementPresence(
   visit: (type: ts.Type | undefined) => RefinementPresence,
 ): RefinementPresence {
   const nested: RefinementPresence[] = [];
-  for (const signature of context.checker.getSignaturesOfType(
-    type,
-    context.ts.SignatureKind.Call,
-  )) {
-    nested.push(visit(signature.getReturnType()));
-    nested.push(
-      visit(signatureSymbolType(context, signature, signature.thisParameter) ?? undefined),
-    );
-    for (let index = 0; index < signature.getParameters().length; index += 1) {
-      nested.push(visit(signatureParameterType(context, signature, index) ?? undefined));
+  for (const kind of [context.ts.SignatureKind.Call, context.ts.SignatureKind.Construct]) {
+    for (const signature of context.checker.getSignaturesOfType(type, kind)) {
+      if (
+        signature.getTypeParameters() !== undefined ||
+        context.checker.getTypePredicateOfSignature(signature) !== undefined
+      ) {
+        continue;
+      }
+      nested.push(visit(signature.getReturnType()));
+      nested.push(
+        visit(signatureSymbolType(context, signature, signature.thisParameter) ?? undefined),
+      );
+      const parameters = signatureParameters(context, signature);
+      if (parameters !== null) {
+        nested.push(...parameters.fixed.map(visit));
+        nested.push(visit(parameters.rest ?? undefined));
+      }
     }
   }
   for (const property of context.checker.getPropertiesOfType(type)) {
@@ -658,6 +727,14 @@ function typeContainsRefinement(context: AnalyzerContext, root: ts.Type): Refine
     if (type.isUnion()) return combineRefinementPresence(type.types.map(visit));
     if ((type.flags & context.ts.TypeFlags.TypeParameter) !== 0) {
       return visit(context.checker.getBaseConstraintOfType(type));
+    }
+    if (context.checker.isTupleType(type)) {
+      return combineRefinementPresence(
+        context.checker.getTypeArguments(tupleTypeReference(context, type)).map(visit),
+      );
+    }
+    if (context.checker.isArrayType(type)) {
+      return visit(context.checker.getIndexTypeOfType(type, context.ts.IndexKind.Number));
     }
     if ((type.flags & context.ts.TypeFlags.Object) === 0) {
       return { hasRefinement: false, valid: true };
@@ -700,7 +777,8 @@ function refinementStructureIsEntailed(
     return (
       propertiesAreEntailed(context, source, target, visit) &&
       indexSignaturesAreEntailed(context, source, target, visit) &&
-      callSignaturesAreEntailed(context, source, target, visit)
+      signaturesAreEntailed(context, source, target, context.ts.SignatureKind.Call, visit) &&
+      signaturesAreEntailed(context, source, target, context.ts.SignatureKind.Construct, visit)
     );
   }
 

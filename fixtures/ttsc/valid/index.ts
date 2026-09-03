@@ -51,6 +51,15 @@ declare const greaterThanFive: GreaterThanFive;
 declare const nestedGreaterThanFive: NestedGreaterThanFive;
 declare const callableReturnSource: { readonly getValue: () => GreaterThanFive };
 declare const callableParameterSource: { readonly setValue: (value: Positive) => void };
+declare const callableRestSource: { readonly setValues: (...values: Positive[]) => void };
+declare const callableTupleRestSource: {
+  readonly setValues: (...values: [Positive, Positive]) => void;
+};
+interface StrongConstructor {
+  readonly marker: GreaterThanFive;
+  new (): GreaterThanFive;
+}
+declare const strongConstructor: StrongConstructor;
 declare const dynamicUser: { readonly age: number; readonly name?: string };
 declare const dynamicValues: number[];
 declare const dynamicPair: readonly [number, string?, ...number[]];
@@ -112,6 +121,16 @@ export const entailedCallableReturn: { readonly getValue: () => Positive } = cal
 export const entailedCallableParameter: {
   readonly setValue: (value: GreaterThanFive) => void;
 } = callableParameterSource;
+export const entailedCallableRest: {
+  readonly setValues: (first: GreaterThanFive, second: Positive) => void;
+} = callableRestSource;
+export const entailedCallableTupleRest: {
+  readonly setValues: (...values: [GreaterThanFive, Positive]) => void;
+} = callableTupleRestSource;
+export const entailedConstructor: {
+  readonly marker: Positive;
+  new (): Positive;
+} = strongConstructor;
 export const entailedIndex: Readonly<Record<string, Positive>> = {
   value: greaterThanFive,
 };

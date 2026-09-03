@@ -144,7 +144,9 @@ describe("TypeScript language-service plugin", () => {
     const diagnostics = proxy.getSemanticDiagnostics(
       fixtureFile("entailment-callable-mismatch.ts"),
     );
-    expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual([2322, 2322]);
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
+      2322, 2322, 2322, 2322, 2322,
+    ]);
   });
 
   it("preserves publish verification warnings as warning diagnostics", () => {

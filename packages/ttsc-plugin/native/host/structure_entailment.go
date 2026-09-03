@@ -39,17 +39,24 @@ func containsRefinement(checker *shimchecker.Checker, root *shimchecker.Type) (b
 		if target.Flags()&shimchecker.TypeFlagsObject == 0 {
 			return false, true
 		}
-		for _, signature := range shimchecker.Checker_getSignaturesOfType(checker, target, shimchecker.SignatureKindCall) {
-			has, valid := visit(shimchecker.Checker_getReturnTypeOfSignature(checker, signature))
-			if !valid || has {
-				return has, valid
-			}
-			has, valid = visit(signatureSymbolType(checker, signature.ThisParameter()))
-			if !valid || has {
-				return has, valid
-			}
-			for index := range shimchecker.Signature_parameterCount(signature) {
-				has, valid = visit(signatureParameterType(checker, signature, index))
+		for _, kind := range []shimchecker.SignatureKind{shimchecker.SignatureKindCall, shimchecker.SignatureKindConstruct} {
+			for _, signature := range shimchecker.Checker_getSignaturesOfType(checker, target, kind) {
+				has, valid := visit(shimchecker.Checker_getReturnTypeOfSignature(checker, signature))
+				if !valid || has {
+					return has, valid
+				}
+				has, valid = visit(signatureSymbolType(checker, signature.ThisParameter()))
+				if !valid || has {
+					return has, valid
+				}
+				parameters := signatureParameters(checker, signature)
+				for _, parameter := range parameters.fixed {
+					has, valid = visit(parameter)
+					if !valid || has {
+						return has, valid
+					}
+				}
+				has, valid = visit(parameters.rest)
 				if !valid || has {
 					return has, valid
 				}
@@ -200,7 +207,8 @@ func refinementStructureIsEntailed(checker *shimchecker.Checker, sourceType, tar
 			}
 		}
 
-		return callSignaturesAreEntailed(checker, source, target, visit)
+		return signaturesAreEntailed(checker, source, target, shimchecker.SignatureKindCall, visit) &&
+			signaturesAreEntailed(checker, source, target, shimchecker.SignatureKindConstruct, visit)
 	}
 	return visit(sourceType, targetType)
 }
@@ -212,20 +220,53 @@ func signatureSymbolType(checker *shimchecker.Checker, symbol *shimast.Symbol) *
 	return shimchecker.Checker_getTypeOfSymbol(checker, symbol)
 }
 
-func signatureParameterType(
+type signatureParameterSequence struct {
+	fixed   []*shimchecker.Type
+	minimum int
+	rest    *shimchecker.Type
+}
+
+func signatureParameters(
 	checker *shimchecker.Checker,
 	signature *shimchecker.Signature,
-	index int,
-) *shimchecker.Type {
+) signatureParameterSequence {
+	result := signatureParameterSequence{minimum: shimchecker.Checker_getMinArgumentCount(checker, signature)}
 	parameters := shimchecker.Signature_parameters(signature)
-	restIndex := len(parameters) - 1
-	if shimchecker.Signature_hasRestParameter(signature) && index >= restIndex {
-		return shimchecker.Checker_getRestTypeOfSignature(checker, signature)
+	for index, parameter := range parameters {
+		parameterType := signatureSymbolType(checker, parameter)
+		if shimchecker.Signature_hasRestParameter(signature) && index == len(parameters)-1 {
+			if shimchecker.IsTupleType(parameterType) {
+				arguments := shimchecker.Checker_getTypeArguments(checker, parameterType)
+				flags := parameterType.TargetTupleType().ElementFlags()
+				for elementIndex, element := range arguments {
+					elementFlags := shimchecker.ElementFlagsRequired
+					if elementIndex < len(flags) {
+						elementFlags = flags[elementIndex]
+					}
+					if elementFlags&(shimchecker.ElementFlagsRest|shimchecker.ElementFlagsVariadic) != 0 {
+						result.rest = element
+						break
+					}
+					result.fixed = append(result.fixed, element)
+				}
+			} else {
+				result.rest = shimchecker.Checker_getRestTypeOfSignature(checker, signature)
+			}
+			continue
+		}
+		result.fixed = append(result.fixed, parameterType)
 	}
-	if index < 0 || index >= len(parameters) {
-		return nil
+	return result
+}
+
+func signatureParameterAt(parameters signatureParameterSequence, index int) *shimchecker.Type {
+	if index >= 0 && index < len(parameters.fixed) {
+		return parameters.fixed[index]
 	}
-	return signatureSymbolType(checker, parameters[index])
+	if index >= len(parameters.fixed) {
+		return parameters.rest
+	}
+	return nil
 }
 
 func signatureIsEntailed(
@@ -239,7 +280,9 @@ func signatureIsEntailed(
 		(source.ThisParameter() == nil) != (target.ThisParameter() == nil) {
 		return false
 	}
-	if shimchecker.Checker_getMinArgumentCount(checker, source) > shimchecker.Checker_getMinArgumentCount(checker, target) {
+	sourceParameters := signatureParameters(checker, source)
+	targetParameters := signatureParameters(checker, target)
+	if sourceParameters.minimum > targetParameters.minimum {
 		return false
 	}
 	if source.ThisParameter() != nil {
@@ -247,33 +290,38 @@ func signatureIsEntailed(
 			return false
 		}
 	}
-	for index := range shimchecker.Signature_parameterCount(source) {
-		sourceParameter := signatureParameterType(checker, source, index)
-		targetParameter := signatureParameterType(checker, target, index)
-		if sourceParameter == nil || targetParameter != nil && !visit(targetParameter, sourceParameter) {
+	fixedCount := max(len(sourceParameters.fixed), len(targetParameters.fixed))
+	for index := range fixedCount {
+		sourceParameter := signatureParameterAt(sourceParameters, index)
+		targetParameter := signatureParameterAt(targetParameters, index)
+		if sourceParameter != nil && targetParameter != nil && !visit(targetParameter, sourceParameter) {
 			return false
 		}
+	}
+	if sourceParameters.rest != nil && targetParameters.rest != nil && !visit(targetParameters.rest, sourceParameters.rest) {
+		return false
 	}
 	targetReturn := shimchecker.Checker_getReturnTypeOfSignature(checker, target)
 	return targetReturn != nil && (targetReturn.Flags()&shimchecker.TypeFlagsVoid != 0 ||
 		visit(shimchecker.Checker_getReturnTypeOfSignature(checker, source), targetReturn))
 }
 
-func callSignaturesAreEntailed(
+func signaturesAreEntailed(
 	checker *shimchecker.Checker,
 	source *shimchecker.Type,
 	target *shimchecker.Type,
+	kind shimchecker.SignatureKind,
 	visit func(*shimchecker.Type, *shimchecker.Type) bool,
 ) bool {
-	targetCalls := shimchecker.Checker_getSignaturesOfType(checker, target, shimchecker.SignatureKindCall)
-	if len(targetCalls) == 0 || checker.IsTypeAssignableTo(source, target) {
+	targetSignatures := shimchecker.Checker_getSignaturesOfType(checker, target, kind)
+	if len(targetSignatures) == 0 || checker.IsTypeAssignableTo(source, target) {
 		return true
 	}
-	sourceCalls := shimchecker.Checker_getSignaturesOfType(checker, source, shimchecker.SignatureKindCall)
-	for _, targetCall := range targetCalls {
+	sourceSignatures := shimchecker.Checker_getSignaturesOfType(checker, source, kind)
+	for _, targetSignature := range targetSignatures {
 		matched := false
-		for _, sourceCall := range sourceCalls {
-			if signatureIsEntailed(checker, sourceCall, targetCall, visit) {
+		for _, sourceSignature := range sourceSignatures {
+			if signatureIsEntailed(checker, sourceSignature, targetSignature, visit) {
 				matched = true
 				break
 			}
