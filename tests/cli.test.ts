@@ -104,6 +104,8 @@ describe("ts-refinement verify", () => {
       const decoyCode = `
     console.log(${JSON.stringify(marker)});
     export const metadata = { marker: ${JSON.stringify(marker)} };
+      const ts_refinement_validator_decoy = { assert() {} };
+      ts_refinement_validator_decoy.assert(0, ${JSON.stringify(marker)});
     `;
       writeFileSync(resolve(directory, "decoy.js"), decoyCode);
       writeFileSync(

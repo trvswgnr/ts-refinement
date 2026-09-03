@@ -243,9 +243,8 @@ function calledValidatorName(
     node.object.type === "Identifier" &&
     !node.computed &&
     node.property.type === "Identifier" &&
-    (node.object.name.includes("ts_refinement_validator") ||
-      (node.property.name === "assert" &&
-        isFarmValidatorImport(node.object.name, ancestors, bindings)))
+    node.property.name === "assert" &&
+    isFarmValidatorImport(node.object.name, ancestors, bindings)
   ) {
     return node.property.name;
   }
