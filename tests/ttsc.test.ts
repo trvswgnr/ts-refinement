@@ -25,6 +25,14 @@ function runTtsc(project: "invalid" | "unrelated-invalid" | "valid", outDir: str
   );
 }
 
+function runTtscCheck(project: "imported-invalid") {
+  return spawnSync(
+    ttsc,
+    ["check", "--project", resolve(root, `fixtures/ttsc/${project}/tsconfig.json`)],
+    { cwd: root, encoding: "utf8" },
+  );
+}
+
 beforeAll(() => {
   const build = spawnSync("bun", ["run", "--cwd", "packages/ttsc-plugin", "build"], {
     cwd: root,
@@ -100,4 +108,10 @@ describe("TypeScript-Go native plugin", () => {
     expect(unrelatedInvalid.status).toBe(2);
     expect(`${unrelatedInvalid.stdout}${unrelatedInvalid.stderr}`).toContain("TS2322:");
   }, 180_000);
+
+  it("reports refinement failures from imported project modules", () => {
+    const result = runTtscCheck("imported-invalid");
+    expect(result.status).toBe(2);
+    expect(`${result.stdout}${result.stderr}`).toMatch(/imported\.ts.*RF1000200/su);
+  }, 60_000);
 });

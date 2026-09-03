@@ -3,7 +3,6 @@ package host
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	shimast "github.com/microsoft/typescript-go/shim/ast"
@@ -37,7 +36,7 @@ func RunCheck(args []string) int {
 		program.SourceFiles(),
 		program.Diagnostics(),
 	)
-	refinementDiagnostics := collectRootRefinementDiagnostics(program)
+	refinementDiagnostics := collectProjectRefinementDiagnostics(program)
 	if len(typeScriptDiagnostics) > 0 {
 		driver.WritePrettyDiagnostics(os.Stderr, typeScriptDiagnostics, options.cwd)
 	}
@@ -50,18 +49,14 @@ func RunCheck(args []string) int {
 	return 0
 }
 
-func collectRootRefinementDiagnostics(program *driver.Program) []protocolDiagnostic {
-	if program == nil || program.Checker == nil || program.ParsedConfig == nil {
+func collectProjectRefinementDiagnostics(program *driver.Program) []protocolDiagnostic {
+	if program == nil || program.Checker == nil || program.TSProgram == nil {
 		return nil
-	}
-	rootFiles := map[string]struct{}{}
-	for _, fileName := range program.ParsedConfig.FileNames() {
-		rootFiles[filepath.Clean(fileName)] = struct{}{}
 	}
 	diagnostics := []protocolDiagnostic{}
 	seen := map[string]struct{}{}
 	for _, file := range program.SourceFiles() {
-		if _, ok := rootFiles[filepath.Clean(file.FileName())]; !ok {
+		if program.TSProgram.IsSourceFileFromExternalLibrary(file) {
 			continue
 		}
 		source := file.Text()
