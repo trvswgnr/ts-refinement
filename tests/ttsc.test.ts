@@ -58,6 +58,7 @@ describe("TypeScript-Go native plugin", () => {
     expect(emitted).toContain("Reflect.ownKeys");
     expect(emitted).toContain("String(Number(");
     expect(emitted).toContain('!== "symbol"');
+    expect(emitted).toContain("Object.getOwnPropertySymbols");
     expect(emitted).toContain("/^data-([\\s\\S]*?)$/u.exec");
     expect(emitted).toContain("__ts_refinement_validate0");
     expect(emitted).toContain("new WeakSet");

@@ -237,6 +237,7 @@ describe("source transform", () => {
     expect(modules).toContain("Reflect.ownKeys");
     expect(modules).toContain("String(Number(");
     expect(modules).toContain('!== "symbol"');
+    expect(modules).toContain("Object.getOwnPropertySymbols");
     expect(modules).toContain("/^data-([\\s\\S]*?)$/u.exec");
   });
 });

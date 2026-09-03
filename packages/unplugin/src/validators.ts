@@ -156,9 +156,20 @@ function emitTraversal(
               : templateIndexGuard(segment, key, match, `${indent}  `);
       const pathSegment = `pathSegment${namespace}_${variableIndex}`;
       variableIndex += 1;
+      const inheritedSymbols =
+        segment.key === "symbol"
+          ? [
+              `${indent}for (let prototype${namespace}_${variableIndex} = Object.getPrototypeOf(${subject}); prototype${namespace}_${variableIndex} !== null; prototype${namespace}_${variableIndex} = Object.getPrototypeOf(prototype${namespace}_${variableIndex})) {`,
+              `${indent}  for (const inheritedSymbol${namespace}_${variableIndex} of Object.getOwnPropertySymbols(prototype${namespace}_${variableIndex})) {`,
+              `${indent}    if (Object.prototype.propertyIsEnumerable.call(prototype${namespace}_${variableIndex}, inheritedSymbol${namespace}_${variableIndex})) keys${namespace}_${variableIndex}.add(inheritedSymbol${namespace}_${variableIndex});`,
+              `${indent}  }`,
+              `${indent}}`,
+            ]
+          : [];
       return [
         `${indent}const keys${namespace}_${variableIndex} = new Set(Reflect.ownKeys(${subject}));`,
         `${indent}for (const inherited${namespace}_${variableIndex} in ${subject}) keys${namespace}_${variableIndex}.add(inherited${namespace}_${variableIndex});`,
+        ...inheritedSymbols,
         `${indent}for (const ${key} of keys${namespace}_${variableIndex}) {`,
         ...keyGuard,
         `${indent}  const ${nested} = ${subject}[${key}];`,

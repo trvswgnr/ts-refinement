@@ -353,6 +353,11 @@ describe("Rolldown plugin", () => {
     expect(() => fixture.checkSymbolScores({ [symbol]: -1 })).toThrowError(
       expect.objectContaining({ path: "[Symbol(bad)]", value: -1 }),
     );
+    const prototype = {};
+    Object.defineProperty(prototype, symbol, { enumerable: true, value: -2 });
+    expect(() => fixture.checkSymbolScores(Object.create(prototype))).toThrowError(
+      expect.objectContaining({ path: "[Symbol(bad)]", value: -2 }),
+    );
     expect(fixture.checkDataScores({ "data-ok": 1, other: -1 })).toEqual({
       "data-ok": 1,
       other: -1,

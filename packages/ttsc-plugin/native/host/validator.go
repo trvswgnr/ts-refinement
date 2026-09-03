@@ -175,8 +175,19 @@ func emitTraversal(
 			lines := []string{
 				fmt.Sprintf("%sconst %s = new Set(Reflect.ownKeys(%s));", indent, keys, subject),
 				fmt.Sprintf("%sfor (const %s in %s) %s.add(%s);", indent, inherited, subject, keys, inherited),
-				fmt.Sprintf("%sfor (const %s of %s) {", indent, key, keys),
 			}
+			if segment.Key == "symbol" {
+				prototype := fmt.Sprintf("__ts_refinement_prototype%s_%d", namespace, variableIndex)
+				inheritedSymbol := fmt.Sprintf("__ts_refinement_inherited_symbol%s_%d", namespace, variableIndex)
+				lines = append(lines,
+					fmt.Sprintf("%sfor (let %s = Object.getPrototypeOf(%s); %s !== null; %s = Object.getPrototypeOf(%s)) {", indent, prototype, subject, prototype, prototype, prototype),
+					fmt.Sprintf("%s  for (const %s of Object.getOwnPropertySymbols(%s)) {", indent, inheritedSymbol, prototype),
+					fmt.Sprintf("%s    if (Object.prototype.propertyIsEnumerable.call(%s, %s)) %s.add(%s);", indent, prototype, inheritedSymbol, keys, inheritedSymbol),
+					fmt.Sprintf("%s  }", indent),
+					fmt.Sprintf("%s}", indent),
+				)
+			}
+			lines = append(lines, fmt.Sprintf("%sfor (const %s of %s) {", indent, key, keys))
 			lines = append(lines, indexKeyGuard(segment, key, match, indent+"  ")...)
 			lines = append(lines,
 				fmt.Sprintf("%s  const %s = %s[%s];", indent, nested, subject, key),
