@@ -12,7 +12,7 @@ export interface ProgramState {
   readonly program: ts.Program;
   getScriptVersion(fileName: string): number;
   invalidateSource(fileName: string): void;
-  updateSource(fileName: string, source: string): void;
+  mayContainRefinement(fileName: string): boolean;
 }
 
 export interface ProgramOptions {
@@ -28,6 +28,51 @@ interface ProgramConfig {
 
 interface ParsedCompilerOptions extends ts.CompilerOptions {
   readonly configFile?: ts.TsConfigSourceFile;
+}
+
+function moduleSpecifierText(tsModule: typeof ts, statement: ts.Statement): string | undefined {
+  if (tsModule.isImportDeclaration(statement) || tsModule.isExportDeclaration(statement)) {
+    return statement.moduleSpecifier !== undefined &&
+      tsModule.isStringLiteralLike(statement.moduleSpecifier)
+      ? statement.moduleSpecifier.text
+      : undefined;
+  }
+  if (
+    tsModule.isImportEqualsDeclaration(statement) &&
+    tsModule.isExternalModuleReference(statement.moduleReference) &&
+    statement.moduleReference.expression !== undefined &&
+    tsModule.isStringLiteralLike(statement.moduleReference.expression)
+  ) {
+    return statement.moduleReference.expression.text;
+  }
+  return undefined;
+}
+
+function containsGlobalAugmentation(tsModule: typeof ts, sourceFile: ts.SourceFile): boolean {
+  let found = false;
+  function visit(node: ts.Node): void {
+    if (found) return;
+    if (
+      tsModule.isModuleDeclaration(node) &&
+      (node.flags & tsModule.NodeFlags.GlobalAugmentation) !== 0
+    ) {
+      found = true;
+      return;
+    }
+    tsModule.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+  return found;
+}
+
+function resolvedImport(
+  tsModule: typeof ts,
+  containingFile: string,
+  specifier: string,
+  options: ts.CompilerOptions,
+): string | undefined {
+  return tsModule.resolveModuleName(specifier, containingFile, options, tsModule.sys).resolvedModule
+    ?.resolvedFileName;
 }
 
 function readProgramConfig(tsModule: typeof ts, options: ProgramOptions): ProgramConfig {
@@ -96,7 +141,6 @@ export function createProgramState(
   }
 
   const diskScripts = new Map<string, DiskScriptState>();
-  const overlays = new Map<string, ScriptState>();
   const normalizeFileName = (fileName: string) => resolve(fileName);
   function readDiskScript(fileName: string): ScriptState | undefined {
     const normalizedFileName = normalizeFileName(fileName);
@@ -133,8 +177,7 @@ export function createProgramState(
   }
 
   function getScript(fileName: string): ScriptState | undefined {
-    const normalizedFileName = normalizeFileName(fileName);
-    return overlays.get(normalizedFileName) ?? readDiskScript(normalizedFileName);
+    return readDiskScript(normalizeFileName(fileName));
   }
 
   const host: ts.LanguageServiceHost = {
@@ -150,13 +193,13 @@ export function createProgramState(
     getScriptVersion: (fileName) => String(getScript(fileName)?.version ?? 0),
     readDirectory: (path, extensions, exclude, include, depth) =>
       tsModule.sys.readDirectory(path, extensions, exclude, include, depth),
-    readFile: (fileName) =>
-      overlays.get(normalizeFileName(fileName))?.source ?? tsModule.sys.readFile(fileName),
+    readFile: (fileName) => tsModule.sys.readFile(fileName),
     realpath: (path) => tsModule.sys.realpath?.(path) ?? path,
     useCaseSensitiveFileNames: () => tsModule.sys.useCaseSensitiveFileNames,
   };
   const languageService = tsModule.createLanguageService(host, tsModule.createDocumentRegistry());
   let currentProgram: ts.Program | undefined;
+  let refinementFiles: ReadonlySet<string> | undefined;
 
   function getProgram(): ts.Program {
     if (currentProgram !== undefined) return currentProgram;
@@ -166,6 +209,56 @@ export function createProgramState(
     }
     currentProgram = program;
     return currentProgram;
+  }
+
+  function getRefinementFiles(): ReadonlySet<string> {
+    if (refinementFiles !== undefined) return refinementFiles;
+    const dependencies = new Map<string, string[]>();
+    const discovered = new Set<string>();
+    let hasGlobalRefinements = false;
+    for (const sourceFile of getProgram().getSourceFiles()) {
+      const fileName = normalizeFileName(sourceFile.fileName);
+      const specifiers = sourceFile.statements.flatMap((statement) => {
+        const specifier = moduleSpecifierText(tsModule, statement);
+        return specifier === undefined ? [] : [specifier];
+      });
+      if (specifiers.includes("ts-refinement")) {
+        discovered.add(fileName);
+        hasGlobalRefinements ||= containsGlobalAugmentation(tsModule, sourceFile);
+      }
+      dependencies.set(
+        fileName,
+        specifiers.flatMap((specifier) => {
+          const importedFile = resolvedImport(
+            tsModule,
+            sourceFile.fileName,
+            specifier,
+            parsed.options,
+          );
+          return importedFile === undefined ? [] : [normalizeFileName(importedFile)];
+        }),
+      );
+    }
+
+    if (hasGlobalRefinements) {
+      for (const sourceFile of getProgram().getSourceFiles()) {
+        discovered.add(normalizeFileName(sourceFile.fileName));
+      }
+    }
+
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const [fileName, importedFiles] of dependencies) {
+        if (discovered.has(fileName) || !importedFiles.some((name) => discovered.has(name))) {
+          continue;
+        }
+        discovered.add(fileName);
+        changed = true;
+      }
+    }
+    refinementFiles = discovered;
+    return refinementFiles;
   }
 
   return {
@@ -182,25 +275,12 @@ export function createProgramState(
       return getScript(fileName)?.version ?? 0;
     },
     invalidateSource(fileName) {
-      overlays.delete(normalizeFileName(fileName));
+      diskScripts.delete(normalizeFileName(fileName));
       currentProgram = undefined;
+      refinementFiles = undefined;
     },
-    updateSource(fileName, source) {
-      const normalizedFileName = normalizeFileName(fileName);
-      const previous = getScript(normalizedFileName);
-      if (previous?.source === source) {
-        if (!overlays.has(normalizedFileName) && previous !== undefined) {
-          overlays.set(normalizedFileName, previous);
-        }
-        return;
-      }
-
-      overlays.set(normalizedFileName, {
-        snapshot: tsModule.ScriptSnapshot.fromString(source),
-        source,
-        version: (previous?.version ?? -1) + 1,
-      });
-      currentProgram = undefined;
+    mayContainRefinement(fileName) {
+      return getRefinementFiles().has(normalizeFileName(fileName));
     },
   };
 }

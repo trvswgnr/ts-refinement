@@ -89,6 +89,36 @@ function canContainRefinementAssertion(source: string, fileName: string): boolea
   return found;
 }
 
+type TransformCandidate =
+  | { readonly kind: "error"; readonly message: string }
+  | { readonly kind: "skip" }
+  | { readonly kind: "transform"; readonly sourceFile: ts.SourceFile };
+
+function transformCandidate(
+  state: ProgramState,
+  fileName: string,
+  source: string,
+): TransformCandidate {
+  const sourceFile = state.program.getSourceFile(fileName);
+  if (sourceFile !== undefined && !state.mayContainRefinement(fileName)) {
+    return { kind: "skip" };
+  }
+  if (!canContainRefinementAssertion(source, fileName)) return { kind: "skip" };
+  if (sourceFile === undefined) {
+    return {
+      kind: "error",
+      message: `TypeScript module '${fileName}' is not included in the program configured by '${state.configPath}'.`,
+    };
+  }
+  if (sourceFile.text !== source) {
+    return {
+      kind: "error",
+      message: `TypeScript module '${fileName}' was changed before ts-refinement ran. Configure ts-refinement as the first source transform.`,
+    };
+  }
+  return { kind: "transform", sourceFile };
+}
+
 function isJavaScriptAsset(fileName: string): boolean {
   return [".cjs", ".js", ".mjs"].includes(extname(fileName));
 }
@@ -239,7 +269,6 @@ const factory: UnpluginFactory<RefinementTypesPluginOptions | undefined, false> 
       handler(code, id) {
         const fileName = resolve(cleanModuleId(id));
         if (!isTransformableTypeScript(fileName)) return null;
-        if (!canContainRefinementAssertion(code, fileName)) return null;
         if (state === null) state = createProgramState(ts, options);
         if (meta.framework === "esbuild") {
           for (const configFile of state.configFiles) this.addWatchFile(configFile);
@@ -254,16 +283,16 @@ const factory: UnpluginFactory<RefinementTypesPluginOptions | undefined, false> 
         );
         if (ignore.some((pattern) => matchesGlob(relativeFileName, pattern))) return null;
 
-        if (state.program.getSourceFile(fileName) === undefined) {
-          const message = `TypeScript module '${fileName}' is not included in the program configured by '${state.configPath}'.`;
+        const candidate = transformCandidate(state, fileName, code);
+        if (candidate.kind === "skip") return null;
+        if (candidate.kind === "error") {
+          const { message } = candidate;
           if (meta.framework === "farm") throw new Error(message);
           else this.error({ id: fileName, message });
           return null;
         }
-
-        state.updateSource(fileName, code);
         const context = state.context;
-        const sourceFile = context.program.getSourceFile(fileName);
+        const sourceFile = candidate.sourceFile;
         if (sourceFile === undefined) {
           const message = `TypeScript module '${fileName}' is not included in the program configured by '${state.configPath}'.`;
           if (meta.framework === "farm") throw new Error(message);

@@ -19,15 +19,12 @@ const publishFixtureDirectory = resolve(import.meta.dirname, "../fixtures/publis
 
 describe("TypeScript refinement analysis", () => {
   it("uses diagnostic codes outside TypeScript's namespace", () => {
+    // SAFETY: Supported TypeScript runtimes expose the complete diagnostic table under this key.
     const runtimeTypeScript = ts as typeof ts & {
       readonly Diagnostics: Readonly<Record<string, { readonly code: number }>>;
     };
     const typeScriptCodes = new Set(
-      Object.values(runtimeTypeScript.Diagnostics).flatMap((diagnostic) =>
-        typeof diagnostic === "object" && diagnostic !== null && "code" in diagnostic
-          ? [diagnostic.code]
-          : [],
-      ),
+      Object.values(runtimeTypeScript.Diagnostics).map((diagnostic) => diagnostic.code),
     );
 
     expect(Object.values(DiagnosticCode).every((code) => !typeScriptCodes.has(code))).toBe(true);

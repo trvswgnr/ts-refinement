@@ -131,7 +131,7 @@ refinementTypes({
 });
 ```
 
-The plugin creates one TypeScript Program per build generation and retains it across module transforms. Source and config watch events invalidate the cached generation before the next build.
+The plugin creates one TypeScript Program per build generation and retains it across module transforms. Source and config watch events invalidate the cached generation before the next build. Configure it before any plugin that rewrites TypeScript source; a changed input is rejected rather than analyzed against stale checker state.
 
 Unplugin write builds and native `ttsc build --emit` builds emit `.ts-refinement-manifest.json` in the output directory. Publishable packages that expose refinements must run `ts-refinement verify dist` directly from `prepack`; the verifier checks final JavaScript digests and every runtime-required assertion marker.
 

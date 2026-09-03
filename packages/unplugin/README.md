@@ -31,11 +31,12 @@ interface RefinementTypesPluginOptions {
 }
 ```
 
-The plugin analyzes the exact source supplied by the bundler, emits runtime checks for
-inconclusive assertions, preserves source maps, and fails builds on refinement diagnostics.
-Successful write builds also emit `.ts-refinement-manifest.json` after final JavaScript assets
-exist. Run `ts-refinement verify OUTDIR` from `prepack` to validate its digests and runtime site
-markers.
+Configure ts-refinement before plugins that rewrite TypeScript source. It keeps one TypeScript
+Program for the build and rejects changed input rather than analyzing it against stale checker
+state. The plugin emits runtime checks for inconclusive assertions, preserves source maps, and
+fails builds on refinement diagnostics. Successful write builds also emit
+`.ts-refinement-manifest.json` after final JavaScript assets exist. Run
+`ts-refinement verify OUTDIR` from `prepack` to validate its digests and runtime site markers.
 
 The compile-time analyzer never executes predicate JavaScript. Predicates for inconclusive
 assertions are compiled from normalized IR and execute in the consumer bundle. Primitive literal

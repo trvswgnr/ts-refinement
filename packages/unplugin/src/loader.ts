@@ -72,11 +72,15 @@ export async function load(
   const fileName = fileURLToPath(url);
   const source = await sourceText(fileName, loaded.source);
   const current = programState();
-  current.updateSource(fileName, source);
   const sourceFile = current.context.program.getSourceFile(fileName);
   if (sourceFile === undefined) {
     throw new Error(
       `TypeScript module '${fileName}' is not included in the program configured by '${current.configPath}'.`,
+    );
+  }
+  if (sourceFile.text !== source) {
+    throw new Error(
+      `TypeScript module '${fileName}' was changed before ts-refinement ran. Configure ts-refinement as the first source transform.`,
     );
   }
   const output = transformSource(current.context, sourceFile, source, registry);
