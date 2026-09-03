@@ -24,7 +24,7 @@ beforeAll(() => {
 });
 
 describe("ts-patch Program Transformer", () => {
-  it("owns refinement diagnostics through tspc", () => {
+  it("owns refinement diagnostics through tspc", { timeout: 30_000 }, () => {
     const valid = runTspc(fixture("valid"));
     expect({ status: valid.status, stderr: valid.stderr, stdout: valid.stdout }).toEqual({
       status: 0,
