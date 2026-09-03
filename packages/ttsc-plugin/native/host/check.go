@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	shimast "github.com/microsoft/typescript-go/shim/ast"
 	shimchecker "github.com/microsoft/typescript-go/shim/checker"
@@ -58,15 +59,57 @@ func collectRootRefinementDiagnostics(program *driver.Program) []protocolDiagnos
 		rootFiles[filepath.Clean(fileName)] = struct{}{}
 	}
 	diagnostics := []protocolDiagnostic{}
+	seen := map[string]struct{}{}
 	for _, file := range program.SourceFiles() {
 		if _, ok := rootFiles[filepath.Clean(file.FileName())]; !ok {
 			continue
 		}
-		diagnostics = append(diagnostics, refinementDefinitionDiagnostics(program.Checker, file)...)
-		_, assertions := transformFile(program.Checker, file)
-		diagnostics = append(diagnostics, assertions...)
+		source := file.Text()
+		if canContainRefinementDefinition(source) {
+			diagnostics = appendUniqueDiagnostics(diagnostics, seen, refinementDefinitionDiagnostics(program.Checker, file))
+		}
+		if refinementAssertionPattern.MatchString(source) {
+			_, assertions := transformFile(program.Checker, file)
+			diagnostics = appendUniqueDiagnostics(diagnostics, seen, assertions)
+		}
 	}
 	return diagnostics
+}
+
+func canContainRefinementDefinition(source string) bool {
+	return strings.Contains(source, "ts-refinement")
+}
+
+func appendUniqueDiagnostics(
+	target []protocolDiagnostic,
+	seen map[string]struct{},
+	candidates []protocolDiagnostic,
+) []protocolDiagnostic {
+	for _, diagnostic := range candidates {
+		key := protocolDiagnosticKey(diagnostic)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		target = append(target, diagnostic)
+	}
+	return target
+}
+
+func protocolDiagnosticKey(diagnostic protocolDiagnostic) string {
+	file := ""
+	if diagnostic.File != nil {
+		file = *diagnostic.File
+	}
+	start := -1
+	if diagnostic.Start != nil {
+		start = *diagnostic.Start
+	}
+	length := -1
+	if diagnostic.Length != nil {
+		length = *diagnostic.Length
+	}
+	return fmt.Sprintf("%s:%d:%d:%v:%s", file, start, length, diagnostic.Code, diagnostic.MessageText)
 }
 
 func refinementDefinitionDiagnostics(checker *shimchecker.Checker, file *shimast.SourceFile) []protocolDiagnostic {
