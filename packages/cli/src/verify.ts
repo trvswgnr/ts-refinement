@@ -141,8 +141,18 @@ function functionName(node: ParsedFunction, ancestors: readonly AnyNode[]): stri
     : null;
 }
 
-function validatorFunctions(program: AnyNode): ReadonlySet<string> {
-  const validators = new Set<string>();
+interface ValidatorBindings {
+  readonly farmImports: ReadonlyMap<ParsedFunction, ReadonlySet<string>>;
+  readonly localNames: ReadonlySet<string>;
+}
+
+function enclosingFunction(ancestors: readonly AnyNode[]): ParsedFunction | null {
+  return ancestors.findLast(isFunctionNode) ?? null;
+}
+
+function validatorBindings(program: AnyNode): ValidatorBindings {
+  const localNames = new Set<string>();
+  const moduleIds = new Set<string>();
   ancestor(program, {
     Property(property, _state, ancestors) {
       if (
@@ -160,16 +170,91 @@ function validatorFunctions(program: AnyNode): ReadonlySet<string> {
         parameter?.type === "Identifier" &&
         parameter.name === property.value.name
       ) {
-        validators.add(name);
+        localNames.add(name);
+        const moduleProperty = ancestors.findLast(
+          (node): node is ParsedProperty =>
+            node.type === "Property" &&
+            node.value.type === "FunctionExpression" &&
+            node.value !== functionNode,
+        );
+        const moduleId = moduleProperty === undefined ? null : propertyName(moduleProperty);
+        if (moduleId !== null) moduleIds.add(moduleId);
       }
     },
   });
-  return validators;
+  const farmImports = new Map<ParsedFunction, Set<string>>();
+  ancestor(program, {
+    VariableDeclarator(declaration, _state, ancestors) {
+      if (
+        declaration.id.type !== "Identifier" ||
+        declaration.init?.type !== "CallExpression" ||
+        declaration.init.arguments.length !== 1
+      ) {
+        return;
+      }
+      const moduleId = declaration.init.arguments[0];
+      if (
+        moduleId?.type !== "Literal" ||
+        !v.is(v.string(), moduleId.value) ||
+        !moduleIds.has(moduleId.value)
+      ) {
+        return;
+      }
+      const scope = enclosingFunction(ancestors);
+      if (scope === null) return;
+      const bindings = farmImports.get(scope) ?? new Set<string>();
+      bindings.add(declaration.id.name);
+      farmImports.set(scope, bindings);
+    },
+  });
+  return { farmImports, localNames };
+}
+
+function isFarmValidatorImport(
+  name: string,
+  ancestors: readonly AnyNode[],
+  bindings: ValidatorBindings,
+): boolean {
+  for (let index = ancestors.length - 1; index >= 0; index -= 1) {
+    const scope = ancestors[index];
+    if (
+      scope !== undefined &&
+      isFunctionNode(scope) &&
+      bindings.farmImports.get(scope)?.has(name)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function calledValidatorName(
+  node: AnyNode,
+  ancestors: readonly AnyNode[],
+  bindings: ValidatorBindings,
+): string | null {
+  if (node.type === "Identifier" && bindings.localNames.has(node.name)) return node.name;
+  if (node.type === "SequenceExpression") {
+    const last = node.expressions.at(-1);
+    return last === undefined ? null : calledValidatorName(last, ancestors, bindings);
+  }
+  if (
+    node.type === "MemberExpression" &&
+    node.object.type === "Identifier" &&
+    !node.computed &&
+    node.property.type === "Identifier" &&
+    (node.object.name.includes("ts_refinement_validator") ||
+      (node.property.name === "assert" &&
+        isFarmValidatorImport(node.object.name, ancestors, bindings)))
+  ) {
+    return node.property.name;
+  }
+  return null;
 }
 
 function parseMarkers(fileName: string, source: string): Set<string> | null {
   const markers = new Set<string>();
-  let validators: ReadonlySet<string>;
+  let bindings: ValidatorBindings;
   function recordMarker(
     value: ParsedMarkerValue,
     ancestors: readonly import("acorn").AnyNode[],
@@ -178,11 +263,15 @@ function parseMarkers(fileName: string, source: string): Set<string> | null {
     const node = ancestors.at(-1);
     const parent = ancestors.at(-2);
     if (node === undefined || parent === undefined) return;
+    const validatorName =
+      parent.type === "CallExpression"
+        ? calledValidatorName(parent.callee, ancestors, bindings)
+        : null;
     const assertionArgument =
       parent.type === "CallExpression" &&
       parent.arguments.at(-1) === node &&
-      parent.callee.type === "Identifier" &&
-      validators.has(parent.callee.name);
+      validatorName !== null &&
+      (bindings.localNames.has(validatorName) || validatorName === "assert");
     const runtimeErrorMarker =
       parent.type === "Property" &&
       parent.value === node &&
@@ -196,7 +285,7 @@ function parseMarkers(fileName: string, source: string): Set<string> | null {
       sourceFile: fileName,
       sourceType: "module",
     });
-    validators = validatorFunctions(program);
+    bindings = validatorBindings(program);
     ancestor(program, {
       Literal(node, _state, ancestors) {
         recordMarker(node.value, ancestors);
