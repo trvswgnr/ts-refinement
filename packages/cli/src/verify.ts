@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { constants, accessSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
-import { parse, type AnyNode, type Function, type ObjectExpression, type Property } from "acorn";
+import { parse, type AnyNode, type ObjectExpression } from "acorn";
 import { ancestor } from "acorn-walk";
 import * as v from "valibot";
 
@@ -84,8 +84,13 @@ function containedAssetPath(directory: string, fileName: string): AssetPathResul
 }
 
 type ParsedMarkerValue = RegExp | bigint | boolean | number | string | null | undefined;
+type ParsedFunction = Extract<
+  AnyNode,
+  { readonly type: "ArrowFunctionExpression" | "FunctionDeclaration" | "FunctionExpression" }
+>;
+type ParsedProperty = Extract<AnyNode, { readonly type: "Property" }>;
 
-function propertyName(property: Property): string | null {
+function propertyName(property: ParsedProperty): string | null {
   if (!property.computed && property.key.type === "Identifier") return property.key.name;
   return property.key.type === "Literal" && v.is(v.string(), property.key.value)
     ? property.key.value
@@ -120,7 +125,15 @@ function refinementErrorObject(ancestors: readonly AnyNode[]): ObjectExpression 
     : null;
 }
 
-function functionName(node: Function, ancestors: readonly AnyNode[]): string | null {
+function isFunctionNode(node: AnyNode): node is ParsedFunction {
+  return (
+    node.type === "FunctionDeclaration" ||
+    node.type === "FunctionExpression" ||
+    node.type === "ArrowFunctionExpression"
+  );
+}
+
+function functionName(node: ParsedFunction, ancestors: readonly AnyNode[]): string | null {
   if (node.type === "FunctionDeclaration") return node.id?.name ?? null;
   const parent = ancestors[ancestors.indexOf(node) - 1];
   return parent?.type === "VariableDeclarator" && parent.id.type === "Identifier"
@@ -139,12 +152,7 @@ function validatorFunctions(program: AnyNode): ReadonlySet<string> {
       ) {
         return;
       }
-      const functionNode = ancestors.findLast(
-        (node): node is Function =>
-          node.type === "FunctionDeclaration" ||
-          node.type === "FunctionExpression" ||
-          node.type === "ArrowFunctionExpression",
-      );
+      const functionNode = ancestors.findLast(isFunctionNode);
       const parameter = functionNode?.params.at(-1);
       const name = functionNode === undefined ? null : functionName(functionNode, ancestors);
       if (
