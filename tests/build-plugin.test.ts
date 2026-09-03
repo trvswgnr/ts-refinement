@@ -79,10 +79,6 @@ interface NestedRefinementFixture {
 
 const rebuildTestTimeout = 15_000;
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-}
-
 function generatedPosition(code: string, offset: number) {
   const precedingLines = code.slice(0, offset).split("\n");
   return {

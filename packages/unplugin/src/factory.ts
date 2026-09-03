@@ -24,23 +24,23 @@ function isTransformableTypeScript(fileName: string): boolean {
 }
 
 const refinementAssertionPattern = /\bas\s+|<\s*[A-Za-z_$][\w$]*/u;
+const definitelyUnrefinedKinds = new Set<ts.SyntaxKind>([
+  ts.SyntaxKind.AnyKeyword,
+  ts.SyntaxKind.BigIntKeyword,
+  ts.SyntaxKind.BooleanKeyword,
+  ts.SyntaxKind.LiteralType,
+  ts.SyntaxKind.NeverKeyword,
+  ts.SyntaxKind.NumberKeyword,
+  ts.SyntaxKind.ObjectKeyword,
+  ts.SyntaxKind.StringKeyword,
+  ts.SyntaxKind.SymbolKeyword,
+  ts.SyntaxKind.UndefinedKeyword,
+  ts.SyntaxKind.UnknownKeyword,
+  ts.SyntaxKind.VoidKeyword,
+]);
 
 function isDefinitelyUnrefinedType(node: ts.TypeNode): boolean {
-  switch (node.kind) {
-    case ts.SyntaxKind.AnyKeyword:
-    case ts.SyntaxKind.BigIntKeyword:
-    case ts.SyntaxKind.BooleanKeyword:
-    case ts.SyntaxKind.NeverKeyword:
-    case ts.SyntaxKind.NumberKeyword:
-    case ts.SyntaxKind.ObjectKeyword:
-    case ts.SyntaxKind.StringKeyword:
-    case ts.SyntaxKind.SymbolKeyword:
-    case ts.SyntaxKind.UndefinedKeyword:
-    case ts.SyntaxKind.UnknownKeyword:
-    case ts.SyntaxKind.VoidKeyword:
-    case ts.SyntaxKind.LiteralType:
-      return true;
-  }
+  if (definitelyUnrefinedKinds.has(node.kind)) return true;
   if (ts.isTypeReferenceNode(node)) {
     return node.typeName.getText() === "const";
   }

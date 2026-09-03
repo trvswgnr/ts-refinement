@@ -32,6 +32,13 @@ const corpusSchema = v.strictObject({
 type CorpusCase = v.InferOutput<typeof corpusCaseSchema>;
 type Corpus = v.InferOutput<typeof corpusSchema>;
 
+interface EncodedNumberSample {
+  readonly kind: "number";
+  readonly value: "-Infinity" | "Infinity" | "NaN";
+}
+
+type NumberSample = number | EncodedNumberSample;
+
 const generatedPrefix = "generated number implication ";
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const corpusPath = resolve(import.meta.dirname, "../spec/entailment-corpus.json");
@@ -49,8 +56,8 @@ function holds(sources: readonly string[], value: StaticRuntimeValue): boolean {
   });
 }
 
-function encodedSample(value: StaticRuntimeValue): unknown {
-  if (typeof value === "number" && !Number.isFinite(value)) {
+function encodedSample(value: number): NumberSample {
+  if (!Number.isFinite(value)) {
     return {
       kind: "number",
       value: Number.isNaN(value) ? "NaN" : value === Infinity ? "Infinity" : "-Infinity",
@@ -78,7 +85,7 @@ const current = v.parse(corpusSchema, JSON.parse(readFileSync(corpusPath, "utf8"
 const curated = current.cases.filter((entry) => !entry.name.startsWith(generatedPrefix));
 const seen = new Set<string>();
 const seenReflexive = new Set<string>();
-const candidates: readonly StaticRuntimeValue[] = [
+const candidates: readonly number[] = [
   NaN,
   -Infinity,
   Infinity,
