@@ -50,7 +50,7 @@ type unionBranch struct {
 	value    any
 }
 
-func ResolveChecks(checker *shimchecker.Checker, targetType *shimchecker.Type) ChecksResolution {
+func ResolveChecks(checker *shimchecker.Checker, targetType *shimchecker.Type, locations ...*shimast.Node) ChecksResolution {
 	result := ChecksResolution{}
 	activeTypes := map[*shimchecker.Type][]PathSegment{}
 
@@ -69,7 +69,7 @@ func ResolveChecks(checker *shimchecker.Checker, targetType *shimchecker.Type) C
 		activeTypes[target] = clonePath(path)
 		defer delete(activeTypes, target)
 
-		resolution := Resolve(checker, target)
+		resolution := Resolve(checker, target, locations...)
 		if resolution.Refinement {
 			result.Issues = append(result.Issues, resolution.Issues...)
 			if resolution.Definition != nil {

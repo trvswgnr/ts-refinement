@@ -61,6 +61,30 @@ func TestNormalizesCallbackBindingsAndStandardGlobals(t *testing.T) {
 	}
 }
 
+func TestFoldsLiteralCapturesBeforeSubjectInference(t *testing.T) {
+	identifiers, err := FreeIdentifiers("value > LIMIT")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(identifiers) != 2 || identifiers[0] != "LIMIT" || identifiers[1] != "value" {
+		t.Fatalf("unexpected free identifiers: %#v", identifiers)
+	}
+	captured, err := ParsePredicateWithCaptures("value > LIMIT", map[string]string{"LIMIT": "5"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	literal, err := ParsePredicate("value > 5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if captured.Key() != literal.Key() {
+		t.Fatalf("captured key %q != literal key %q", captured.Key(), literal.Key())
+	}
+	if compiled := Compile(captured, "input"); compiled != "(input > 5)" {
+		t.Fatalf("unexpected capture output: %q", compiled)
+	}
+}
+
 func TestRejectsImpureAndAmbiguousPredicates(t *testing.T) {
 	for _, source := range []string{"Math.random() < 0.5", "Date.now() > 0", "value > minimum"} {
 		if _, err := ParsePredicate(source); err == nil {

@@ -1,9 +1,12 @@
 import type { Refined } from "ts-refinement";
+import type { ImportedAboveLimit } from "./captured.ts";
 
 type Positive = Refined<number, "value > 0">;
 type GreaterThanFive = Refined<number, "value > 5">;
 type NonEmpty = Refined<string, "value.length > 0">;
 type AllPositive = Refined<number[], "values.every((item) => item > 0)">;
+const LIMIT = 5 as const;
+type AboveLimit = Refined<number, "value > LIMIT">;
 type NestedPositive = { readonly value: Positive };
 type NestedGreaterThanFive = { readonly value: GreaterThanFive };
 type Pair = readonly [Positive, NonEmpty?, ...Positive[]];
@@ -34,6 +37,8 @@ interface RawTree {
 
 declare const dynamic: number;
 declare const dynamicArray: number[];
+declare const dynamicCaptured: number;
+declare const dynamicImportedCapture: number;
 declare const greaterThanFive: GreaterThanFive;
 declare const nestedGreaterThanFive: NestedGreaterThanFive;
 declare const dynamicUser: { readonly age: number; readonly name?: string };
@@ -47,8 +52,11 @@ declare const dynamicTree: RawTree;
 
 export const knownGood = 5 as Positive;
 export const knownAllPositive = [1, 2, 3] as AllPositive;
+export const knownCaptured = 6 as AboveLimit;
 export const runtimeChecked = dynamic as Positive;
 export const runtimeAllPositive = dynamicArray as AllPositive;
+export const runtimeCaptured = dynamicCaptured as AboveLimit;
+export const runtimeImportedCapture = dynamicImportedCapture as ImportedAboveLimit;
 export const entailedAssignment: Positive = greaterThanFive;
 export let entailedMutation: Positive = knownGood;
 entailedMutation = greaterThanFive;

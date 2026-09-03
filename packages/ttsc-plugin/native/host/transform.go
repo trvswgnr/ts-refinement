@@ -222,8 +222,8 @@ func transformFileWithTracker(
 		}
 		if site, ok := assertionAt(node); ok {
 			targetType := checker.GetTypeAtLocation(site.typeNode)
-			resolution := analysis.Resolve(checker, targetType)
-			checks := analysis.ResolveChecks(checker, targetType)
+			resolution := analysis.Resolve(checker, targetType, site.typeNode)
+			checks := analysis.ResolveChecks(checker, targetType, site.typeNode)
 			if !resolution.Refinement && len(checks.Checks) == 0 && len(checks.Issues) == 0 {
 				goto children
 			}
@@ -346,7 +346,7 @@ func proveAssertion(
 		diagnostic := nodeDiagnostic(file, site.expression, analysis.DiagnosticUnableResolveMetadata, "Unable to resolve assertion source type.")
 		return false, &diagnostic
 	}
-	sourceResolution := analysis.Resolve(checker, sourceType)
+	sourceResolution := analysis.Resolve(checker, sourceType, site.expression)
 	if sourceResolution.Definition != nil && analysis.DefinitionEntails(checker, sourceResolution.Definition, target) {
 		return true, nil
 	}

@@ -78,7 +78,7 @@ func refinementDefinitionDiagnostics(checker *shimchecker.Checker, file *shimast
 			return
 		}
 		if node.Kind == shimast.KindTypeReference {
-			resolution := analysis.Resolve(checker, checker.GetTypeAtLocation(node))
+			resolution := analysis.Resolve(checker, checker.GetTypeAtLocation(node), node)
 			for _, issue := range resolution.Issues {
 				key := fmt.Sprintf("%d:%d:%s", node.Pos(), issue.Code, issue.Message)
 				if _, exists := seen[key]; !exists {

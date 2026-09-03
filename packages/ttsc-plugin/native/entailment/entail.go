@@ -20,10 +20,49 @@ func (predicate Predicate) Key() string {
 }
 
 func ParsePredicate(source string) (Predicate, error) {
+	return ParsePredicateWithCaptures(source, nil)
+}
+
+func FreeIdentifiers(source string) ([]string, error) {
+	root, err := parse(source)
+	if err != nil {
+		return nil, err
+	}
+	return freeIdentifiers(root), nil
+}
+
+func LiteralCaptureSource(source string) (string, bool) {
+	root, err := parse(source)
+	if err != nil {
+		return "", false
+	}
+	if root.kind == nodeUnary && root.text == "-" {
+		if root.left == nil || (root.left.kind != nodeNumber && root.left.kind != nodeBigInt) {
+			return "", false
+		}
+		return compileNode(root, ""), true
+	}
+	if root.kind != nodeNumber && root.kind != nodeBigInt && root.kind != nodeString &&
+		root.kind != nodeBoolean && root.kind != nodeNull {
+		return "", false
+	}
+	return compileNode(root, ""), true
+}
+
+func ParsePredicateWithCaptures(source string, captureSources map[string]string) (Predicate, error) {
 	root, err := parse(source)
 	if err != nil {
 		return Predicate{}, err
 	}
+	captures := make(map[string]*node, len(captureSources))
+	for name, captureSource := range captureSources {
+		capture, captureError := parse(captureSource)
+		if captureError != nil {
+			return Predicate{}, fmt.Errorf("invalid capture %q: %w", name, captureError)
+		}
+		captures[name] = capture
+	}
+	root = replaceCaptures(root, captures)
 	subject, err := validatePredicate(root)
 	if err != nil {
 		return Predicate{}, err

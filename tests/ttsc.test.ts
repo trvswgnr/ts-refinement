@@ -47,6 +47,10 @@ describe("TypeScript-Go native plugin", () => {
     expect(emitted).toContain("knownGood = 5;");
     expect(emitted).toContain("new __ts_refinement_error");
     expect(emitted).toContain("runtimeChecked");
+    expect(emitted).toContain("runtimeCaptured");
+    expect(emitted).toContain("runtimeImportedCapture");
+    expect(emitted).not.toContain("__ts_refinement_value > LIMIT");
+    expect(emitted).not.toContain("__ts_refinement_value > IMPORTED_LIMIT");
     expect(emitted).toContain("Object.keys");
     expect(emitted).toContain("__ts_refinement_validate0");
     expect(emitted).toContain("new WeakSet");
@@ -57,7 +61,7 @@ describe("TypeScript-Go native plugin", () => {
       readFileSync(resolve(validOutDir, ".ts-refinement-manifest.json"), "utf8"),
     );
     expect(manifest).toMatchObject({ schemaVersion: 1 });
-    expect(manifest.sites).toHaveLength(9);
+    expect(manifest.sites).toHaveLength(11);
     expect(manifest.sites.every((site: { module: string }) => site.module === "index.ts")).toBe(
       true,
     );
@@ -76,6 +80,8 @@ describe("TypeScript-Go native plugin", () => {
     expect(invalid.status).toBe(2);
     expect(diagnostics).toContain("error RF90200:");
     expect(diagnostics).toContain("error RF90101:");
+    expect(diagnostics).toContain("error RF90003:");
+    expect(diagnostics).toContain("Predicate capture 'MUTABLE_LIMIT'");
     expect(diagnostics).toContain("does not satisfy refinement 'Positive'");
     expect(diagnostics).toContain("at '.age'");
 

@@ -2,6 +2,7 @@ package entailment
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -512,6 +513,76 @@ func validatePredicate(root *node) (string, error) {
 		return subject, nil
 	}
 	return "", nil
+}
+
+func freeIdentifiers(root *node) []string {
+	identifiers := map[string]struct{}{}
+	var visit func(*node, map[string]bool)
+	visit = func(current *node, locals map[string]bool) {
+		if current == nil {
+			return
+		}
+		if current.kind == nodeIdentifier && !standardGlobals[current.text] && !disallowedGlobals[current.text] && !locals[current.text] {
+			identifiers[current.text] = struct{}{}
+		}
+		nestedLocals := locals
+		if current.kind == nodeFunction {
+			nestedLocals = make(map[string]bool, len(locals)+len(current.params))
+			for name := range locals {
+				nestedLocals[name] = true
+			}
+			for _, parameter := range current.params {
+				nestedLocals[parameter] = true
+			}
+		}
+		visit(current.left, nestedLocals)
+		visit(current.right, nestedLocals)
+		visit(current.third, nestedLocals)
+		for _, argument := range current.args {
+			visit(argument, nestedLocals)
+		}
+	}
+	visit(root, map[string]bool{})
+	result := make([]string, 0, len(identifiers))
+	for identifier := range identifiers {
+		result = append(result, identifier)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func replaceCaptures(root *node, captures map[string]*node) *node {
+	if root == nil {
+		return nil
+	}
+	if root.kind == nodeIdentifier {
+		if replacement := captures[root.text]; replacement != nil {
+			return cloneNode(replacement)
+		}
+	}
+	root.left = replaceCaptures(root.left, captures)
+	root.right = replaceCaptures(root.right, captures)
+	root.third = replaceCaptures(root.third, captures)
+	for index, argument := range root.args {
+		root.args[index] = replaceCaptures(argument, captures)
+	}
+	return root
+}
+
+func cloneNode(root *node) *node {
+	if root == nil {
+		return nil
+	}
+	copy := *root
+	copy.left = cloneNode(root.left)
+	copy.right = cloneNode(root.right)
+	copy.third = cloneNode(root.third)
+	copy.args = make([]*node, len(root.args))
+	for index, argument := range root.args {
+		copy.args[index] = cloneNode(argument)
+	}
+	copy.params = append([]string(nil), root.params...)
+	return &copy
 }
 
 func compileNode(root *node, subject string) string {

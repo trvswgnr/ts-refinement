@@ -16,6 +16,7 @@ const (
 	DiagnosticInvalidExpression     int32 = 90000
 	DiagnosticPredicateNotConcrete  int32 = 90001
 	DiagnosticCannotInferSubject    int32 = 90002
+	DiagnosticExternalCapture       int32 = 90003
 	DiagnosticSourceNotAssignable   int32 = 90101
 	DiagnosticStaticallyDisproven   int32 = 90200
 	DiagnosticUnableResolveMetadata int32 = 90400
@@ -48,7 +49,11 @@ func markerSymbol(checker *shimchecker.Checker, target *shimchecker.Type) *shima
 	return nil
 }
 
-func parsePredicate(source string) (entailment.Predicate, error) {
+func parsePredicate(
+	checker *shimchecker.Checker,
+	source string,
+	scope *shimast.Node,
+) (entailment.Predicate, *Issue) {
 	wrapped := "const __predicate = (" + source + ");"
 	file := shimparser.ParseSourceFile(
 		shimast.SourceFileParseOptions{FileName: "/__ts_refinement_predicate.ts"},
@@ -56,12 +61,42 @@ func parsePredicate(source string) (entailment.Predicate, error) {
 		shimcore.ScriptKindTS,
 	)
 	if file == nil {
-		return entailment.Predicate{}, fmt.Errorf("TypeScript-Go could not parse the predicate")
+		return entailment.Predicate{}, &Issue{Code: DiagnosticInvalidExpression, Message: "TypeScript-Go could not parse the predicate"}
 	}
-	return entailment.ParsePredicate(source)
+	if scope == nil {
+		predicate, err := entailment.ParsePredicate(source)
+		if err != nil {
+			return entailment.Predicate{}, &Issue{Code: DiagnosticInvalidExpression, Message: err.Error()}
+		}
+		return predicate, nil
+	}
+	identifiers, err := entailment.FreeIdentifiers(source)
+	if err != nil {
+		return entailment.Predicate{}, &Issue{Code: DiagnosticInvalidExpression, Message: err.Error()}
+	}
+	captures := map[string]string{}
+	for _, name := range identifiers {
+		symbol := checker.ResolveName(name, scope, shimast.SymbolFlagsValue, true)
+		if symbol == nil {
+			continue
+		}
+		capture, ok := immutableLiteralCapture(checker, symbol)
+		if !ok {
+			return entailment.Predicate{}, &Issue{
+				Code:    DiagnosticExternalCapture,
+				Message: fmt.Sprintf("Predicate capture '%s' must resolve to an immutable primitive literal.", name),
+			}
+		}
+		captures[name] = capture
+	}
+	predicate, err := entailment.ParsePredicateWithCaptures(source, captures)
+	if err != nil {
+		return entailment.Predicate{}, &Issue{Code: DiagnosticInvalidExpression, Message: err.Error()}
+	}
+	return predicate, nil
 }
 
-func Resolve(checker *shimchecker.Checker, target *shimchecker.Type) Resolution {
+func Resolve(checker *shimchecker.Checker, target *shimchecker.Type, locations ...*shimast.Node) Resolution {
 	if checker == nil || target == nil {
 		return Resolution{}
 	}
@@ -109,12 +144,17 @@ func Resolve(checker *shimchecker.Checker, target *shimchecker.Type) Resolution 
 		}
 	}
 	predicates := make([]entailment.Predicate, 0, len(predicateSources))
+	var location *shimast.Node
+	if len(locations) > 0 {
+		location = locations[0]
+	}
+	scopes := predicateDeclarationScopes(checker, location)
 	for _, source := range predicateSources {
-		predicate, err := parsePredicate(source)
-		if err != nil {
+		predicate, issue := parsePredicate(checker, source, scopes[source])
+		if issue != nil {
 			return Resolution{
 				Refinement: true,
-				Issues:     []Issue{{Code: DiagnosticInvalidExpression, Message: err.Error()}},
+				Issues:     []Issue{*issue},
 			}
 		}
 		predicates = append(predicates, predicate)
@@ -128,6 +168,116 @@ func Resolve(checker *shimchecker.Checker, target *shimchecker.Type) Resolution 
 			Sources:    predicateSources,
 		},
 	}
+}
+
+func predicateDeclarationScopes(checker *shimchecker.Checker, root *shimast.Node) map[string]*shimast.Node {
+	scopes := map[string]*shimast.Node{}
+	if checker == nil || root == nil {
+		return scopes
+	}
+	visitedDeclarations := map[*shimast.Node]struct{}{}
+	visitedSymbols := map[*shimast.Symbol]struct{}{}
+	var visit func(*shimast.Node)
+	visitSymbol := func(symbol *shimast.Symbol) {}
+	visitSymbol = func(symbol *shimast.Symbol) {
+		if symbol == nil {
+			return
+		}
+		if symbol.Flags&shimast.SymbolFlagsAlias != 0 {
+			symbol = shimchecker.Checker_getAliasedSymbol(checker, symbol)
+		}
+		if symbol == nil {
+			return
+		}
+		if _, seen := visitedSymbols[symbol]; seen {
+			return
+		}
+		visitedSymbols[symbol] = struct{}{}
+		for _, declaration := range symbol.Declarations {
+			if _, seen := visitedDeclarations[declaration]; seen {
+				continue
+			}
+			visitedDeclarations[declaration] = struct{}{}
+			visit(declaration)
+		}
+	}
+	visit = func(node *shimast.Node) {
+		if node == nil {
+			return
+		}
+		if node.Kind == shimast.KindTypeReference {
+			reference := node.AsTypeReferenceNode()
+			symbol := checker.GetSymbolAtLocation(reference.TypeName)
+			target := symbol
+			if target != nil && target.Flags&shimast.SymbolFlagsAlias != 0 {
+				target = shimchecker.Checker_getAliasedSymbol(checker, target)
+			}
+			if target != nil && target.Name == "Refined" && reference.TypeArguments != nil && len(reference.TypeArguments.Nodes) > 1 {
+				predicateType := reference.TypeArguments.Nodes[1]
+				if predicateType.Kind == shimast.KindLiteralType {
+					literal := predicateType.AsLiteralTypeNode().Literal
+					if literal != nil && (literal.Kind == shimast.KindStringLiteral || literal.Kind == shimast.KindNoSubstitutionTemplateLiteral) {
+						scopes[literal.Text()] = literal
+					}
+				}
+			}
+			visitSymbol(symbol)
+		}
+		node.ForEachChild(func(child *shimast.Node) bool {
+			visit(child)
+			return false
+		})
+	}
+	visit(root)
+	return scopes
+}
+
+func immutableLiteralCapture(checker *shimchecker.Checker, symbol *shimast.Symbol) (string, bool) {
+	if symbol.Flags&shimast.SymbolFlagsAlias != 0 {
+		symbol = shimchecker.Checker_getAliasedSymbol(checker, symbol)
+	}
+	if symbol == nil {
+		return "", false
+	}
+	for _, declaration := range symbol.Declarations {
+		if declaration.Kind != shimast.KindVariableDeclaration || !shimast.IsConst(declaration) ||
+			declaration.Parent == nil || declaration.Parent.Kind != shimast.KindVariableDeclarationList ||
+			declaration.Parent.Parent == nil || declaration.Parent.Parent.Kind != shimast.KindVariableStatement ||
+			declaration.Parent.Parent.Parent == nil || declaration.Parent.Parent.Parent.Kind != shimast.KindSourceFile {
+			continue
+		}
+		initializer := unwrapLiteralInitializer(declaration.Initializer())
+		if initializer == nil {
+			return "", false
+		}
+		typeAtDeclaration := shimchecker.Checker_getTypeOfSymbolAtLocation(checker, symbol, declaration.Name())
+		if !isPrimitiveLiteralType(typeAtDeclaration) {
+			return "", false
+		}
+		return entailment.LiteralCaptureSource(shimast.NodeText(initializer))
+	}
+	return "", false
+}
+
+func unwrapLiteralInitializer(node *shimast.Node) *shimast.Node {
+	for node != nil {
+		switch node.Kind {
+		case shimast.KindParenthesizedExpression, shimast.KindAsExpression,
+			shimast.KindTypeAssertionExpression, shimast.KindSatisfiesExpression:
+			node = node.Expression()
+		default:
+			return node
+		}
+	}
+	return nil
+}
+
+func isPrimitiveLiteralType(target *shimchecker.Type) bool {
+	if target == nil {
+		return false
+	}
+	return target.Flags()&(shimchecker.TypeFlagsStringLiteral|shimchecker.TypeFlagsNumberLiteral|
+		shimchecker.TypeFlagsBigIntLiteral|shimchecker.TypeFlagsBooleanLiteral|shimchecker.TypeFlagsNull) != 0
 }
 
 func BasesAssignable(checker *shimchecker.Checker, source, target *Definition) bool {
