@@ -26,6 +26,10 @@ function programState(): ProgramState {
 
 function transpileSource(fileName: string, source: string, current: ProgramState): string {
   const options = current.context.program.getCompilerOptions();
+  const jsx =
+    options.jsx === undefined || options.jsx === ts.JsxEmit.Preserve
+      ? ts.JsxEmit.ReactJSX
+      : options.jsx;
   const transpiled = ts.transpileModule(source, {
     compilerOptions: {
       ...options,
@@ -34,6 +38,7 @@ function transpileSource(fileName: string, source: string, current: ProgramState
       emitDeclarationOnly: false,
       inlineSourceMap: true,
       inlineSources: true,
+      jsx,
       module: fileName.endsWith(".cts") ? ts.ModuleKind.CommonJS : ts.ModuleKind.ESNext,
       moduleResolution: fileName.endsWith(".cts")
         ? ts.ModuleResolutionKind.Node10
@@ -64,6 +69,25 @@ export async function resolve(
   }
   if (context.parentURL?.startsWith(validatorProtocol) === true) {
     return nextResolve(specifier, { ...context, parentURL: loaderUrl });
+  }
+  if (context.parentURL?.startsWith("file:") === true) {
+    const parentFile = fileURLToPath(context.parentURL);
+    if (/\.[cm]?tsx?$/u.test(parentFile)) {
+      const current = programState();
+      const resolved = ts.resolveModuleName(
+        specifier,
+        parentFile,
+        current.context.program.getCompilerOptions(),
+        ts.sys,
+      ).resolvedModule?.resolvedFileName;
+      if (
+        resolved !== undefined &&
+        /\.[cm]?tsx?$/u.test(resolved) &&
+        !/\.d\.[cm]?ts$/u.test(resolved)
+      ) {
+        return { shortCircuit: true, url: pathToFileURL(resolved).href };
+      }
+    }
   }
   return nextResolve(specifier, context);
 }

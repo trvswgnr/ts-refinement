@@ -245,6 +245,7 @@ const factory: UnpluginFactory<RefinementTypesPluginOptions | undefined, false> 
       if (state === null) return;
       const fileName = resolve(cleanModuleId(id));
       if (state.configFiles.includes(fileName)) state = null;
+      else if (state.program.getSourceFile(fileName) === undefined) state = null;
       else state.invalidateSource(fileName);
     },
 

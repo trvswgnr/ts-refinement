@@ -58,7 +58,7 @@ describe("runtime runner adapters", () => {
       resolve(root, "fixtures/unplugin/runtime.mjs"),
     ).href;
     process.env["TS_REFINEMENT_TSCONFIG"] = "tsconfig.json";
-    const { load } = await import(
+    const { load, resolve: resolveHook } = await import(
       `${pathToFileURL(resolve(root, "packages/unplugin/dist/loader.mjs")).href}?direct-load`
     );
 
@@ -70,5 +70,21 @@ describe("runtime runner adapters", () => {
     expect(String(output.source)).toContain("function checkDynamic(value = 0)");
     expect(String(output.source)).toContain("return __rf_");
     expect(String(output.source)).not.toContain("value: number");
+
+    const aliasEntry = pathToFileURL(resolve(root, "fixtures/unplugin/alias-entry.ts")).href;
+    const alias = await resolveHook("@fixture/alias-value", { parentURL: aliasEntry }, async () => {
+      throw new Error("Node could not resolve the TypeScript path alias.");
+    });
+    expect(alias).toEqual({
+      shortCircuit: true,
+      url: pathToFileURL(resolve(root, "fixtures/unplugin/alias-value.ts")).href,
+    });
+
+    const jsxEntry = pathToFileURL(resolve(root, "fixtures/unplugin/jsx-entry.tsx")).href;
+    const jsx = await load(jsxEntry, {}, async () => {
+      throw new TypeError("Unknown file extension '.tsx'");
+    });
+    expect(String(jsx.source)).not.toContain("<section");
+    expect(String(jsx.source)).toContain("react/jsx-runtime");
   });
 });
