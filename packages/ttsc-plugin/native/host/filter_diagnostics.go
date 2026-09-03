@@ -198,6 +198,9 @@ func argumentTargetType(
 	if len(parameters) == 0 {
 		return nil
 	}
+	if signature.HasRestParameter() && index >= len(parameters)-1 {
+		return shimchecker.Checker_getRestTypeOfSignature(checker, signature)
+	}
 	if index >= len(parameters) {
 		index = len(parameters) - 1
 	}

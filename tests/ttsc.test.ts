@@ -75,6 +75,7 @@ describe("TypeScript-Go native plugin", () => {
     const diagnostics = `${invalid.stdout}${invalid.stderr}`;
     expect(invalid.status).toBe(2);
     expect(diagnostics).toContain("error RF90200:");
+    expect(diagnostics).toContain("error RF90101:");
     expect(diagnostics).toContain("does not satisfy refinement 'Positive'");
     expect(diagnostics).toContain("at '.age'");
 

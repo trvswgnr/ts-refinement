@@ -243,6 +243,16 @@ func transformFileWithTracker(
 			if len(seenIssues) == 0 && len(checks.Checks) > 0 {
 				proven := false
 				sourceType := checker.GetTypeAtLocation(site.expression)
+				if resolution.Definition == nil && sourceType != nil &&
+					sourceType.Flags()&(shimchecker.TypeFlagsAny|shimchecker.TypeFlagsUnknown) != 0 {
+					diagnostics = append(diagnostics, nodeDiagnostic(
+						file,
+						site.node,
+						analysis.DiagnosticSourceNotAssignable,
+						fmt.Sprintf("Source type '%s' is not assignable to a nested refinement target.", checker.TypeToString(sourceType)),
+					))
+					goto children
+				}
 				sourceHasRefinement, sourceValid := containsRefinement(checker, sourceType)
 				targetHasRefinement, targetValid := containsRefinement(checker, targetType)
 				if sourceValid && targetValid && sourceHasRefinement && targetHasRefinement {

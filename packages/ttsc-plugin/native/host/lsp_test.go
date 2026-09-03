@@ -15,8 +15,8 @@ func TestLSPRemovesStaticallyDisprovenAssertion(t *testing.T) {
 	fileName := filepath.Join(repositoryRoot, "fixtures/ttsc/invalid/index.ts")
 	uri := (&url.URL{Scheme: "file", Path: filepath.ToSlash(fileName)}).String()
 	requestedRange := lspRange{
-		Start: lspPosition{Line: 8, Character: 0},
-		End:   lspPosition{Line: 8, Character: 200},
+		Start: lspPosition{Line: 10, Character: 0},
+		End:   lspPosition{Line: 10, Character: 200},
 	}
 	rangeJSON, _ := json.Marshal(requestedRange)
 	contextJSON, _ := json.Marshal(lspCodeActionContext{Only: []string{"quickfix"}})

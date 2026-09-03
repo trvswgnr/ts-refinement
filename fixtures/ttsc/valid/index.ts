@@ -62,6 +62,9 @@ export const entailedNested: NestedPositive = nestedGreaterThanFive;
 function acceptPositive(_value: Positive): void {}
 acceptPositive(greaterThanFive);
 
+function acceptPositiveRest(..._values: Positive[]): void {}
+acceptPositiveRest(greaterThanFive);
+
 export const knownUser = { age: 5, name: "ok" } as User;
 export const runtimeUser = dynamicUser as User;
 export const runtimeValues = dynamicValues as Positive[];
