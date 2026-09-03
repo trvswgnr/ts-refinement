@@ -11,7 +11,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { refinementTypesPlugin } from "@ts-refinement/rolldown";
 import type { RefinementManifest } from "@ts-refinement/analyzer";
-import { fixtureDirectory, fixtureFile, fixtureProgram } from "./helpers.ts";
+import { fixtureDirectory, fixtureFile, fixtureProgram, projectProgram } from "./helpers.ts";
 
 interface RuntimeFixture {
   readonly checkAllPositive: (value: number[]) => number[];
@@ -192,6 +192,15 @@ describe("Rolldown plugin", () => {
     expect(state.program).toBe(initialProgram);
     expect(state.mayContainRefinement(fileName)).toBe(true);
     expect(state.program).toBe(initialProgram);
+  });
+
+  it("tracks transitive and global refinement visibility", () => {
+    const state = fixtureProgram();
+    expect(state.mayContainRefinement(fixtureFile("runtime-entry.ts"))).toBe(true);
+    expect(state.mayContainRefinement(fixtureFile("irrelevant-named-assertion.ts"))).toBe(false);
+
+    const vitestState = projectProgram(fixtureFile("../vitest"));
+    expect(vitestState.mayContainRefinement(fixtureFile("../unplugin/entry.ts"))).toBe(true);
   });
 
   it("runs the full static/runtime pipeline and evaluates sources once", async () => {
