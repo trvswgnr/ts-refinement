@@ -21,6 +21,14 @@ func TestEvaluateKnownLiterals(t *testing.T) {
 	if result, known := Evaluate(nonEmpty, `""`); !known || result {
 		t.Fatalf("Evaluate(empty) = %v, %v", result, known)
 	}
+
+	utf16Length, err := ParsePredicate("value.length === 2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result, known := Evaluate(utf16Length, `"😀"`); !known || !result {
+		t.Fatalf("Evaluate(UTF-16 length) = %v, %v", result, known)
+	}
 }
 
 func TestParsesJavaScriptNumericLiterals(t *testing.T) {

@@ -3,6 +3,7 @@ package entailment
 import (
 	"math"
 	"math/big"
+	"unicode/utf16"
 )
 
 type runtimeKind uint8
@@ -126,7 +127,7 @@ func evaluateNode(expression *node, subject runtimeValue, locals map[string]runt
 		if !ok || expression.text != "length" || (object.kind != runtimeString && object.kind != runtimeArray) {
 			return runtimeValue{}, false
 		}
-		length := len(object.text)
+		length := len(utf16.Encode([]rune(object.text)))
 		if object.kind == runtimeArray {
 			length = len(object.values)
 		}

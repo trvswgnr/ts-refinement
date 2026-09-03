@@ -111,6 +111,7 @@ type comparison struct {
 	relation         string
 	bound            bound
 	requiresIntegral bool
+	wasNegated       bool
 }
 
 type congruence struct {
@@ -342,6 +343,7 @@ func parseComparison(expression *node) (comparison, bool) {
 		relation:         relation,
 		bound:            bound{inclusive: inclusive, value: scalar{kind: literal.kind, value: limit}},
 		requiresIntegral: requiresIntegral,
+		wasNegated:       negated,
 	}, true
 }
 
@@ -467,6 +469,14 @@ func upperEntails(source *bound, target bound) bool {
 	return order < 0 || (order == 0 && (target.inclusive || !source.inclusive))
 }
 
+func isNonnegative(source *domain) bool {
+	return source.lower != nil && source.lower.value.value.Sign() >= 0
+}
+
+func isNonpositive(source *domain) bool {
+	return source.upper != nil && source.upper.value.value.Sign() <= 0
+}
+
 func modulo(value, modulus *big.Int) *big.Int {
 	result := new(big.Int).Mod(value, modulus)
 	if result.Sign() < 0 {
@@ -480,7 +490,12 @@ func congruenceEntails(source *domain, target congruence) bool {
 		if new(big.Int).Mod(fact.modulus, target.modulus).Sign() != 0 {
 			continue
 		}
-		if modulo(fact.remainder, target.modulus).Cmp(modulo(target.remainder, target.modulus)) == 0 {
+		if modulo(fact.remainder, target.modulus).Cmp(modulo(target.remainder, target.modulus)) != 0 {
+			continue
+		}
+		if target.remainder.Sign() == 0 ||
+			(target.remainder.Sign() > 0 && isNonnegative(source)) ||
+			(target.remainder.Sign() < 0 && isNonpositive(source)) {
 			return true
 		}
 	}
@@ -529,6 +544,9 @@ func Entails(source, target []Predicate, facts Facts) bool {
 		if fact.requiresIntegral && !target.integral {
 			continue
 		}
+		if fact.wasNegated && fact.kind == scalarNumber && !target.finite {
+			continue
+		}
 		addComparison(target, fact)
 	}
 	for _, atom := range sourceAtoms {
@@ -541,6 +559,12 @@ func Entails(source, target []Predicate, facts Facts) bool {
 			continue
 		}
 		target.congruences = append(target.congruences, fact)
+		zero := scalar{kind: fact.kind, value: rat(0)}
+		if fact.remainder.Sign() > 0 {
+			addComparison(target, comparison{relation: "lower", bound: bound{value: zero}})
+		} else if fact.remainder.Sign() < 0 {
+			addComparison(target, comparison{relation: "upper", bound: bound{value: zero}})
+		}
 	}
 	for _, target := range domains {
 		normalizeIntegralBounds(target)
