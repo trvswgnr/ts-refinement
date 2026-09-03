@@ -39,6 +39,22 @@ func containsRefinement(checker *shimchecker.Checker, root *shimchecker.Type) (b
 		if target.Flags()&shimchecker.TypeFlagsObject == 0 {
 			return false, true
 		}
+		for _, signature := range shimchecker.Checker_getSignaturesOfType(checker, target, shimchecker.SignatureKindCall) {
+			has, valid := visit(shimchecker.Checker_getReturnTypeOfSignature(checker, signature))
+			if !valid || has {
+				return has, valid
+			}
+			has, valid = visit(signatureSymbolType(checker, signature.ThisParameter()))
+			if !valid || has {
+				return has, valid
+			}
+			for index := range shimchecker.Signature_parameterCount(signature) {
+				has, valid = visit(signatureParameterType(checker, signature, index))
+				if !valid || has {
+					return has, valid
+				}
+			}
+		}
 		for _, index := range shimchecker.Checker_getIndexInfosOfType(checker, target) {
 			has, valid := visit(index.ValueType())
 			if !valid || has {
@@ -184,10 +200,89 @@ func refinementStructureIsEntailed(checker *shimchecker.Checker, sourceType, tar
 			}
 		}
 
-		targetCalls := shimchecker.Checker_getSignaturesOfType(checker, target, shimchecker.SignatureKindCall)
-		return len(targetCalls) == 0 || checker.IsTypeAssignableTo(source, target)
+		return callSignaturesAreEntailed(checker, source, target, visit)
 	}
 	return visit(sourceType, targetType)
+}
+
+func signatureSymbolType(checker *shimchecker.Checker, symbol *shimast.Symbol) *shimchecker.Type {
+	if checker == nil || symbol == nil {
+		return nil
+	}
+	return shimchecker.Checker_getTypeOfSymbol(checker, symbol)
+}
+
+func signatureParameterType(
+	checker *shimchecker.Checker,
+	signature *shimchecker.Signature,
+	index int,
+) *shimchecker.Type {
+	parameters := shimchecker.Signature_parameters(signature)
+	restIndex := len(parameters) - 1
+	if shimchecker.Signature_hasRestParameter(signature) && index >= restIndex {
+		return shimchecker.Checker_getRestTypeOfSignature(checker, signature)
+	}
+	if index < 0 || index >= len(parameters) {
+		return nil
+	}
+	return signatureSymbolType(checker, parameters[index])
+}
+
+func signatureIsEntailed(
+	checker *shimchecker.Checker,
+	source *shimchecker.Signature,
+	target *shimchecker.Signature,
+	visit func(*shimchecker.Type, *shimchecker.Type) bool,
+) bool {
+	if len(source.TypeParameters()) > 0 || len(target.TypeParameters()) > 0 ||
+		checker.GetTypePredicateOfSignature(source) != nil || checker.GetTypePredicateOfSignature(target) != nil ||
+		(source.ThisParameter() == nil) != (target.ThisParameter() == nil) {
+		return false
+	}
+	if shimchecker.Checker_getMinArgumentCount(checker, source) > shimchecker.Checker_getMinArgumentCount(checker, target) {
+		return false
+	}
+	if source.ThisParameter() != nil {
+		if !visit(signatureSymbolType(checker, target.ThisParameter()), signatureSymbolType(checker, source.ThisParameter())) {
+			return false
+		}
+	}
+	for index := range shimchecker.Signature_parameterCount(source) {
+		sourceParameter := signatureParameterType(checker, source, index)
+		targetParameter := signatureParameterType(checker, target, index)
+		if sourceParameter == nil || targetParameter != nil && !visit(targetParameter, sourceParameter) {
+			return false
+		}
+	}
+	targetReturn := shimchecker.Checker_getReturnTypeOfSignature(checker, target)
+	return targetReturn != nil && (targetReturn.Flags()&shimchecker.TypeFlagsVoid != 0 ||
+		visit(shimchecker.Checker_getReturnTypeOfSignature(checker, source), targetReturn))
+}
+
+func callSignaturesAreEntailed(
+	checker *shimchecker.Checker,
+	source *shimchecker.Type,
+	target *shimchecker.Type,
+	visit func(*shimchecker.Type, *shimchecker.Type) bool,
+) bool {
+	targetCalls := shimchecker.Checker_getSignaturesOfType(checker, target, shimchecker.SignatureKindCall)
+	if len(targetCalls) == 0 || checker.IsTypeAssignableTo(source, target) {
+		return true
+	}
+	sourceCalls := shimchecker.Checker_getSignaturesOfType(checker, source, shimchecker.SignatureKindCall)
+	for _, targetCall := range targetCalls {
+		matched := false
+		for _, sourceCall := range sourceCalls {
+			if signatureIsEntailed(checker, sourceCall, targetCall, visit) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+	return true
 }
 
 func indexTypeApplies(checker *shimchecker.Checker, source, target *shimchecker.Type) bool {

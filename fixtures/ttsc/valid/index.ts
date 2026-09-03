@@ -49,6 +49,8 @@ declare const dynamicCaptured: number;
 declare const dynamicImportedCapture: number;
 declare const greaterThanFive: GreaterThanFive;
 declare const nestedGreaterThanFive: NestedGreaterThanFive;
+declare const callableReturnSource: { readonly getValue: () => GreaterThanFive };
+declare const callableParameterSource: { readonly setValue: (value: Positive) => void };
 declare const dynamicUser: { readonly age: number; readonly name?: string };
 declare const dynamicValues: number[];
 declare const dynamicPair: readonly [number, string?, ...number[]];
@@ -106,6 +108,10 @@ export const entailedProperty: NestedPositive = { value: greaterThanFive };
 export const entailedCallback: () => Positive = () => greaterThanFive;
 export const entailedCast = greaterThanFive as Positive;
 export const entailedNested: NestedPositive = nestedGreaterThanFive;
+export const entailedCallableReturn: { readonly getValue: () => Positive } = callableReturnSource;
+export const entailedCallableParameter: {
+  readonly setValue: (value: GreaterThanFive) => void;
+} = callableParameterSource;
 export const entailedIndex: Readonly<Record<string, Positive>> = {
   value: greaterThanFive,
 };

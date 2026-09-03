@@ -2,7 +2,6 @@ import type * as ts from "typescript";
 
 import { entails } from "../proof/entail.ts";
 import {
-  resolveRefinementChecks,
   resolveRefinementMetadata,
   type AnalyzerContext,
   type RefinementDefinition,
@@ -485,9 +484,189 @@ function callSignaturesAreEntailed(
   context: AnalyzerContext,
   source: ts.Type,
   target: ts.Type,
+  visit: EntailmentVisit,
 ): boolean {
   const targetCalls = context.checker.getSignaturesOfType(target, context.ts.SignatureKind.Call);
-  return targetCalls.length === 0 || context.checker.isTypeAssignableTo(source, target);
+  if (targetCalls.length === 0 || context.checker.isTypeAssignableTo(source, target)) return true;
+  const sourceCalls = context.checker.getSignaturesOfType(source, context.ts.SignatureKind.Call);
+  return targetCalls.every((targetCall) =>
+    sourceCalls.some((sourceCall) => signatureIsEntailed(context, sourceCall, targetCall, visit)),
+  );
+}
+
+function signatureHasRestParameter(context: AnalyzerContext, signature: ts.Signature): boolean {
+  const parameter = signature.declaration?.parameters.at(-1);
+  return (
+    parameter !== undefined &&
+    context.ts.isParameter(parameter) &&
+    parameter.dotDotDotToken !== undefined
+  );
+}
+
+function minimumArgumentCount(context: AnalyzerContext, signature: ts.Signature): number {
+  const parameters = signature.getParameters();
+  const optionalIndex = parameters.findIndex((parameter, index) => {
+    if ((parameter.flags & context.ts.SymbolFlags.Optional) !== 0) return true;
+    return index === parameters.length - 1 && signatureHasRestParameter(context, signature);
+  });
+  return optionalIndex === -1 ? parameters.length : optionalIndex;
+}
+
+function signatureSymbolType(
+  context: AnalyzerContext,
+  signature: ts.Signature,
+  parameter: ts.Symbol | undefined,
+): ts.Type | null {
+  const location =
+    parameter?.valueDeclaration ?? parameter?.declarations?.[0] ?? signature.declaration;
+  if (parameter === undefined || location === undefined) return null;
+  return context.checker.getTypeOfSymbolAtLocation(parameter, location);
+}
+
+function signatureParameterType(
+  context: AnalyzerContext,
+  signature: ts.Signature,
+  index: number,
+): ts.Type | null {
+  const parameters = signature.getParameters();
+  const restIndex = parameters.length - 1;
+  const hasRest = signatureHasRestParameter(context, signature);
+  const parameter =
+    parameters[index] ?? (hasRest && index >= restIndex ? parameters[restIndex] : undefined);
+  const resolvedParameterType = signatureSymbolType(context, signature, parameter);
+  if (resolvedParameterType === null) return null;
+  if (!hasRest || index < restIndex) return resolvedParameterType;
+  return (
+    context.checker.getIndexTypeOfType(resolvedParameterType, context.ts.IndexKind.Number) ?? null
+  );
+}
+
+function signatureSupportsStructuralEntailment(
+  context: AnalyzerContext,
+  source: ts.Signature,
+  target: ts.Signature,
+): boolean {
+  return (
+    source.getTypeParameters() === undefined &&
+    target.getTypeParameters() === undefined &&
+    context.checker.getTypePredicateOfSignature(source) === undefined &&
+    context.checker.getTypePredicateOfSignature(target) === undefined &&
+    (source.thisParameter === undefined) === (target.thisParameter === undefined)
+  );
+}
+
+function signatureThisIsEntailed(
+  context: AnalyzerContext,
+  source: ts.Signature,
+  target: ts.Signature,
+  visit: EntailmentVisit,
+): boolean {
+  if (source.thisParameter === undefined || target.thisParameter === undefined) return true;
+  const sourceThis = signatureSymbolType(context, source, source.thisParameter);
+  const targetThis = signatureSymbolType(context, target, target.thisParameter);
+  return sourceThis !== null && targetThis !== null && visit(targetThis, sourceThis);
+}
+
+function signatureParametersAreEntailed(
+  context: AnalyzerContext,
+  source: ts.Signature,
+  target: ts.Signature,
+  visit: EntailmentVisit,
+): boolean {
+  for (let index = 0; index < source.getParameters().length; index += 1) {
+    const sourceParameter = signatureParameterType(context, source, index);
+    const targetParameter = signatureParameterType(context, target, index);
+    if (sourceParameter === null) return false;
+    if (targetParameter !== null && !visit(targetParameter, sourceParameter)) return false;
+  }
+  return true;
+}
+
+function signatureIsEntailed(
+  context: AnalyzerContext,
+  source: ts.Signature,
+  target: ts.Signature,
+  visit: EntailmentVisit,
+): boolean {
+  if (!signatureSupportsStructuralEntailment(context, source, target)) return false;
+
+  const sourceMinimum = minimumArgumentCount(context, source);
+  const targetMinimum = minimumArgumentCount(context, target);
+  if (sourceMinimum > targetMinimum) return false;
+  if (!signatureThisIsEntailed(context, source, target, visit)) return false;
+  if (!signatureParametersAreEntailed(context, source, target, visit)) return false;
+
+  const targetReturn = target.getReturnType();
+  return (
+    (targetReturn.flags & context.ts.TypeFlags.Void) !== 0 ||
+    visit(source.getReturnType(), targetReturn)
+  );
+}
+
+interface RefinementPresence {
+  readonly hasRefinement: boolean;
+  readonly valid: boolean;
+}
+
+function combineRefinementPresence(parts: readonly RefinementPresence[]): RefinementPresence {
+  return {
+    hasRefinement: parts.some((part) => part.hasRefinement),
+    valid: parts.every((part) => part.valid),
+  };
+}
+
+function objectRefinementPresence(
+  context: AnalyzerContext,
+  type: ts.Type,
+  visit: (type: ts.Type | undefined) => RefinementPresence,
+): RefinementPresence {
+  const nested: RefinementPresence[] = [];
+  for (const signature of context.checker.getSignaturesOfType(
+    type,
+    context.ts.SignatureKind.Call,
+  )) {
+    nested.push(visit(signature.getReturnType()));
+    nested.push(
+      visit(signatureSymbolType(context, signature, signature.thisParameter) ?? undefined),
+    );
+    for (let index = 0; index < signature.getParameters().length; index += 1) {
+      nested.push(visit(signatureParameterType(context, signature, index) ?? undefined));
+    }
+  }
+  for (const property of context.checker.getPropertiesOfType(type)) {
+    if (property.getName().startsWith("__@refinementBrand")) continue;
+    nested.push(visit(propertyType(context, type, property.getName())?.type));
+  }
+  for (const index of context.checker.getIndexInfosOfType(type)) nested.push(visit(index.type));
+  return combineRefinementPresence(nested);
+}
+
+function typeContainsRefinement(context: AnalyzerContext, root: ts.Type): RefinementPresence {
+  const visited = new Set<ts.Type>();
+
+  function visit(type: ts.Type | undefined): RefinementPresence {
+    if (type === undefined || visited.has(type)) return { hasRefinement: false, valid: true };
+    visited.add(type);
+
+    const resolution = resolveRefinementMetadata(context, type);
+    if (resolution.isRefinement) {
+      return {
+        hasRefinement: resolution.definition !== null,
+        valid: resolution.definition !== null && resolution.issues.length === 0,
+      };
+    }
+    if (type.isUnion()) return combineRefinementPresence(type.types.map(visit));
+    if ((type.flags & context.ts.TypeFlags.TypeParameter) !== 0) {
+      return visit(context.checker.getBaseConstraintOfType(type));
+    }
+    if ((type.flags & context.ts.TypeFlags.Object) === 0) {
+      return { hasRefinement: false, valid: true };
+    }
+
+    return objectRefinementPresence(context, type, visit);
+  }
+
+  return visit(root);
 }
 
 function refinementStructureIsEntailed(
@@ -521,7 +700,7 @@ function refinementStructureIsEntailed(
     return (
       propertiesAreEntailed(context, source, target, visit) &&
       indexSignaturesAreEntailed(context, source, target, visit) &&
-      callSignaturesAreEntailed(context, source, target)
+      callSignaturesAreEntailed(context, source, target, visit)
     );
   }
 
@@ -530,13 +709,13 @@ function refinementStructureIsEntailed(
 
 function transferIsEntailed(context: AnalyzerContext, transfer: RefinementTransfer): boolean {
   const sourceType = context.checker.getTypeAtLocation(transfer.sourceExpression);
-  const sourceChecks = resolveRefinementChecks(context, sourceType);
-  const targetChecks = resolveRefinementChecks(context, transfer.targetType);
+  const sourcePresence = typeContainsRefinement(context, sourceType);
+  const targetPresence = typeContainsRefinement(context, transfer.targetType);
   if (
-    sourceChecks.issues.length > 0 ||
-    targetChecks.issues.length > 0 ||
-    sourceChecks.checks.length === 0 ||
-    targetChecks.checks.length === 0
+    !sourcePresence.valid ||
+    !targetPresence.valid ||
+    !sourcePresence.hasRefinement ||
+    !targetPresence.hasRefinement
   ) {
     return false;
   }
