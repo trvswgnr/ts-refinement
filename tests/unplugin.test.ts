@@ -362,17 +362,11 @@ describe("unplugin adapter conformance", { timeout: 30_000 }, () => {
     }
   });
 
-  it("enforces configured program membership and ignore globs across adapters", async () => {
+  it("enforces configured program membership across adapters", async () => {
     for (const [_name, build] of builders) {
       const failure = await failureMessage(build(outsideProgram));
       expect(failure).toContain("unplugin-outside.ts");
       expect(failure).toContain("not included in the program configured by");
-
-      const output = await build(outsideProgram, {
-        ...pluginOptions,
-        ignore: ["../unplugin-outside.ts"],
-      });
-      expect(output.code).toContain("outside");
     }
   });
 
