@@ -66,6 +66,17 @@ describe("TypeScript refinement analysis", () => {
     expect(diagnostics[1]?.message).toContain("n % 2 === 0");
   });
 
+  it("rejects unsafe sources for nested refinement targets", () => {
+    const state = fixtureProgram();
+    const source = state.program.getSourceFile(fixtureFile("nested-unsafe.ts"));
+    if (source === undefined) throw new Error("fixture was not loaded");
+
+    const diagnostics = analyzeSourceFile(state.context, source).flatMap(
+      (result) => result.diagnostics,
+    );
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual([90101, 90101]);
+  });
+
   it("reports predicate errors at assertion sites", () => {
     const state = fixtureProgram();
     const source = state.program.getSourceFile(fixtureFile("predicate-errors.ts"));

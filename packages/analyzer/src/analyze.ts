@@ -300,6 +300,16 @@ function analyzeNestedOnlyAssertion(
   diagnostics: RefinementDiagnostic[],
   sourceValue: StaticValue,
 ): AnalysisResult {
+  if (isUnsafeSourceType(context.ts, site.sourceType)) {
+    diagnostics.push(
+      createDiagnostic(
+        DiagnosticCode.SourceNotAssignable,
+        `Source type '${context.checker.typeToString(site.sourceType)}' is not assignable to a nested refinement target.`,
+        nodeLocation(node),
+      ),
+    );
+    return { diagnostics, proof: { kind: "unknown" }, site };
+  }
   const nestedProof = proveNestedChecks(site.checks, sourceValue);
   const failure = staticFailureDiagnostic(context, node, nestedProof);
   if (failure !== null) diagnostics.push(failure);

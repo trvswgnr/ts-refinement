@@ -18,6 +18,9 @@ export class Holder {
 function acceptsWeak(_value: Weak): void {}
 acceptsWeak(strong);
 
+function acceptsWeakRest(..._values: Weak[]): void {}
+acceptsWeakRest(strong);
+
 export function returnsWeak(): Weak {
   return strong;
 }

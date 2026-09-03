@@ -83,7 +83,16 @@ function parameterType(
   const signature = context.checker.getResolvedSignature(call);
   const parameter = signature?.parameters[index] ?? signature?.parameters.at(-1);
   if (parameter === undefined) return undefined;
-  return context.checker.getTypeOfSymbolAtLocation(parameter, argument);
+  const type = context.checker.getTypeOfSymbolAtLocation(parameter, argument);
+  const declaration = parameter.valueDeclaration ?? parameter.declarations?.[0];
+  if (
+    declaration !== undefined &&
+    context.ts.isParameter(declaration) &&
+    declaration.dotDotDotToken !== undefined
+  ) {
+    return context.checker.getIndexTypeOfType(type, context.ts.IndexKind.Number);
+  }
+  return type;
 }
 
 function contextualType(context: AnalyzerContext, expression: ts.Expression): ts.Type | undefined {

@@ -124,7 +124,7 @@ describe("TypeScript language-service plugin", () => {
       .filter((diagnostic) => diagnostic.source !== "ts-refinement");
 
     expect(originalDiagnostics.map((diagnostic) => diagnostic.code)).toEqual([
-      2322, 2352, 2322, 2345, 2322, 2322, 2322, 2322, 2322, 2322,
+      2322, 2352, 2322, 2345, 2345, 2322, 2322, 2322, 2322, 2322, 2322,
     ]);
     expect(diagnostics).toEqual([]);
   });

@@ -555,6 +555,11 @@ describe("Rolldown plugin", () => {
     await expect(bundle.generate({ format: "esm" })).rejects.toThrow(/RF90200/u);
   });
 
+  it("fails before transforming unsafe nested refinement sources", async () => {
+    const bundle = await build(fixtureFile("nested-unsafe.ts"));
+    await expect(bundle.generate({ format: "esm" })).rejects.toThrow(/RF90101/u);
+  });
+
   it("writes a hashed manifest for distinct nested runtime sites only", async () => {
     const directory = await realpath(await mkdtemp(join(tmpdir(), "ts-refinement-manifest-")));
     try {
