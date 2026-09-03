@@ -101,7 +101,10 @@ describe("ts-refinement verify", () => {
       );
       expect(missingMarker.stdout).not.toContain("SHA-256 mismatch");
 
-      const decoyCode = `export const decoy = ${JSON.stringify(marker)};\n`;
+      const decoyCode = `
+    console.log(${JSON.stringify(marker)});
+    export const metadata = { marker: ${JSON.stringify(marker)} };
+    `;
       writeFileSync(resolve(directory, "decoy.js"), decoyCode);
       writeFileSync(
         manifestPath,

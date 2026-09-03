@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { constants, accessSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
-import { parse } from "acorn";
+import { parse, type AnyNode, type Function, type ObjectExpression, type Property } from "acorn";
 import { ancestor } from "acorn-walk";
 import * as v from "valibot";
 
@@ -85,8 +85,83 @@ function containedAssetPath(directory: string, fileName: string): AssetPathResul
 
 type ParsedMarkerValue = RegExp | bigint | boolean | number | string | null | undefined;
 
+function propertyName(property: Property): string | null {
+  if (!property.computed && property.key.type === "Identifier") return property.key.name;
+  return property.key.type === "Literal" && v.is(v.string(), property.key.value)
+    ? property.key.value
+    : null;
+}
+
+function refinementErrorObject(ancestors: readonly AnyNode[]): ObjectExpression | null {
+  const propertyIndex = ancestors.findLastIndex(
+    (node) => node.type === "Property" && propertyName(node) === "marker",
+  );
+  const property = ancestors[propertyIndex];
+  const object = ancestors[propertyIndex - 1];
+  const construct = ancestors[propertyIndex - 2];
+  const statement = ancestors[propertyIndex - 3];
+  if (
+    property?.type !== "Property" ||
+    object?.type !== "ObjectExpression" ||
+    construct?.type !== "NewExpression" ||
+    !construct.arguments.includes(object) ||
+    statement?.type !== "ThrowStatement" ||
+    statement.argument !== construct
+  ) {
+    return null;
+  }
+  const names = new Set(
+    object.properties.flatMap((candidate) =>
+      candidate.type === "Property" ? [propertyName(candidate)] : [],
+    ),
+  );
+  return ["marker", "path", "predicate", "refinement", "value"].every((name) => names.has(name))
+    ? object
+    : null;
+}
+
+function functionName(node: Function, ancestors: readonly AnyNode[]): string | null {
+  if (node.type === "FunctionDeclaration") return node.id?.name ?? null;
+  const parent = ancestors[ancestors.indexOf(node) - 1];
+  return parent?.type === "VariableDeclarator" && parent.id.type === "Identifier"
+    ? parent.id.name
+    : null;
+}
+
+function validatorFunctions(program: AnyNode): ReadonlySet<string> {
+  const validators = new Set<string>();
+  ancestor(program, {
+    Property(property, _state, ancestors) {
+      if (
+        propertyName(property) !== "marker" ||
+        property.value.type !== "Identifier" ||
+        refinementErrorObject(ancestors) === null
+      ) {
+        return;
+      }
+      const functionNode = ancestors.findLast(
+        (node): node is Function =>
+          node.type === "FunctionDeclaration" ||
+          node.type === "FunctionExpression" ||
+          node.type === "ArrowFunctionExpression",
+      );
+      const parameter = functionNode?.params.at(-1);
+      const name = functionNode === undefined ? null : functionName(functionNode, ancestors);
+      if (
+        name !== null &&
+        parameter?.type === "Identifier" &&
+        parameter.name === property.value.name
+      ) {
+        validators.add(name);
+      }
+    },
+  });
+  return validators;
+}
+
 function parseMarkers(fileName: string, source: string): Set<string> | null {
   const markers = new Set<string>();
+  let validators: ReadonlySet<string>;
   function recordMarker(
     value: ParsedMarkerValue,
     ancestors: readonly import("acorn").AnyNode[],
@@ -95,13 +170,17 @@ function parseMarkers(fileName: string, source: string): Set<string> | null {
     const node = ancestors.at(-1);
     const parent = ancestors.at(-2);
     if (node === undefined || parent === undefined) return;
-    const assertionArgument = parent.type === "CallExpression" && parent.arguments.at(-1) === node;
-    const markerProperty =
+    const assertionArgument =
+      parent.type === "CallExpression" &&
+      parent.arguments.at(-1) === node &&
+      parent.callee.type === "Identifier" &&
+      validators.has(parent.callee.name);
+    const runtimeErrorMarker =
       parent.type === "Property" &&
       parent.value === node &&
-      ((parent.key.type === "Identifier" && parent.key.name === "marker") ||
-        (parent.key.type === "Literal" && parent.key.value === "marker"));
-    if (assertionArgument || markerProperty) markers.add(value);
+      propertyName(parent) === "marker" &&
+      refinementErrorObject(ancestors) !== null;
+    if (assertionArgument || runtimeErrorMarker) markers.add(value);
   }
   try {
     const program = parse(source, {
@@ -109,6 +188,7 @@ function parseMarkers(fileName: string, source: string): Set<string> | null {
       sourceFile: fileName,
       sourceType: "module",
     });
+    validators = validatorFunctions(program);
     ancestor(program, {
       Literal(node, _state, ancestors) {
         recordMarker(node.value, ancestors);
