@@ -101,6 +101,23 @@ describe("ts-refinement verify", () => {
       );
       expect(missingMarker.stdout).not.toContain("SHA-256 mismatch");
 
+      const decoyCode = `export const decoy = ${JSON.stringify(marker)};\n`;
+      writeFileSync(resolve(directory, "decoy.js"), decoyCode);
+      writeFileSync(
+        manifestPath,
+        JSON.stringify({
+          ...markerlessManifest,
+          assets: [
+            ...markerlessManifest.assets,
+            {
+              file: "decoy.js",
+              sha256: createHash("sha256").update(decoyCode).digest("hex"),
+            },
+          ],
+        }),
+      );
+      expect(invoke(["verify", directory]).stdout).toContain("Missing runtime marker");
+
       const interpolatedMarkerCode = originalCode.replaceAll(
         JSON.stringify(marker),
         `\`${marker}\${""}\``,

@@ -3,7 +3,7 @@ import { constants, accessSync, readFileSync, realpathSync, statSync } from "nod
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
 import { parse } from "acorn";
-import { simple } from "acorn-walk";
+import { ancestor } from "acorn-walk";
 import * as v from "valibot";
 
 import {
@@ -83,22 +83,40 @@ function containedAssetPath(directory: string, fileName: string): AssetPathResul
   }
 }
 
+type ParsedMarkerValue = RegExp | bigint | boolean | number | string | null | undefined;
+
 function parseMarkers(fileName: string, source: string): Set<string> | null {
   const markers = new Set<string>();
+  function recordMarker(
+    value: ParsedMarkerValue,
+    ancestors: readonly import("acorn").AnyNode[],
+  ): void {
+    if (!v.is(v.string(), value)) return;
+    const node = ancestors.at(-1);
+    const parent = ancestors.at(-2);
+    if (node === undefined || parent === undefined) return;
+    const assertionArgument = parent.type === "CallExpression" && parent.arguments.at(-1) === node;
+    const markerProperty =
+      parent.type === "Property" &&
+      parent.value === node &&
+      ((parent.key.type === "Identifier" && parent.key.name === "marker") ||
+        (parent.key.type === "Literal" && parent.key.value === "marker"));
+    if (assertionArgument || markerProperty) markers.add(value);
+  }
   try {
     const program = parse(source, {
       ecmaVersion: "latest",
       sourceFile: fileName,
       sourceType: "module",
     });
-    simple(program, {
-      Literal(node) {
-        if (v.is(v.string(), node.value)) markers.add(node.value);
+    ancestor(program, {
+      Literal(node, _state, ancestors) {
+        recordMarker(node.value, ancestors);
       },
-      TemplateLiteral(node) {
+      TemplateLiteral(node, _state, ancestors) {
         const cooked = node.quasis[0]?.value.cooked;
         if (node.expressions.length === 0 && v.is(v.string(), cooked)) {
-          markers.add(cooked);
+          recordMarker(cooked, ancestors);
         }
       },
     });
