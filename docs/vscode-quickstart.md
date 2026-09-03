@@ -6,7 +6,7 @@ TypeScript 5.7 through 6.x uses `tspc` and the classic TypeScript language servi
 
 ```sh
 bun add ts-refinement @ts-refinement/runtime
-bun add --dev @ts-refinement/cli typescript
+bun add --dev @ts-refinement/cli
 ```
 
 `ts-refinement` is declaration-only. Keep `@ts-refinement/runtime` in regular dependencies because transformed code can import it. The CLI verifies final output and works with either compiler generation.
@@ -14,7 +14,7 @@ bun add --dev @ts-refinement/cli typescript
 ## TypeScript 5.7 through 6.x
 
 ```sh
-bun add --dev @ts-refinement/typescript-plugin @ts-refinement/unplugin ts-patch tsdown
+bun add --dev @ts-refinement/typescript-plugin @ts-refinement/unplugin ts-patch tsdown 'typescript@>=5.7 <7'
 ```
 
 Register both the editor plugin and the Program Transformer:
@@ -50,7 +50,7 @@ Bare `tsc` carries refinement brands but cannot ask the analyzer whether one pre
 ## TypeScript 7 and newer
 
 ```sh
-bun add --dev @ts-refinement/ttsc ttsc
+bun add --dev @ts-refinement/ttsc ttsc 'typescript@>=7'
 npx @ttsc/vscode
 ```
 

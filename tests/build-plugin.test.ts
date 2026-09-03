@@ -194,7 +194,7 @@ describe("Rolldown plugin", () => {
     expect(state.program).toBe(initialProgram);
   });
 
-  it("tracks transitive and global refinement visibility", () => {
+  it("tracks transitive and global refinement visibility", { timeout: rebuildTestTimeout }, () => {
     const state = fixtureProgram();
     expect(state.mayContainRefinement(fixtureFile("runtime-entry.ts"))).toBe(true);
     expect(state.mayContainRefinement(fixtureFile("irrelevant-named-assertion.ts"))).toBe(false);
@@ -379,9 +379,8 @@ describe("Rolldown plugin", () => {
   });
 
   it("rejects source changed by an earlier plugin", async () => {
-    const bundle = await buildWithPriorTransform(
-      fixtureFile("runtime-entry.ts"),
-      (source) => source.replaceAll(/\s+as\s+[A-Za-z_$][\w$]*/gu, ""),
+    const bundle = await buildWithPriorTransform(fixtureFile("runtime-entry.ts"), (source) =>
+      source.replaceAll(/\s+as\s+[A-Za-z_$][\w$]*/gu, ""),
     );
     await expect(bundle.generate({ format: "esm", sourcemap: true })).rejects.toThrow(
       /first source transform/u,
