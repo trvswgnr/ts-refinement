@@ -24,11 +24,11 @@ func ParsePredicate(source string) (Predicate, error) {
 }
 
 func FreeIdentifiers(source string) ([]string, error) {
-	root, err := parse(source)
+	parsed, err := parsePredicateSource(source)
 	if err != nil {
 		return nil, err
 	}
-	return freeIdentifiers(root), nil
+	return parsed.freeNames, nil
 }
 
 func LiteralCaptureSource(source string) (string, bool) {
@@ -50,7 +50,7 @@ func LiteralCaptureSource(source string) (string, bool) {
 }
 
 func ParsePredicateWithCaptures(source string, captureSources map[string]string) (Predicate, error) {
-	root, err := parse(source)
+	parsed, err := parsePredicateSource(source)
 	if err != nil {
 		return Predicate{}, err
 	}
@@ -62,10 +62,15 @@ func ParsePredicateWithCaptures(source string, captureSources map[string]string)
 		}
 		captures[name] = capture
 	}
-	root = replaceCaptures(root, captures)
-	subject, err := validatePredicate(root)
+	subject, err := parsed.subject(captures)
 	if err != nil {
 		return Predicate{}, err
+	}
+	root, lowerError := parse(source)
+	if lowerError == nil {
+		root = replaceCaptures(root, captures)
+	} else {
+		root = parsed.opaque(captures)
 	}
 	normalizeSubjects(root, subject)
 	return Predicate{Source: source, root: root, key: canonical(root)}, nil

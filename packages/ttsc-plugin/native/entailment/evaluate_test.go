@@ -41,6 +41,40 @@ func TestParsesJavaScriptNumericLiterals(t *testing.T) {
 	}
 }
 
+func TestAcceptsShimParsedPredicateSyntax(t *testing.T) {
+	for _, source := range []string{
+		`/^[a-z]+$/.test(value)`,
+		`({ value }).value > 0`,
+		"`prefix_${value}`.length > 0",
+		`value?.trim().length > 0`,
+		`(value & 1) === 0`,
+		`values.every(({ score }) => score > 0)`,
+	} {
+		predicate, err := ParsePredicate(source)
+		if err != nil {
+			t.Errorf("ParsePredicate(%q): %v", source, err)
+			continue
+		}
+		if compiled := Compile(predicate, "input"); compiled == source {
+			t.Errorf("Compile(%q) did not replace its subject", source)
+		}
+	}
+}
+
+func TestRejectsShimParsedSideEffectsAndImpureAccess(t *testing.T) {
+	for _, source := range []string{
+		`value++ > 0`,
+		`value += 1`,
+		`delete value.item`,
+		`Math["random"]() < 0.5`,
+		"Math[`random`]() < 0.5",
+	} {
+		if _, err := ParsePredicate(source); err == nil {
+			t.Errorf("ParsePredicate(%q) succeeded", source)
+		}
+	}
+}
+
 func TestEvaluateArrayCallbacksAndSupportedExpressions(t *testing.T) {
 	allPositive, err := ParsePredicate("values.every((item, index) => item > 0 && index >= 0)")
 	if err != nil {

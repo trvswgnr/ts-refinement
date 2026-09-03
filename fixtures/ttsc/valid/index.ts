@@ -5,6 +5,8 @@ type Positive = Refined<number, "value > 0">;
 type GreaterThanFive = Refined<number, "value > 5">;
 type ExactlyFive = Refined<number, "value === 5">;
 type UnderThousand = Refined<number, "value < 1e3">;
+type Letters = Refined<string, "/^[a-z]+$/.test(value)">;
+type ObjectPositive = Refined<number, "({ value }).value > 0">;
 type NonEmpty = Refined<string, "value.length > 0">;
 type AllPositive = Refined<number[], "values.every((item) => item > 0)">;
 const LIMIT = 5 as const;
@@ -42,6 +44,7 @@ interface RawTree {
 
 declare const dynamic: number;
 declare const dynamicArray: number[];
+declare const dynamicText: string;
 declare const dynamicCaptured: number;
 declare const dynamicImportedCapture: number;
 declare const greaterThanFive: GreaterThanFive;
@@ -63,6 +66,8 @@ export const knownUnderThousand = 5 as UnderThousand;
 export const knownAllPositive = [1, 2, 3] as AllPositive;
 export const knownCaptured = 6 as AboveLimit;
 export const runtimeChecked = dynamic as Positive;
+export const runtimeLetters = dynamicText as Letters;
+export const runtimeObjectPositive = dynamic as ObjectPositive;
 export const runtimeAllPositive = dynamicArray as AllPositive;
 export const runtimeCaptured = dynamicCaptured as AboveLimit;
 export const runtimeImportedCapture = dynamicImportedCapture as ImportedAboveLimit;

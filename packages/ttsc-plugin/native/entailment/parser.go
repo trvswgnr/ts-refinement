@@ -25,7 +25,14 @@ const (
 	nodeUnary
 	nodeBinary
 	nodeConditional
+	nodeOpaque
 )
+
+type sourceSpan struct {
+	end       int
+	shorthand string
+	start     int
+}
 
 type node struct {
 	kind   nodeKind
@@ -35,6 +42,7 @@ type node struct {
 	third  *node
 	args   []*node
 	params []string
+	spans  []sourceSpan
 }
 
 type tokenKind uint8
@@ -633,7 +641,24 @@ func cloneNode(root *node) *node {
 		copy.args[index] = cloneNode(argument)
 	}
 	copy.params = append([]string(nil), root.params...)
+	copy.spans = append([]sourceSpan(nil), root.spans...)
 	return &copy
+}
+
+func compileOpaque(root *node, subject string) string {
+	compiled := root.text
+	for index := len(root.spans) - 1; index >= 0; index-- {
+		span := root.spans[index]
+		if span.start < 0 || span.end < span.start || span.end > len(compiled) {
+			return root.text
+		}
+		replacement := compileNode(root.args[index], subject)
+		if span.shorthand != "" {
+			replacement = span.shorthand + ": " + replacement
+		}
+		compiled = compiled[:span.start] + replacement + compiled[span.end:]
+	}
+	return compiled
 }
 
 func compileNode(root *node, subject string) string {
@@ -680,6 +705,8 @@ func compileNode(root *node, subject string) string {
 		return "(" + compileNode(root.left, subject) + " " + root.text + " " + compileNode(root.right, subject) + ")"
 	case nodeConditional:
 		return "(" + compileNode(root.left, subject) + " ? " + compileNode(root.right, subject) + " : " + compileNode(root.third, subject) + ")"
+	case nodeOpaque:
+		return compileOpaque(root, subject)
 	default:
 		return ""
 	}
@@ -726,6 +753,8 @@ func canonical(root *node) string {
 		return "binary(" + root.text + "," + canonical(root.left) + "," + canonical(root.right) + ")"
 	case nodeConditional:
 		return "conditional(" + canonical(root.left) + "," + canonical(root.right) + "," + canonical(root.third) + ")"
+	case nodeOpaque:
+		return "opaque:" + compileOpaque(root, "$subject")
 	default:
 		return ""
 	}

@@ -48,6 +48,8 @@ describe("TypeScript-Go native plugin", () => {
     expect(emitted).toContain("knownUnderThousand = 5;");
     expect(emitted).toContain("new __ts_refinement_error");
     expect(emitted).toContain("runtimeChecked");
+    expect(emitted).toContain("/^[a-z]+$/.test(__ts_refinement_value)");
+    expect(emitted).toContain("({ value: __ts_refinement_value }).value > 0");
     expect(emitted).toContain("runtimeCaptured");
     expect(emitted).toContain("runtimeImportedCapture");
     expect(emitted).toMatch(/if \(value > 0\)\s+return value;/u);
@@ -70,7 +72,7 @@ describe("TypeScript-Go native plugin", () => {
       readFileSync(resolve(validOutDir, ".ts-refinement-manifest.json"), "utf8"),
     );
     expect(manifest).toMatchObject({ schemaVersion: 1 });
-    expect(manifest.sites).toHaveLength(15);
+    expect(manifest.sites).toHaveLength(17);
     expect(manifest.sites.every((site: { module: string }) => site.module === "index.ts")).toBe(
       true,
     );
