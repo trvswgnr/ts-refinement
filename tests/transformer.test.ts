@@ -9,7 +9,7 @@ const fixture = (name: string) =>
   resolve(import.meta.dirname, `../fixtures/cli/${name}/tsconfig.json`);
 
 function runTspc(project: string) {
-  return spawnSync(tspc, ["--project", project], {
+  return spawnSync(tspc, ["--project", project, "--noEmit"], {
     encoding: "utf8",
     env: { ...process.env, TSP_COMPILER_TS_PATH: typescript },
   });
@@ -37,5 +37,11 @@ describe("ts-patch Program Transformer", () => {
     expect(invalid.status).toBe(2);
     expect(output).toContain("error TS2322:");
     expect(output).toContain("RF1000200:");
+
+    const importedInvalid = runTspc(fixture("imported-invalid"));
+    expect(importedInvalid.status).toBe(2);
+    expect(`${importedInvalid.stdout}${importedInvalid.stderr}`).toMatch(
+      /imported\.ts.*RF1000200/su,
+    );
   });
 });

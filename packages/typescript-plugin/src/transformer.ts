@@ -16,7 +16,6 @@ function allSemanticDiagnostics(
   getExisting: () => readonly ts.Diagnostic[],
 ): ts.Diagnostic[] {
   const existing = getExisting();
-  const rootFiles = new Set(program.getRootFileNames());
   const byFile = new Map<ts.SourceFile, ts.Diagnostic[]>();
   const result = existing.filter((diagnostic) => diagnostic.file === undefined);
   for (const diagnostic of existing) {
@@ -27,15 +26,18 @@ function allSemanticDiagnostics(
   }
 
   for (const [sourceFile, diagnostics] of byFile) {
-    if (rootFiles.has(sourceFile.fileName)) {
+    if (!sourceFile.isDeclarationFile && !program.isSourceFileFromExternalLibrary(sourceFile)) {
       result.push(...refinementSemanticDiagnostics(tsModule, program, sourceFile, diagnostics));
     } else {
       result.push(...diagnostics);
     }
   }
-  for (const fileName of rootFiles) {
-    const sourceFile = program.getSourceFile(fileName);
-    if (sourceFile !== undefined && !sourceFile.isDeclarationFile && !byFile.has(sourceFile)) {
+  for (const sourceFile of program.getSourceFiles()) {
+    if (
+      !sourceFile.isDeclarationFile &&
+      !program.isSourceFileFromExternalLibrary(sourceFile) &&
+      !byFile.has(sourceFile)
+    ) {
       result.push(...refinementSemanticDiagnostics(tsModule, program, sourceFile, []));
     }
   }
