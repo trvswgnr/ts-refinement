@@ -35,6 +35,9 @@ function transpileSource(fileName: string, source: string, current: ProgramState
       inlineSourceMap: true,
       inlineSources: true,
       module: fileName.endsWith(".cts") ? ts.ModuleKind.CommonJS : ts.ModuleKind.ESNext,
+      moduleResolution: fileName.endsWith(".cts")
+        ? ts.ModuleResolutionKind.Node10
+        : ts.ModuleResolutionKind.Bundler,
       noEmit: false,
       noEmitOnError: false,
       sourceMap: false,
