@@ -78,7 +78,9 @@ interface NestedRefinementFixture {
 }
 
 interface IndexSignatureFixture {
+  readonly checkBigIntDataScores: (value: Record<string, number>) => Record<string, number>;
   readonly checkDataScores: (value: Record<string, number>) => Record<string, number>;
+  readonly checkNumericDataScores: (value: Record<string, number>) => Record<string, number>;
   readonly checkNumericScores: (value: Record<string, number>) => Record<string, number>;
   readonly checkSymbolScores: (value: Record<symbol, number>) => Record<symbol, number>;
 }
@@ -357,6 +359,20 @@ describe("Rolldown plugin", () => {
     });
     expect(() => fixture.checkDataScores({ "data-bad": -1 })).toThrowError(
       expect.objectContaining({ path: '["data-bad"]', value: -1 }),
+    );
+    expect(fixture.checkNumericDataScores({ "number-Infinity": -1, "number-1.5": 1 })).toEqual({
+      "number-1.5": 1,
+      "number-Infinity": -1,
+    });
+    expect(() => fixture.checkNumericDataScores({ "number-0x10": -1 })).toThrowError(
+      expect.objectContaining({ path: '["number-0x10"]', value: -1 }),
+    );
+    expect(fixture.checkBigIntDataScores({ "bigint-+1": -1, "bigint-1": 1 })).toEqual({
+      "bigint-+1": -1,
+      "bigint-1": 1,
+    });
+    expect(() => fixture.checkBigIntDataScores({ "bigint-0x10": -1 })).toThrowError(
+      expect.objectContaining({ path: '["bigint-0x10"]', value: -1 }),
     );
   });
 

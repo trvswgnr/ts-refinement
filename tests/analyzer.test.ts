@@ -180,11 +180,21 @@ describe("TypeScript refinement analysis", () => {
     }
 
     const invalidResults = analyzeSourceFile(state.context, invalidSource);
-    expect(invalidResults.map((result) => result.proof.kind)).toEqual(["false", "false"]);
-    expect(invalidResults.map((result) => result.diagnostics[0]?.code)).toEqual([90200, 90200]);
+    expect(invalidResults.map((result) => result.proof.kind)).toEqual([
+      "false",
+      "false",
+      "false",
+      "true",
+    ]);
+    expect(invalidResults.map((result) => result.diagnostics[0]?.code)).toEqual([
+      90200,
+      90200,
+      90200,
+      undefined,
+    ]);
 
     const runtimeResults = analyzeSourceFile(state.context, runtimeSource);
-    expect(runtimeResults).toHaveLength(3);
+    expect(runtimeResults).toHaveLength(5);
     expect(runtimeResults[0]?.site.checks[0]?.path).toEqual([{ key: "number", kind: "index" }]);
     expect(runtimeResults[1]?.site.checks[0]?.path).toEqual([{ key: "symbol", kind: "index" }]);
     expect(runtimeResults[2]?.site.checks[0]?.path).toEqual([
@@ -192,6 +202,20 @@ describe("TypeScript refinement analysis", () => {
         key: "template",
         kind: "index",
         pattern: { placeholders: ["string"], texts: ["data-", ""] },
+      },
+    ]);
+    expect(runtimeResults[3]?.site.checks[0]?.path).toEqual([
+      {
+        key: "template",
+        kind: "index",
+        pattern: { placeholders: ["number"], texts: ["number-", ""] },
+      },
+    ]);
+    expect(runtimeResults[4]?.site.checks[0]?.path).toEqual([
+      {
+        key: "template",
+        kind: "index",
+        pattern: { placeholders: ["bigint"], texts: ["bigint-", ""] },
       },
     ]);
   });

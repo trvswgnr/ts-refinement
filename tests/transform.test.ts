@@ -221,4 +221,22 @@ describe("source transform", () => {
       expect(output.code).toContain(`ts-refinement-site:${tracker.buildId}:${site.id}`);
     }
   });
+
+  it("emits index-signature domain guards", () => {
+    const state = fixtureProgram();
+    const sourceFile = state.program.getSourceFile(fixtureFile("index-signatures.ts"));
+    if (sourceFile === undefined) throw new Error("fixture was not loaded");
+    const registry = createValidatorRegistry(ts, "@ts-refinement/runtime");
+    const register = vi.spyOn(registry, "register");
+    const output = transformSource(state.context, sourceFile, sourceFile.text, registry);
+    const modules = register.mock.results
+      .flatMap((result) => (result.type === "return" ? [result.value.moduleCode] : []))
+      .join("\n");
+
+    expect(output.diagnostics).toEqual([]);
+    expect(modules).toContain("Reflect.ownKeys");
+    expect(modules).toContain("String(Number(");
+    expect(modules).toContain('!== "symbol"');
+    expect(modules).toContain("/^data-([\\s\\S]*?)$/u.exec");
+  });
 });
