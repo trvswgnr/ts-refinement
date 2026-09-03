@@ -195,10 +195,33 @@ func nearestPackage(fileName string) *packageVerification {
 	}
 }
 
-func exportDeclaration(symbol *shimast.Symbol, file *shimast.SourceFile) *shimast.Node {
+func symbolTarget(checker *shimchecker.Checker, symbol *shimast.Symbol) *shimast.Symbol {
+	if symbol != nil && symbol.Flags&shimast.SymbolFlagsAlias != 0 {
+		return shimchecker.Checker_getAliasedSymbol(checker, symbol)
+	}
+	return symbol
+}
+
+func exportDeclaration(checker *shimchecker.Checker, symbol *shimast.Symbol, file *shimast.SourceFile) *shimast.Node {
 	for _, declaration := range symbol.Declarations {
 		if shimast.GetSourceFileOfNode(declaration) == file {
 			return declaration
+		}
+	}
+	target := symbolTarget(checker, symbol)
+	for _, statement := range file.Statements.Nodes {
+		if statement.Kind != shimast.KindExportDeclaration {
+			continue
+		}
+		export := statement.AsExportDeclaration()
+		if export.ExportClause != nil || export.ModuleSpecifier == nil {
+			continue
+		}
+		moduleSymbol := checker.GetSymbolAtLocation(export.ModuleSpecifier)
+		for _, candidate := range shimchecker.Checker_getExportsOfModule(checker, moduleSymbol) {
+			if symbolTarget(checker, candidate) == target {
+				return statement
+			}
 		}
 	}
 	return nil
@@ -207,7 +230,7 @@ func exportDeclaration(symbol *shimast.Symbol, file *shimast.SourceFile) *shimas
 func exportType(checker *shimchecker.Checker, symbol *shimast.Symbol, declaration *shimast.Node) *shimchecker.Type {
 	target := symbol
 	if target.Flags&shimast.SymbolFlagsAlias != 0 {
-		target = shimchecker.Checker_getAliasedSymbol(checker, target)
+		target = symbolTarget(checker, target)
 	}
 	if target == nil {
 		return nil
@@ -233,7 +256,7 @@ func publishVerificationDiagnostics(checker *shimchecker.Checker, file *shimast.
 	diagnostics := []protocolDiagnostic{}
 	seen := map[int]struct{}{}
 	for _, symbol := range shimchecker.Checker_getExportsOfModule(checker, moduleSymbol) {
-		declaration := exportDeclaration(symbol, file)
+		declaration := exportDeclaration(checker, symbol, file)
 		if declaration == nil {
 			continue
 		}

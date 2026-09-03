@@ -1,7 +1,10 @@
 package analysis
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	shimast "github.com/microsoft/typescript-go/shim/ast"
@@ -43,11 +46,59 @@ type Resolution struct {
 
 func markerSymbol(checker *shimchecker.Checker, target *shimchecker.Type) *shimast.Symbol {
 	for _, property := range shimchecker.Checker_getPropertiesOfType(checker, target) {
-		if property != nil && strings.Contains(property.Name, "refinementBrand") {
+		if property != nil && canonicalMarkerSymbol(property) {
 			return property
 		}
 	}
 	return nil
+}
+
+func canonicalMarkerSymbol(symbol *shimast.Symbol) bool {
+	for _, declaration := range symbol.Declarations {
+		if declaration == nil || declaration.Kind != shimast.KindPropertySignature {
+			continue
+		}
+		name := declaration.Name()
+		if name == nil || name.Kind != shimast.KindComputedPropertyName {
+			continue
+		}
+		expression := name.AsComputedPropertyName().Expression
+		if expression == nil || expression.Kind != shimast.KindIdentifier || expression.Text() != "refinementBrand" {
+			continue
+		}
+		for ancestor := declaration.Parent; ancestor != nil; ancestor = ancestor.Parent {
+			if ancestor.Kind != shimast.KindTypeAliasDeclaration {
+				continue
+			}
+			aliasName := ancestor.AsTypeAliasDeclaration().Name()
+			return aliasName != nil && aliasName.Text() == "Refined" && sourcePackageName(declaration) == "ts-refinement"
+		}
+	}
+	return false
+}
+
+func sourcePackageName(node *shimast.Node) string {
+	file := shimast.GetSourceFileOfNode(node)
+	if file == nil {
+		return ""
+	}
+	directory := filepath.Dir(file.FileName())
+	for {
+		data, err := os.ReadFile(filepath.Join(directory, "package.json"))
+		if err == nil {
+			metadata := struct {
+				Name string `json:"name"`
+			}{}
+			if json.Unmarshal(data, &metadata) == nil {
+				return metadata.Name
+			}
+		}
+		parent := filepath.Dir(directory)
+		if parent == directory {
+			return ""
+		}
+		directory = parent
+	}
 }
 
 func parsePredicate(

@@ -18,6 +18,8 @@ type Scores = { readonly [name: string]: Positive };
 type NumericScores = { readonly [key: number]: Positive };
 type SymbolScores = { readonly [key: symbol]: Positive };
 type DataScores = { readonly [key: `data-${string}`]: Positive };
+declare const refinementBrand: unique symbol;
+type ApplicationBrand = number & { readonly [refinementBrand]: "application-brand" };
 
 interface User {
   readonly age: Positive;
@@ -73,6 +75,7 @@ declare const dynamicResult:
 declare const dynamicTree: RawTree;
 
 export const knownGood = 5 as Positive;
+export const applicationBrand = 1 as ApplicationBrand;
 export const knownUnderThousand = 5 as UnderThousand;
 export const knownAllPositive = [1, 2, 3] as AllPositive;
 export const knownCaptured = 6 as AboveLimit;
