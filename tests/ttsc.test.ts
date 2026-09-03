@@ -10,7 +10,10 @@ const root = resolve(import.meta.dirname, "..");
 const ttsc = resolve(root, "node_modules/.bin/ttsc");
 const outputRoot = mkdtempSync(resolve(tmpdir(), "ts-refinement-ttsc-"));
 
-function runTtsc(project: "invalid" | "unrelated-invalid" | "valid", outDir: string) {
+function runTtsc(
+  project: "external-invalid" | "invalid" | "unrelated-invalid" | "valid",
+  outDir: string,
+) {
   return spawnSync(
     ttsc,
     [
@@ -25,7 +28,7 @@ function runTtsc(project: "invalid" | "unrelated-invalid" | "valid", outDir: str
   );
 }
 
-function runTtscCheck(project: "imported-invalid" | "publish-unconfigured") {
+function runTtscCheck(project: "external-invalid" | "imported-invalid" | "publish-unconfigured") {
   return spawnSync(
     ttsc,
     ["check", "--project", resolve(root, `fixtures/ttsc/${project}/tsconfig.json`)],
@@ -120,4 +123,13 @@ describe("TypeScript-Go native plugin", () => {
     expect(result.status).toBe(0);
     expect(`${result.stdout}${result.stderr}`).toMatch(/warning RF1000500:.*Positive/su);
   }, 60_000);
+
+  it("does not own refinement assertions in external source dependencies", () => {
+    const checked = runTtscCheck("external-invalid");
+    expect(checked.status, `${checked.stdout}${checked.stderr}`).toBe(0);
+
+    const built = runTtsc("external-invalid", resolve(outputRoot, "external-invalid"));
+    expect(built.status, `${built.stdout}${built.stderr}`).toBe(0);
+    expect(`${built.stdout}${built.stderr}`).not.toContain("RF1000200");
+  }, 120_000);
 });

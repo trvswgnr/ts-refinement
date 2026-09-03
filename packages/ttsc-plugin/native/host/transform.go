@@ -79,6 +79,9 @@ func RunTransform(args []string) int {
 	}
 	printer := shimprinter.NewPrinter(shimprinter.PrinterOptions{}, shimprinter.PrintHandlers{}, nil)
 	for _, file := range program.SourceFiles() {
+		if program.TSProgram.IsSourceFileFromExternalLibrary(file) {
+			continue
+		}
 		transformed, fileDiagnostics := transformFile(program.Checker, file)
 		output.Diagnostics = append(output.Diagnostics, fileDiagnostics...)
 		if transformed == "" {
@@ -130,6 +133,9 @@ func RunBuild(args []string) int {
 	overlay := driver.NewOverlayFS(driver.DefaultFS())
 	refinementDiagnostics := []protocolDiagnostic{}
 	for _, file := range program.SourceFiles() {
+		if program.TSProgram.IsSourceFileFromExternalLibrary(file) {
+			continue
+		}
 		transformed, fileDiagnostics := transformFileWithTracker(program.Checker, file, tracker)
 		refinementDiagnostics = append(refinementDiagnostics, fileDiagnostics...)
 		if transformed != "" {
