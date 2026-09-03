@@ -172,10 +172,12 @@ func staticLeavesAtPath(
 func matchesIndexName(segment analysis.PathSegment, name string) bool {
 	switch segment.Key {
 	case "string":
-		return true
+		return !strings.HasPrefix(name, "__@") && !strings.HasPrefix(name, "\xfe")
 	case "number":
 		value, err := strconv.ParseFloat(name, 64)
 		return err == nil && javascriptNumberString(value) == name || name == "NaN" || name == "Infinity" || name == "-Infinity"
+	case "symbol":
+		return strings.HasPrefix(name, "__@") || strings.HasPrefix(name, "\xfe")
 	case "template":
 		captures, ok := templateIndexCaptures(segment.Pattern, name)
 		if !ok {

@@ -59,7 +59,7 @@ describe("source transform", () => {
     const output = transformSource(state.context, sourceFile, sourceFile.text, registry);
 
     expect(output.code).toBeNull();
-    expect(output.diagnostics[0]?.code).toBe(90200);
+    expect(output.diagnostics[0]?.code).toBe(1000200);
   });
 
   it("stops on malformed predicate declarations before they are consumed", () => {
@@ -70,7 +70,7 @@ describe("source transform", () => {
     const output = transformSource(state.context, sourceFile, sourceFile.text, registry);
 
     expect(output.code).toBeNull();
-    expect(output.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([90000, 90002]);
+    expect(output.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([1000000, 1000002]);
   });
 
   it("rejects code-execution globals before registering a validator", () => {
@@ -82,7 +82,7 @@ describe("source transform", () => {
     const output = transformSource(state.context, sourceFile, sourceFile.text, registry);
 
     expect(output.code).toBeNull();
-    expect(output.diagnostics.map((diagnostic) => diagnostic.code)).toContain(90002);
+    expect(output.diagnostics.map((diagnostic) => diagnostic.code)).toContain(1000002);
     expect(register).not.toHaveBeenCalled();
     expect(output.code ?? "").not.toContain("globalThis.PWNED");
   });
@@ -96,7 +96,7 @@ describe("source transform", () => {
     const output = transformSource(state.context, sourceFile, sourceFile.text, registry);
 
     expect(output.code).toBeNull();
-    expect(output.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([90004]);
+    expect(output.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([1000004]);
     expect(output.diagnostics[0]?.message).toContain("ObjectLiteralExpression");
     expect(register).not.toHaveBeenCalled();
   });

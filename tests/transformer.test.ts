@@ -36,6 +36,6 @@ describe("ts-patch Program Transformer", () => {
     const output = `${invalid.stdout}${invalid.stderr}`;
     expect(invalid.status).toBe(2);
     expect(output).toContain("error TS2322:");
-    expect(output).toContain("RF90200:");
+    expect(output).toContain("RF1000200:");
   });
 });

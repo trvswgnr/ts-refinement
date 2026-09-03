@@ -61,7 +61,7 @@ func RunTransform(args []string) int {
 	})
 	if err != nil {
 		return writeTransformOutput(transformOutput{
-			Diagnostics: []protocolDiagnostic{globalDiagnostic("RF90400", err.Error())},
+			Diagnostics: []protocolDiagnostic{globalDiagnostic("RF1000400", err.Error())},
 			TypeScript:  map[string]string{},
 		}, 2)
 	}
@@ -311,7 +311,7 @@ func transformFileWithTracker(
 	}
 	transformed, err := plan.apply(source)
 	if err != nil {
-		return "", []protocolDiagnostic{globalDiagnostic("RF90400", err.Error())}
+		return "", []protocolDiagnostic{globalDiagnostic("RF1000400", err.Error())}
 	}
 	parsed := shimparser.ParseSourceFile(
 		shimast.SourceFileParseOptions{FileName: file.FileName()},
@@ -319,7 +319,7 @@ func transformFileWithTracker(
 		scriptKind(file.FileName()),
 	)
 	if parsed == nil {
-		return "", []protocolDiagnostic{globalDiagnostic("RF90400", "TypeScript-Go could not parse transformed source.")}
+		return "", []protocolDiagnostic{globalDiagnostic("RF1000400", "TypeScript-Go could not parse transformed source.")}
 	}
 	printer := shimprinter.NewPrinter(shimprinter.PrinterOptions{}, shimprinter.PrintHandlers{}, nil)
 	return shimprinter.EmitSourceFile(printer, parsed), nil

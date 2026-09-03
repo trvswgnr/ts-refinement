@@ -415,14 +415,70 @@ function indexSignaturesAreEntailed(
   visit: EntailmentVisit,
 ): boolean {
   for (const targetIndex of context.checker.getIndexInfosOfType(target)) {
-    const sourceIndex = context.checker
-      .getIndexInfosOfType(source)
-      .find((candidate) =>
-        context.checker.isTypeAssignableTo(targetIndex.keyType, candidate.keyType),
-      );
-    if (sourceIndex === undefined || !visit(sourceIndex.type, targetIndex.type)) return false;
+    for (const property of context.checker.getPropertiesOfType(source)) {
+      if (!propertyNameMatchesIndex(context, property.getName(), targetIndex.keyType)) continue;
+      const sourceProperty = propertyType(context, source, property.getName());
+      if (sourceProperty === null || !visit(sourceProperty.type, targetIndex.type)) {
+        return false;
+      }
+    }
+    for (const sourceIndex of context.checker.getIndexInfosOfType(source)) {
+      if (
+        indexTypeApplies(context, sourceIndex.keyType, targetIndex.keyType) &&
+        !visit(sourceIndex.type, targetIndex.type)
+      ) {
+        return false;
+      }
+    }
   }
   return true;
+}
+
+function indexTypeApplies(context: AnalyzerContext, source: ts.Type, target: ts.Type): boolean {
+  return (
+    context.checker.isTypeAssignableTo(source, target) ||
+    ((target.flags & context.ts.TypeFlags.String) !== 0 &&
+      (source.flags & context.ts.TypeFlags.NumberLike) !== 0)
+  );
+}
+
+function propertyNameMatchesIndex(
+  context: AnalyzerContext,
+  name: string,
+  keyType: ts.Type,
+): boolean {
+  if ((keyType.flags & context.ts.TypeFlags.ESSymbolLike) !== 0) {
+    return name.startsWith("__@") || name.startsWith("\uFFFF");
+  }
+  if (name.startsWith("__@") || name.startsWith("\uFFFF")) return false;
+  if ((keyType.flags & context.ts.TypeFlags.NumberLike) !== 0) {
+    return String(Number(name)) === name;
+  }
+  if ((keyType.flags & context.ts.TypeFlags.TemplateLiteral) !== 0) {
+    // SAFETY: TemplateLiteral flags are carried only by TemplateLiteralType values.
+    const template = keyType as ts.TemplateLiteralType;
+    const source = template.texts
+      .map(
+        (text, index) =>
+          `${text.replaceAll(/[.*+?^${}()|[\]\\]/gu, "\\$&")}${index < template.types.length ? "([\\s\\S]*?)" : ""}`,
+      )
+      .join("");
+    const captures = new RegExp(`^${source}$`, "u").exec(name)?.slice(1);
+    return (
+      captures !== undefined &&
+      captures.every((capture, index) => {
+        const placeholder = template.types[index];
+        if (placeholder === undefined || (placeholder.flags & context.ts.TypeFlags.String) !== 0) {
+          return true;
+        }
+        if ((placeholder.flags & context.ts.TypeFlags.Number) !== 0) {
+          return capture !== "" && Number.isFinite(Number(capture));
+        }
+        return /^-?(?:0|[1-9]\d*|0[xX][\dA-Fa-f]+|0[oO][0-7]+|0[bB][01]+)$/u.test(capture);
+      })
+    );
+  }
+  return (keyType.flags & context.ts.TypeFlags.StringLike) !== 0;
 }
 
 function callSignaturesAreEntailed(

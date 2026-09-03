@@ -22,7 +22,7 @@ The subject name is inferred. `"n > 0"`, `"value > 0"`, and `"potato > 0"` have 
 declare const dynamic: number;
 
 4 as Even; // proved valid; the assertion is erased
-5 as Even; // RF90200 editor diagnostic and build error
+5 as Even; // RF1000200 editor diagnostic and build error
 dynamic as Even; // unknown statically; a runtime validator is inserted
 ```
 
@@ -30,7 +30,7 @@ The runtime validator evaluates the original expression once, returns its origin
 
 Nested validators short-circuit at the first failing leaf and expose its access path on `RefinementError.path`. Collection assertions visit each element until failure, so validating an array is O(n); avoid repeatedly asserting large collections in hot loops.
 
-The source must already be assignable to the unrefined base type. Refining directly from `unknown`, `any`, or an incompatible type produces RF90101; this project is not a general TypeScript runtime type reifier.
+The source must already be assignable to the unrefined base type. Refining directly from `unknown`, `any`, or an incompatible type produces RF1000101; this project is not a general TypeScript runtime type reifier.
 
 ## Installation
 
@@ -163,29 +163,29 @@ The extension reads the workspace's `ttsc`, TypeScript, and plugin configuration
 
 ## Predicate rules
 
-Predicates are parsed as JavaScript expressions. The compile-time analyzer interprets normalized IR and never executes predicate JavaScript. When an assertion requires a runtime check, the adapter compiles its predicate into JavaScript that executes in the consumer bundle. Treat predicate text as runtime code whenever static proof is inconclusive. Accepted syntax outside the runtime IR reports RF90004 instead of emitting source text.
+Predicates are parsed as JavaScript expressions. The compile-time analyzer interprets normalized IR and never executes predicate JavaScript. When an assertion requires a runtime check, the adapter compiles its predicate into JavaScript that executes in the consumer bundle. Treat predicate text as runtime code whenever static proof is inconclusive. Accepted syntax outside the runtime IR reports RF1000004 instead of emitting source text.
 
 This initial implementation permits the inferred subject, standard ECMAScript globals, and locally bound identifiers. It rejects malformed expressions, assignments, updates, `await`, `yield`, dynamic imports, and ambiguous free identifiers. Node and browser globals such as `Buffer`, `process`, `window`, and `document` are not implicit standard globals.
 
-Module-level `const` values with primitive literal initializers can be captured in predicates. The analyzer folds them into literal IR before proof and runtime compilation. Mutable, broad, object, array, function, ambient, dynamic, or unresolved captures produce RF90003.
+Module-level `const` values with primitive literal initializers can be captured in predicates. The analyzer folds them into literal IR before proof and runtime compilation. Mutable, broad, object, array, function, ambient, dynamic, or unresolved captures produce RF1000003.
 
 The initial proof engine handles primitive and array literals, trivial unary expressions, arithmetic, comparisons, strict equality, logical/nullish operations, conditionals, primitive `.length`, `Number.isInteger`, and `Number.isFinite`. Runtime predicates remain normal JavaScript, so regular expressions, array methods, and other ordinary operations work without becoming a separate refinement DSL.
 
 ## Diagnostics
 
-| Code    | Severity | Meaning                                             |
-| ------- | -------- | --------------------------------------------------- |
-| RF90000 | error    | Invalid or disallowed JavaScript expression         |
-| RF90001 | error    | Predicate is not a concrete string literal          |
-| RF90002 | error    | Subject cannot be inferred unambiguously            |
-| RF90003 | error    | Predicate attempts a disallowed external capture    |
-| RF90004 | error    | Predicate syntax cannot be compiled from runtime IR |
-| RF90101 | error    | Source is not assignable to the unrefined base type |
-| RF90200 | error    | Predicate is statically disproven                   |
-| RF90400 | error    | Refinement metadata cannot be resolved              |
-| RF90500 | warning  | Exported refinement lacks publish verification      |
+| Code      | Severity | Meaning                                             |
+| --------- | -------- | --------------------------------------------------- |
+| RF1000000 | error    | Invalid or disallowed JavaScript expression         |
+| RF1000001 | error    | Predicate is not a concrete string literal          |
+| RF1000002 | error    | Subject cannot be inferred unambiguously            |
+| RF1000003 | error    | Predicate attempts a disallowed external capture    |
+| RF1000004 | error    | Predicate syntax cannot be compiled from runtime IR |
+| RF1000101 | error    | Source is not assignable to the unrefined base type |
+| RF1000200 | error    | Predicate is statically disproven                   |
+| RF1000400 | error    | Refinement metadata cannot be resolved              |
+| RF1000500 | warning  | Exported refinement lacks publish verification      |
 
-RF90500 points to a public declaration whose nearest non-private package lacks matching `ts-refinement.verify.outDir` configuration and a direct `ts-refinement verify OUTDIR` command in `prepack`. It remains a warning in the initial release and is planned to become an error in `0.3`; severity is fixed by the diagnostic contract, not inferred from the installed package version.
+RF1000500 points to a public declaration whose nearest non-private package lacks matching `ts-refinement.verify.outDir` configuration and a direct `ts-refinement verify OUTDIR` command in `prepack`. It remains a warning in the initial release and is planned to become an error in `0.3`; severity is fixed by the diagnostic contract, not inferred from the installed package version.
 
 ## Development
 

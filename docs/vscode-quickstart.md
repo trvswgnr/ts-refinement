@@ -115,7 +115,7 @@ Publishable packages that expose refinements must validate the final JavaScript 
 }
 ```
 
-The build adapter and `ttsc build --emit` write `.ts-refinement-manifest.json` after final assets exist. The verifier checks asset digests and every runtime-required site marker. RF90500 warns when a public refinement lacks matching configuration and a direct `prepack` verifier command. RF90500 is a warning in the initial release and is planned to become an error in `0.3`.
+The build adapter and `ttsc build --emit` write `.ts-refinement-manifest.json` after final assets exist. The verifier checks asset digests and every runtime-required site marker. RF1000500 warns when a public refinement lacks matching configuration and a direct `prepack` verifier command. RF1000500 is a warning in the initial release and is planned to become an error in `0.3`.
 
 ## Use refinements
 
@@ -131,10 +131,10 @@ type Even = Refined<Int, "n % 2 === 0">;
 declare const dynamic: number;
 
 4 as Even; // proved and erased
-5 as Even; // RF90200 in the editor, checker, and build
+5 as Even; // RF1000200 in the editor, checker, and build
 dynamic as Even; // runtime validator inserted by the build adapter
 ```
 
-Subject renaming and whitespace are normalized by the analyzer, but bare TypeScript still sees the original predicate strings as distinct brand keys. Primitive literal module constants such as `MINIMUM` are folded into normalized predicates; rejected captures produce RF90003.
+Subject renaming and whitespace are normalized by the analyzer, but bare TypeScript still sees the original predicate strings as distinct brand keys. Primitive literal module constants such as `MINIMUM` are folded into normalized predicates; rejected captures produce RF1000003.
 
 The compile-time analyzer never executes predicate JavaScript. A predicate needed at runtime is compiled into the consumer bundle and executes there when its assertion is checked.

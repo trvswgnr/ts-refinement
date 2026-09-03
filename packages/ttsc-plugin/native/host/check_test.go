@@ -8,7 +8,7 @@ func TestAppendUniqueDiagnostics(t *testing.T) {
 	length := 8
 	diagnostic := protocolDiagnostic{
 		File:        &file,
-		Code:        "RF90000",
+		Code:        "RF1000000",
 		Start:       &start,
 		Length:      &length,
 		MessageText: "Invalid refinement JavaScript expression.",

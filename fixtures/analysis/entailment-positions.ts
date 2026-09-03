@@ -4,6 +4,7 @@ type Strong = Refined<number, "value > 5">;
 type Weak = Refined<number, "value > 0">;
 type StrongUser = { readonly age: Strong };
 type WeakUser = { readonly age: Weak };
+type WeakIndex = Readonly<Record<string, Weak>>;
 
 declare const strong: Strong;
 declare const strongUser: StrongUser;
@@ -34,3 +35,4 @@ export { assigned };
 
 export const callback: () => Weak = () => strong;
 export const nested: WeakUser = strongUser;
+export const indexed: WeakIndex = { value: strong };

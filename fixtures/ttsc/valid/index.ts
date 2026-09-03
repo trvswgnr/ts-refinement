@@ -106,6 +106,9 @@ export const entailedProperty: NestedPositive = { value: greaterThanFive };
 export const entailedCallback: () => Positive = () => greaterThanFive;
 export const entailedCast = greaterThanFive as Positive;
 export const entailedNested: NestedPositive = nestedGreaterThanFive;
+export const entailedIndex: Readonly<Record<string, Positive>> = {
+  value: greaterThanFive,
+};
 
 function acceptPositive(_value: Positive): void {}
 acceptPositive(greaterThanFive);

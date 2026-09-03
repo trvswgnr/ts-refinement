@@ -176,7 +176,7 @@ func ResolveChecks(checker *shimchecker.Checker, targetType *shimchecker.Type, l
 			}))
 		}
 		for _, index := range shimchecker.Checker_getIndexInfosOfType(checker, target) {
-			segment, ok := indexPathSegment(index.KeyType())
+			segment, ok := IndexPathSegment(index.KeyType())
 			if !ok {
 				result.Issues = append(result.Issues, Issue{
 					Code:    DiagnosticUnableResolveMetadata,
@@ -192,7 +192,7 @@ func ResolveChecks(checker *shimchecker.Checker, targetType *shimchecker.Type, l
 	return result
 }
 
-func indexPathSegment(keyType *shimchecker.Type) (PathSegment, bool) {
+func IndexPathSegment(keyType *shimchecker.Type) (PathSegment, bool) {
 	switch {
 	case keyType.Flags()&shimchecker.TypeFlagsNumberLike != 0:
 		return PathSegment{Kind: PathIndex, Key: "number"}, true

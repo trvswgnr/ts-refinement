@@ -429,7 +429,7 @@ describe("Rolldown plugin", () => {
 
     assertion = "-5 as Positive";
     const invalidBundle = await buildWithPriorTransform(input, rewriteAssertion, refinementPlugin);
-    await expect(invalidBundle.generate({ format: "esm" })).rejects.toThrow(/RF90200/u);
+    await expect(invalidBundle.generate({ format: "esm" })).rejects.toThrow(/RF1000200/u);
   });
 
   it("creates fresh program state for each build generation", async () => {
@@ -649,12 +649,12 @@ export const ${name} = value as Positive;
 
   it("fails the build for a statically false assertion", async () => {
     const bundle = await build(fixtureFile("build-invalid.ts"));
-    await expect(bundle.generate({ format: "esm" })).rejects.toThrow(/RF90200/u);
+    await expect(bundle.generate({ format: "esm" })).rejects.toThrow(/RF1000200/u);
   });
 
   it("fails before transforming unsafe nested refinement sources", async () => {
     const bundle = await build(fixtureFile("nested-unsafe.ts"));
-    await expect(bundle.generate({ format: "esm" })).rejects.toThrow(/RF90101/u);
+    await expect(bundle.generate({ format: "esm" })).rejects.toThrow(/RF1000101/u);
   });
 
   it("writes a hashed manifest for distinct nested runtime sites only", async () => {
@@ -710,7 +710,7 @@ export const ${name} = value as Positive;
     const directory = await realpath(await mkdtemp(join(tmpdir(), "ts-refinement-manifest-")));
     try {
       const bundle = await build(fixtureFile("build-invalid.ts"));
-      await expect(bundle.write({ dir: directory, format: "esm" })).rejects.toThrow(/RF90200/u);
+      await expect(bundle.write({ dir: directory, format: "esm" })).rejects.toThrow(/RF1000200/u);
       expect(existsSync(join(directory, ".ts-refinement-manifest.json"))).toBe(false);
     } finally {
       await rm(directory, { force: true, recursive: true });
@@ -719,7 +719,7 @@ export const ${name} = value as Positive;
 
   it("fails before loading a validator for opaque normalized syntax", async () => {
     const bundle = await build(fixtureFile("opaque-predicate.ts"));
-    await expect(bundle.generate({ format: "esm" })).rejects.toThrow(/RF90004.*ObjectLiteral/u);
+    await expect(bundle.generate({ format: "esm" })).rejects.toThrow(/RF1000004.*ObjectLiteral/u);
   });
 
   it("skips definitely unrefined assertions before checking program membership", async () => {

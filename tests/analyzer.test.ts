@@ -7,6 +7,7 @@ import ts from "typescript";
 
 import {
   analyzeSourceFile,
+  DiagnosticCode,
   getPublishVerificationDiagnostics,
   getRefinementDefinitionDiagnostics,
   hasConfiguredPublishVerification,
@@ -17,13 +18,28 @@ import { fixtureFile, fixtureProgram, projectProgram } from "./helpers.ts";
 const publishFixtureDirectory = resolve(import.meta.dirname, "../fixtures/publish");
 
 describe("TypeScript refinement analysis", () => {
+  it("uses diagnostic codes outside TypeScript's namespace", () => {
+    const runtimeTypeScript = ts as typeof ts & {
+      readonly Diagnostics: Readonly<Record<string, { readonly code: number }>>;
+    };
+    const typeScriptCodes = new Set(
+      Object.values(runtimeTypeScript.Diagnostics).flatMap((diagnostic) =>
+        typeof diagnostic === "object" && diagnostic !== null && "code" in diagnostic
+          ? [diagnostic.code]
+          : [],
+      ),
+    );
+
+    expect(Object.values(DiagnosticCode).every((code) => !typeScriptCodes.has(code))).toBe(true);
+  });
+
   it("diagnoses invalid predicates at their declarations", () => {
     const state = fixtureProgram();
     const source = state.program.getSourceFile(fixtureFile("types.ts"));
     if (source === undefined) throw new Error("fixture was not loaded");
 
     const diagnostics = getRefinementDefinitionDiagnostics(state.context, source);
-    expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual([90000, 90002]);
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual([1000000, 1000002]);
     expect(diagnostics.every((diagnostic) => diagnostic.length > 1)).toBe(true);
   });
 
@@ -60,7 +76,7 @@ describe("TypeScript refinement analysis", () => {
       (result) => result.diagnostics,
     );
     expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
-      90200, 90200, 90101, 90101, 90101,
+      1000200, 1000200, 1000101, 1000101, 1000101,
     ]);
     expect(diagnostics[0]?.message).toContain("Value '-5'");
     expect(diagnostics[1]?.message).toContain("n % 2 === 0");
@@ -74,7 +90,7 @@ describe("TypeScript refinement analysis", () => {
     const diagnostics = analyzeSourceFile(state.context, source).flatMap(
       (result) => result.diagnostics,
     );
-    expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual([90101, 90101]);
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual([1000101, 1000101]);
   });
 
   it("reports predicate errors at assertion sites", () => {
@@ -85,7 +101,7 @@ describe("TypeScript refinement analysis", () => {
     const diagnostics = analyzeSourceFile(state.context, source).flatMap(
       (result) => result.diagnostics,
     );
-    expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual([90002, 90000]);
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual([1000002, 1000000]);
   });
 
   it("rejects a generic predicate that cannot be materialized", () => {
@@ -96,7 +112,7 @@ describe("TypeScript refinement analysis", () => {
     const diagnostics = analyzeSourceFile(state.context, source).flatMap(
       (result) => result.diagnostics,
     );
-    expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual([90001]);
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual([1000001]);
   });
 
   it("collects nested object and array refinements with access paths", () => {
@@ -166,7 +182,7 @@ describe("TypeScript refinement analysis", () => {
 
     const results = analyzeSourceFile(state.context, source);
     expect(results.map((result) => result.proof.kind)).toEqual(["false", "false"]);
-    expect(results.map((result) => result.diagnostics[0]?.code)).toEqual([90200, 90200]);
+    expect(results.map((result) => result.diagnostics[0]?.code)).toEqual([1000200, 1000200]);
     expect(results[0]?.diagnostics[0]?.message).toContain("at '.age'");
     expect(results[1]?.diagnostics[0]?.message).toContain("at '[0]'");
   });
@@ -187,9 +203,9 @@ describe("TypeScript refinement analysis", () => {
       "true",
     ]);
     expect(invalidResults.map((result) => result.diagnostics[0]?.code)).toEqual([
-      90200,
-      90200,
-      90200,
+      1000200,
+      1000200,
+      1000200,
       undefined,
     ]);
 
@@ -229,7 +245,7 @@ describe("TypeScript refinement analysis", () => {
     expect(results.map((result) => result.proof.kind)).toEqual(["false", "true"]);
     expect(
       results.flatMap((result) => result.diagnostics).map((diagnostic) => diagnostic.code),
-    ).toEqual([90200]);
+    ).toEqual([1000200]);
   });
 
   it("analyzes angle-bracket and as refinement assertions equivalently", () => {
@@ -271,7 +287,7 @@ describe("TypeScript refinement analysis", () => {
     const results = analyzeSourceFile(state.context, source);
     expect(results).toHaveLength(2);
     expect(results.map((result) => result.proof.kind)).toEqual(["false", "false"]);
-    expect(results.map((result) => result.diagnostics[0]?.code)).toEqual([90200, 90200]);
+    expect(results.map((result) => result.diagnostics[0]?.code)).toEqual([1000200, 1000200]);
     expect(results[0]?.diagnostics[0]?.message).toBe(results[1]?.diagnostics[0]?.message);
   });
 
@@ -366,7 +382,7 @@ describe("TypeScript refinement analysis", () => {
 
     const diagnostics = getRefinementDefinitionDiagnostics(state.context, source);
     expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
-      90003, 90003, 90003, 90003, 90003, 90003, 90003, 90003, 90003, 90002,
+      1000003, 1000003, 1000003, 1000003, 1000003, 1000003, 1000003, 1000003, 1000003, 1000002,
     ]);
     expect(diagnostics.slice(0, 9).map((diagnostic) => diagnostic.message)).toEqual(
       [
@@ -381,7 +397,7 @@ describe("TypeScript refinement analysis", () => {
         "AMBIENT",
       ].map(
         (name) =>
-          `RF90003: Predicate capture '${name}' must resolve to an immutable primitive literal.`,
+          `RF1000003: Predicate capture '${name}' must resolve to an immutable primitive literal.`,
       ),
     );
     for (const diagnostic of diagnostics) {
@@ -399,7 +415,7 @@ describe("TypeScript refinement analysis", () => {
 
     const diagnostics = getPublishVerificationDiagnostics(state.context, source);
     expect(diagnostics).toHaveLength(8);
-    expect(diagnostics.every((diagnostic) => diagnostic.code === 90500)).toBe(true);
+    expect(diagnostics.every((diagnostic) => diagnostic.code === 1000500)).toBe(true);
     expect(diagnostics.every((diagnostic) => diagnostic.severity === "warning")).toBe(true);
     expect(diagnostics.map((diagnostic) => diagnostic.message)).toEqual(
       expect.arrayContaining(

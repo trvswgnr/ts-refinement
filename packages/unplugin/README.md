@@ -39,7 +39,7 @@ markers.
 
 The compile-time analyzer never executes predicate JavaScript. Predicates for inconclusive
 assertions are compiled from normalized IR and execute in the consumer bundle. Primitive literal
-module captures are folded into generated code; rejected captures report RF90003.
+module captures are folded into generated code; rejected captures report RF1000003.
 
 Farm 1.7 emits a source-map asset but currently drops transform mappings, including mappings from
 passthrough plugins without ts-refinement. The Farm adapter forwards its transform map; source

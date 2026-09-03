@@ -356,7 +356,7 @@ describe("unplugin adapter conformance", { timeout: 30_000 }, () => {
   it("fails every adapter with positioned RF diagnostics", async () => {
     for (const [_name, build] of builders) {
       const failure = await failureMessage(build(knownFalse));
-      expect(failure).toMatch(/RF90200/u);
+      expect(failure).toMatch(/RF1000200/u);
       expect(failure).toMatch(/known-false\.ts/u);
       expect(failure).toMatch(/1:\d+/u);
     }

@@ -89,9 +89,9 @@ describe("TypeScript-Go native plugin", () => {
     const invalid = runTtsc("invalid", resolve(outputRoot, "invalid"));
     const diagnostics = `${invalid.stdout}${invalid.stderr}`;
     expect(invalid.status).toBe(2);
-    expect(diagnostics).toContain("error RF90200:");
-    expect(diagnostics).toContain("error RF90101:");
-    expect(diagnostics).toContain("error RF90003:");
+    expect(diagnostics).toContain("error RF1000200:");
+    expect(diagnostics).toContain("error RF1000101:");
+    expect(diagnostics).toContain("error RF1000003:");
     expect(diagnostics).toContain("Predicate capture 'MUTABLE_LIMIT'");
     expect(diagnostics).toContain("does not satisfy refinement 'Positive'");
     expect(diagnostics).toContain("at '.age'");

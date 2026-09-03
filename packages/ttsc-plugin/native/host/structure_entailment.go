@@ -166,15 +166,21 @@ func refinementStructureIsEntailed(checker *shimchecker.Checker, sourceType, tar
 		}
 
 		for _, targetIndex := range shimchecker.Checker_getIndexInfosOfType(checker, target) {
-			var sourceIndex *shimchecker.IndexInfo
-			for _, candidate := range shimchecker.Checker_getIndexInfosOfType(checker, source) {
-				if checker.IsTypeAssignableTo(targetIndex.KeyType(), candidate.KeyType()) {
-					sourceIndex = candidate
-					break
+			segment, ok := analysis.IndexPathSegment(targetIndex.KeyType())
+			if !ok {
+				return false
+			}
+			for _, property := range shimchecker.Checker_getPropertiesOfType(checker, source) {
+				if property != nil && matchesIndexName(segment, property.Name) &&
+					!visit(shimchecker.Checker_getTypeOfPropertyOfType(checker, source, property.Name), targetIndex.ValueType()) {
+					return false
 				}
 			}
-			if sourceIndex == nil || !visit(sourceIndex.ValueType(), targetIndex.ValueType()) {
-				return false
+			for _, sourceIndex := range shimchecker.Checker_getIndexInfosOfType(checker, source) {
+				if indexTypeApplies(checker, sourceIndex.KeyType(), targetIndex.KeyType()) &&
+					!visit(sourceIndex.ValueType(), targetIndex.ValueType()) {
+					return false
+				}
 			}
 		}
 
@@ -182,6 +188,11 @@ func refinementStructureIsEntailed(checker *shimchecker.Checker, sourceType, tar
 		return len(targetCalls) == 0 || checker.IsTypeAssignableTo(source, target)
 	}
 	return visit(sourceType, targetType)
+}
+
+func indexTypeApplies(checker *shimchecker.Checker, source, target *shimchecker.Type) bool {
+	return checker.IsTypeAssignableTo(source, target) ||
+		target.Flags()&shimchecker.TypeFlagsString != 0 && source.Flags()&shimchecker.TypeFlagsNumberLike != 0
 }
 
 func isRefinementBrand(name string) bool {

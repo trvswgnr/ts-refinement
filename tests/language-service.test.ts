@@ -44,14 +44,14 @@ describe("TypeScript language-service plugin", () => {
       .getSemanticDiagnostics(fixtureFile("invalid.ts"))
       .filter((diagnostic) => diagnostic.source === "ts-refinement");
     expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
-      90200, 90200, 90101, 90101, 90101,
+      1000200, 1000200, 1000101, 1000101, 1000101,
     ]);
-    expect(diagnostics[0]?.messageText).toContain("RF90200");
+    expect(diagnostics[0]?.messageText).toContain("RF1000200");
 
     const declarationDiagnostics = proxy
       .getSemanticDiagnostics(fixtureFile("types.ts"))
       .filter((diagnostic) => diagnostic.source === "ts-refinement");
-    expect(declarationDiagnostics.map((diagnostic) => diagnostic.code)).toEqual([90000, 90002]);
+    expect(declarationDiagnostics.map((diagnostic) => diagnostic.code)).toEqual([1000000, 1000002]);
   });
 
   it("suppresses brand diagnostics only for proven refinement entailment", () => {
@@ -124,7 +124,7 @@ describe("TypeScript language-service plugin", () => {
       .filter((diagnostic) => diagnostic.source !== "ts-refinement");
 
     expect(originalDiagnostics.map((diagnostic) => diagnostic.code)).toEqual([
-      2322, 2352, 2322, 2345, 2345, 2322, 2322, 2322, 2322, 2322, 2322,
+      2322, 2352, 2322, 2345, 2345, 2322, 2322, 2322, 2322, 2322, 2322, 2322,
     ]);
     expect(diagnostics).toEqual([]);
   });
@@ -164,7 +164,7 @@ describe("TypeScript language-service plugin", () => {
       .getSemanticDiagnostics(resolve(directory, "index.ts"))
       .filter((diagnostic) => diagnostic.source === "ts-refinement");
     expect(diagnostics).toHaveLength(8);
-    expect(diagnostics.every((diagnostic) => diagnostic.code === 90500)).toBe(true);
+    expect(diagnostics.every((diagnostic) => diagnostic.code === 1000500)).toBe(true);
     expect(
       diagnostics.every((diagnostic) => diagnostic.category === ts.DiagnosticCategory.Warning),
     ).toBe(true);

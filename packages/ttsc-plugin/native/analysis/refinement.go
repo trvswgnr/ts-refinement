@@ -13,13 +13,13 @@ import (
 )
 
 const (
-	DiagnosticInvalidExpression     int32 = 90000
-	DiagnosticPredicateNotConcrete  int32 = 90001
-	DiagnosticCannotInferSubject    int32 = 90002
-	DiagnosticExternalCapture       int32 = 90003
-	DiagnosticSourceNotAssignable   int32 = 90101
-	DiagnosticStaticallyDisproven   int32 = 90200
-	DiagnosticUnableResolveMetadata int32 = 90400
+	DiagnosticInvalidExpression     int32 = 1000000
+	DiagnosticPredicateNotConcrete  int32 = 1000001
+	DiagnosticCannotInferSubject    int32 = 1000002
+	DiagnosticExternalCapture       int32 = 1000003
+	DiagnosticSourceNotAssignable   int32 = 1000101
+	DiagnosticStaticallyDisproven   int32 = 1000200
+	DiagnosticUnableResolveMetadata int32 = 1000400
 )
 
 type Issue struct {

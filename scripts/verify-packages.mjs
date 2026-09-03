@@ -272,7 +272,7 @@ export const disproven = -1 as Positive;
     (error) => {
       assert.notEqual(error.code, 0);
       assert.match(error.stdout, /error TS2322:/u);
-      assert.match(error.stdout, /RF90200:/u);
+      assert.match(error.stdout, /RF1000200:/u);
       return true;
     },
   );
