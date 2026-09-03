@@ -71,12 +71,13 @@ The second command installs the `ttsc` VS Code extension. Register the native ch
 {
   "scripts": {
     "build": "ttsc build --emit",
-    "check": "ttsc check"
+    "check": "ttsc check",
+    "start": "ttsx src/index.ts"
   }
 }
 ```
 
-The extension reads the workspace's `ttsc`, TypeScript, and plugin configuration. It shows native refinement diagnostics and offers a quick fix for statically disproven assertions.
+The extension reads the workspace's `ttsc`, TypeScript, and plugin configuration. It shows native refinement diagnostics and offers a quick fix for statically disproven assertions. `ttsx` uses the same native transform when executing a TypeScript entry point directly.
 
 ## Build transformation
 

@@ -95,6 +95,7 @@ bun add --dev @ts-refinement/cli @ts-refinement/ttsc ttsc 'typescript@>=7'
   "scripts": {
     "build": "ttsc build --emit",
     "check": "ttsc check",
+    "start": "ttsx src/index.ts",
     "prepack": "bun run build && ts-refinement verify dist"
   },
   "compilerOptions": {
@@ -107,6 +108,8 @@ bun add --dev @ts-refinement/cli @ts-refinement/ttsc ttsc 'typescript@>=7'
 ```
 
 Bare `tsc` carries the branded types but cannot delegate predicate implication to the analyzer. Use `tspc` on TypeScript 5.7 through 6.x or `ttsc` on TypeScript 7 and newer.
+
+Use `ttsx` to execute a TypeScript 7 entry point with the same native check and transform stages. Assertions that cannot be proven statically are validated before the module runs.
 
 Runtime safety for unknown assertion sites requires one of the supported unplugin adapters. For tsdown, use the Rolldown adapter:
 

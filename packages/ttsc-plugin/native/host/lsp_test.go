@@ -9,6 +9,34 @@ import (
 	"testing"
 )
 
+func TestLSPReportsRefinementDiagnostics(t *testing.T) {
+	repositoryRoot, err := filepath.Abs("../../../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fileName := filepath.Join(repositoryRoot, "fixtures/ttsc/invalid/index.ts")
+	uri := (&url.URL{Scheme: "file", Path: filepath.ToSlash(fileName)}).String()
+	result, err := computeLSPDiagnostics([]string{
+		"--cwd=" + repositoryRoot,
+		"--tsconfig=fixtures/ttsc/invalid/tsconfig.json",
+		"--uri=" + uri,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, diagnostic := range result.Document {
+		if diagnostic.Code == "RF1000200" && diagnostic.Source == "ts-refinement" &&
+			strings.Contains(diagnostic.Message, "Value '-1'") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("missing RF1000200 LSP diagnostic: %#v", result.Document)
+	}
+}
+
 func TestLSPRemovesStaticallyDisprovenAssertion(t *testing.T) {
 	repositoryRoot, err := filepath.Abs("../../../..")
 	if err != nil {

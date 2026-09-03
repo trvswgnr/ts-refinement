@@ -298,6 +298,7 @@ async function validateNativeInstall(temporaryDirectory, artifacts) {
   });
   await install(consumerDirectory, [...nativeArtifacts, "ttsc@0.28.5", "typescript@7.0.2"]);
   const ttsc = join(consumerDirectory, "node_modules", ".bin", "ttsc");
+  const ttsx = join(consumerDirectory, "node_modules", ".bin", "ttsx");
   const refinement = join(consumerDirectory, "node_modules", ".bin", "ts-refinement");
   await run(ttsc, ["check", "--project", "tsconfig.json"], consumerDirectory);
   await run(
@@ -309,6 +310,13 @@ async function validateNativeInstall(temporaryDirectory, artifacts) {
   assert.match(emitted, /known = 5;/u);
   assert.match(emitted, /new __ts_refinement_error/u);
   assert.doesNotMatch(emitted, /as Positive/u);
+  await assert.rejects(
+    run(ttsx, ["--project", "tsconfig.json", "runner.ts"], consumerDirectory),
+    (error) => {
+      assert.match(error.stderr, /RefinementError/u);
+      return true;
+    },
+  );
   await run(refinement, ["verify", "dist"], consumerDirectory);
 }
 
