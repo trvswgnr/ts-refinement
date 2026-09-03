@@ -40,6 +40,15 @@ describe("TypeScript refinement analysis", () => {
     expect(diagnostics.every((diagnostic) => diagnostic.length > 1)).toBe(true);
   });
 
+  it("ignores unrelated local aliases named Refined", () => {
+    const state = fixtureProgram();
+    const source = state.program.getSourceFile(fixtureFile("unrelated-refined-alias.ts"));
+    if (source === undefined) throw new Error("fixture was not loaded");
+
+    expect(getRefinementDefinitionDiagnostics(state.context, source)).toEqual([]);
+    expect(analyzeSourceFile(state.context, source)).toEqual([]);
+  });
+
   it("resolves aliases, composition, and proof states", () => {
     const state = fixtureProgram();
     const source = state.program.getSourceFile(fixtureFile("valid.ts"));

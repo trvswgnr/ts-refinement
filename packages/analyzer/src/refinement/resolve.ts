@@ -1,3 +1,5 @@
+import { dirname, join, resolve } from "node:path";
+
 import type * as ts from "typescript";
 
 import { DiagnosticCode } from "../diagnostics.ts";
@@ -80,23 +82,78 @@ export type RefinementResolution =
     };
 
 const resolutionCaches = new WeakMap<ts.Program, WeakMap<ts.Type, RefinementResolution>>();
+const sourcePackageNames = new WeakMap<ts.SourceFile, string | null>();
 
 function flattenIntersection(tsModule: typeof ts, type: ts.Type): readonly ts.Type[] {
   if (!type.isIntersection()) return [type];
   return type.types.flatMap((part) => flattenIntersection(tsModule, part));
 }
 
-function isRefinementMarkerSymbol(tsModule: typeof ts, symbol: ts.Symbol): boolean {
+function parsedPackageName(
+  context: AnalyzerContext,
+  packagePath: string,
+  source: string,
+): string | null {
+  const parsed = context.ts.parseJsonText(packagePath, source);
+  const statement = parsed.statements[0];
+  if (
+    statement === undefined ||
+    !context.ts.isExpressionStatement(statement) ||
+    !context.ts.isObjectLiteralExpression(statement.expression)
+  ) {
+    return null;
+  }
+  for (let index = statement.expression.properties.length - 1; index >= 0; index -= 1) {
+    const property = statement.expression.properties[index];
+    if (
+      property !== undefined &&
+      context.ts.isPropertyAssignment(property) &&
+      ((context.ts.isIdentifier(property.name) && property.name.text === "name") ||
+        (context.ts.isStringLiteral(property.name) && property.name.text === "name")) &&
+      context.ts.isStringLiteral(property.initializer)
+    ) {
+      return property.initializer.text;
+    }
+  }
+  return null;
+}
+
+function packageName(context: AnalyzerContext, sourceFile: ts.SourceFile): string | null {
+  const cached = sourcePackageNames.get(sourceFile);
+  if (cached !== undefined) return cached;
+
+  let directory = dirname(resolve(sourceFile.fileName));
+  for (;;) {
+    const packagePath = join(directory, "package.json");
+    const source = context.ts.sys.readFile(packagePath);
+    if (source !== undefined) {
+      const name = parsedPackageName(context, packagePath, source);
+      sourcePackageNames.set(sourceFile, name);
+      return name;
+    }
+    const parent = dirname(directory);
+    if (parent === directory) {
+      sourcePackageNames.set(sourceFile, null);
+      return null;
+    }
+    directory = parent;
+  }
+}
+
+function isRefinementMarkerSymbol(context: AnalyzerContext, symbol: ts.Symbol): boolean {
   for (const declaration of symbol.declarations ?? []) {
-    if (!tsModule.isPropertySignature(declaration) || declaration.name === undefined) continue;
-    if (!tsModule.isComputedPropertyName(declaration.name)) continue;
-    if (!tsModule.isIdentifier(declaration.name.expression)) continue;
+    if (!context.ts.isPropertySignature(declaration) || declaration.name === undefined) continue;
+    if (!context.ts.isComputedPropertyName(declaration.name)) continue;
+    if (!context.ts.isIdentifier(declaration.name.expression)) continue;
     if (declaration.name.expression.text !== "refinementBrand") continue;
 
     let ancestor: ts.Node | undefined = declaration.parent;
     while (ancestor !== undefined) {
-      if (tsModule.isTypeAliasDeclaration(ancestor)) {
-        return ancestor.name.text === "Refined";
+      if (context.ts.isTypeAliasDeclaration(ancestor)) {
+        return (
+          ancestor.name.text === "Refined" &&
+          packageName(context, declaration.getSourceFile()) === "ts-refinement"
+        );
       }
       ancestor = ancestor.parent;
     }
@@ -110,7 +167,7 @@ function markerForType(
 ): { readonly declaration: ts.Declaration; readonly symbol: ts.Symbol } | null {
   const symbol = context.checker
     .getPropertiesOfType(type)
-    .find((property) => isRefinementMarkerSymbol(context.ts, property));
+    .find((property) => isRefinementMarkerSymbol(context, property));
   const declaration = symbol?.declarations?.[0];
   return symbol === undefined || declaration === undefined ? null : { declaration, symbol };
 }
@@ -131,7 +188,7 @@ function resolvedSymbol(context: AnalyzerContext, node: ts.EntityName): ts.Symbo
   return context.checker.getAliasedSymbol(symbol);
 }
 
-function isRefinedAlias(context: AnalyzerContext, symbol: ts.Symbol): boolean {
+export function isRefinedAlias(context: AnalyzerContext, symbol: ts.Symbol): boolean {
   return (symbol.declarations ?? []).some((declaration) => {
     if (!context.ts.isTypeAliasDeclaration(declaration) || declaration.name.text !== "Refined") {
       return false;
@@ -146,7 +203,7 @@ function isRefinedAlias(context: AnalyzerContext, symbol: ts.Symbol): boolean {
       context.ts.forEachChild(node, visit);
     }
     visit(declaration);
-    return containsMarker;
+    return containsMarker && packageName(context, declaration.getSourceFile()) === "ts-refinement";
   });
 }
 

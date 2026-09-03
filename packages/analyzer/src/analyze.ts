@@ -18,6 +18,7 @@ import { collectGuardPredicates } from "./proof/guards.ts";
 import { entails } from "./proof/entail.ts";
 import { getPublishVerificationDiagnostics } from "./publish.ts";
 import {
+  isRefinedAlias,
   resolvePredicateAtDeclaration,
   resolveRefinementChecks,
   resolveRefinementMetadata,
@@ -254,22 +255,7 @@ function isRefinedTypeReference(context: AnalyzerContext, node: ts.TypeReference
     (symbol.flags & context.ts.SymbolFlags.Alias) === 0
       ? symbol
       : context.checker.getAliasedSymbol(symbol);
-  return (target.declarations ?? []).some((declaration) => {
-    if (!context.ts.isTypeAliasDeclaration(declaration) || declaration.name.text !== "Refined") {
-      return false;
-    }
-
-    let containsMarker = false;
-    function visit(child: ts.Node): void {
-      if (context.ts.isIdentifier(child) && child.text === "refinementBrand") {
-        containsMarker = true;
-        return;
-      }
-      context.ts.forEachChild(child, visit);
-    }
-    visit(declaration);
-    return containsMarker;
-  });
+  return isRefinedAlias(context, target);
 }
 
 export function getRefinementDefinitionDiagnostics(
