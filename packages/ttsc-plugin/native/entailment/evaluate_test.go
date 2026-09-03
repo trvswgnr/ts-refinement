@@ -23,6 +23,24 @@ func TestEvaluateKnownLiterals(t *testing.T) {
 	}
 }
 
+func TestParsesJavaScriptNumericLiterals(t *testing.T) {
+	for _, source := range []string{
+		"value < 1e3",
+		"value < 0x400",
+		"value < 0b100_0000_0000",
+		"value < 0o2000",
+	} {
+		if _, err := ParsePredicate(source); err != nil {
+			t.Errorf("ParsePredicate(%q): %v", source, err)
+		}
+	}
+	for _, source := range []string{"value < 1_000n", "value < 0x400n"} {
+		if _, err := ParsePredicate(source); err != nil {
+			t.Errorf("ParsePredicate(%q): %v", source, err)
+		}
+	}
+}
+
 func TestEvaluateArrayCallbacksAndSupportedExpressions(t *testing.T) {
 	allPositive, err := ParsePredicate("values.every((item, index) => item > 0 && index >= 0)")
 	if err != nil {

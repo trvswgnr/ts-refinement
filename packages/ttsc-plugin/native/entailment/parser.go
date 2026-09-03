@@ -67,6 +67,66 @@ type lexer struct {
 	index  int
 }
 
+func isDigitForBase(char byte, base int) bool {
+	switch {
+	case char >= '0' && char <= '9':
+		return int(char-'0') < base
+	case char >= 'a' && char <= 'f':
+		return base == 16
+	case char >= 'A' && char <= 'F':
+		return base == 16
+	default:
+		return false
+	}
+}
+
+func (l *lexer) number() (token, error) {
+	start := l.index
+	base := 10
+	if l.source[l.index] == '0' && l.index+1 < len(l.source) {
+		switch l.source[l.index+1] {
+		case 'b', 'B':
+			base = 2
+		case 'o', 'O':
+			base = 8
+		case 'x', 'X':
+			base = 16
+		}
+		if base != 10 {
+			l.index += 2
+			for l.index < len(l.source) && (isDigitForBase(l.source[l.index], base) || l.source[l.index] == '_') {
+				l.index++
+			}
+		}
+	}
+	if base == 10 {
+		for l.index < len(l.source) && (isDigitForBase(l.source[l.index], 10) || l.source[l.index] == '_') {
+			l.index++
+		}
+		if l.index < len(l.source) && l.source[l.index] == '.' {
+			l.index++
+			for l.index < len(l.source) && (isDigitForBase(l.source[l.index], 10) || l.source[l.index] == '_') {
+				l.index++
+			}
+		}
+		if l.index < len(l.source) && (l.source[l.index] == 'e' || l.source[l.index] == 'E') {
+			l.index++
+			if l.index < len(l.source) && (l.source[l.index] == '+' || l.source[l.index] == '-') {
+				l.index++
+			}
+			for l.index < len(l.source) && (isDigitForBase(l.source[l.index], 10) || l.source[l.index] == '_') {
+				l.index++
+			}
+		}
+	}
+	kind := tokenNumber
+	if l.index < len(l.source) && l.source[l.index] == 'n' {
+		kind = tokenBigInt
+		l.index++
+	}
+	return token{kind: kind, text: l.source[start:l.index]}, nil
+}
+
 func (l *lexer) next() (token, error) {
 	for l.index < len(l.source) && unicode.IsSpace(rune(l.source[l.index])) {
 		l.index++
@@ -88,16 +148,7 @@ func (l *lexer) next() (token, error) {
 		return token{kind: tokenIdentifier, text: l.source[start:l.index]}, nil
 	}
 	if unicode.IsDigit(rune(current)) {
-		l.index++
-		for l.index < len(l.source) && (unicode.IsDigit(rune(l.source[l.index])) || l.source[l.index] == '.') {
-			l.index++
-		}
-		kind := tokenNumber
-		if l.index < len(l.source) && l.source[l.index] == 'n' {
-			kind = tokenBigInt
-			l.index++
-		}
-		return token{kind: kind, text: l.source[start:l.index]}, nil
+		return l.number()
 	}
 	if current == '\'' || current == '"' {
 		quote := current

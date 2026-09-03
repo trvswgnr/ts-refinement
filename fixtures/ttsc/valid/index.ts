@@ -4,6 +4,7 @@ import type { ImportedAboveLimit } from "./captured.ts";
 type Positive = Refined<number, "value > 0">;
 type GreaterThanFive = Refined<number, "value > 5">;
 type ExactlyFive = Refined<number, "value === 5">;
+type UnderThousand = Refined<number, "value < 1e3">;
 type NonEmpty = Refined<string, "value.length > 0">;
 type AllPositive = Refined<number[], "values.every((item) => item > 0)">;
 const LIMIT = 5 as const;
@@ -58,6 +59,7 @@ declare const dynamicResult:
 declare const dynamicTree: RawTree;
 
 export const knownGood = 5 as Positive;
+export const knownUnderThousand = 5 as UnderThousand;
 export const knownAllPositive = [1, 2, 3] as AllPositive;
 export const knownCaptured = 6 as AboveLimit;
 export const runtimeChecked = dynamic as Positive;

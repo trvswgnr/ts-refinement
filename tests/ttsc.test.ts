@@ -45,6 +45,7 @@ describe("TypeScript-Go native plugin", () => {
 
     const emitted = readFileSync(resolve(validOutDir, "fixtures/ttsc/valid/index.js"), "utf8");
     expect(emitted).toContain("knownGood = 5;");
+    expect(emitted).toContain("knownUnderThousand = 5;");
     expect(emitted).toContain("new __ts_refinement_error");
     expect(emitted).toContain("runtimeChecked");
     expect(emitted).toContain("runtimeCaptured");
