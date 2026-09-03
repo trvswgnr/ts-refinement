@@ -581,6 +581,7 @@ function indexPathSegment(
     return { key: "symbol", kind: "index" };
   }
   if ((keyType.flags & context.ts.TypeFlags.TemplateLiteral) !== 0) {
+    // SAFETY: TemplateLiteral flags are carried only by TemplateLiteralType values.
     const template = keyType as ts.TemplateLiteralType;
     const placeholders = template.types.map((type) => templateIndexPlaceholder(context, type));
     if (placeholders.some((placeholder) => placeholder === null)) return null;

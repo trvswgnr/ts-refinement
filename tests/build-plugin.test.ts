@@ -338,6 +338,7 @@ describe("Rolldown plugin", () => {
     const chunk = generated.output.find((output) => output.type === "chunk");
     if (chunk === undefined) throw new Error("bundle did not emit a chunk");
     const moduleUrl = `data:text/javascript;base64,${Buffer.from(chunk.code).toString("base64")}#${Date.now()}`;
+    // SAFETY: Rolldown generated this module from the index-signature fixture declared above.
     const fixture = (await import(moduleUrl)) as IndexSignatureFixture;
 
     expect(() => fixture.checkNumericScores({ "-1": -1 })).toThrowError(
