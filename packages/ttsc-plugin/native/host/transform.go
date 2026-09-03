@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	shimast "github.com/microsoft/typescript-go/shim/ast"
@@ -21,6 +22,8 @@ import (
 )
 
 const runtimeModule = "@ts-refinement/runtime"
+
+var refinementAssertionPattern = regexp.MustCompile(`\bas\s+|<\s*[A-Za-z_$][A-Za-z0-9_$]*`)
 
 type protocolDiagnostic struct {
 	File        *string `json:"file"`
@@ -210,6 +213,9 @@ func transformFileWithTracker(
 		return "", nil
 	}
 	source := file.Text()
+	if !refinementAssertionPattern.MatchString(source) {
+		return "", nil
+	}
 	plan := newEditPlan()
 	diagnostics := []protocolDiagnostic{}
 	runtimeAlias := uniqueName(source, "__ts_refinement_error")
