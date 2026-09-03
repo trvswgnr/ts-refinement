@@ -13,14 +13,19 @@ const (
 	runtimeBigInt
 	runtimeString
 	runtimeBoolean
+	runtimeNull
+	runtimeArray
+	runtimeFunction
 )
 
 type runtimeValue struct {
-	kind    runtimeKind
-	number  float64
-	bigint  *big.Int
-	text    string
-	boolean bool
+	kind     runtimeKind
+	number   float64
+	bigint   *big.Int
+	text     string
+	boolean  bool
+	values   []runtimeValue
+	function *node
 }
 
 func Evaluate(predicate Predicate, source string) (bool, bool) {
@@ -28,15 +33,15 @@ func Evaluate(predicate Predicate, source string) (bool, bool) {
 	if err != nil {
 		return false, false
 	}
-	value, ok := evaluateNode(expression, runtimeValue{})
+	value, ok := evaluateNode(expression, runtimeValue{}, nil)
 	if !ok {
 		return false, false
 	}
-	result, ok := evaluateNode(predicate.root, value)
+	result, ok := evaluateNode(predicate.root, value, nil)
 	return result.boolean, ok && result.kind == runtimeBoolean
 }
 
-func evaluateNode(expression *node, subject runtimeValue) (runtimeValue, bool) {
+func evaluateNode(expression *node, subject runtimeValue, locals map[string]runtimeValue) (runtimeValue, bool) {
 	if expression == nil {
 		return runtimeValue{}, false
 	}
@@ -44,6 +49,18 @@ func evaluateNode(expression *node, subject runtimeValue) (runtimeValue, bool) {
 	case nodeIdentifier:
 		if expression.text == "$subject" {
 			return subject, subject.kind != runtimeUnknown
+		}
+		if value, ok := locals[expression.text]; ok {
+			return value, true
+		}
+		if expression.text == "Infinity" {
+			return runtimeValue{kind: runtimeNumber, number: math.Inf(1)}, true
+		}
+		if expression.text == "NaN" {
+			return runtimeValue{kind: runtimeNumber, number: math.NaN()}, true
+		}
+		if expression.text == "undefined" {
+			return runtimeValue{kind: runtimeUnknown}, true
 		}
 		return runtimeValue{}, false
 	case nodeNumber:
@@ -60,8 +77,22 @@ func evaluateNode(expression *node, subject runtimeValue) (runtimeValue, bool) {
 		return runtimeValue{kind: runtimeString, text: expression.text}, true
 	case nodeBoolean:
 		return runtimeValue{kind: runtimeBoolean, boolean: expression.text == "true"}, true
+	case nodeNull:
+		return runtimeValue{kind: runtimeNull}, true
+	case nodeArray:
+		values := make([]runtimeValue, len(expression.args))
+		for index, element := range expression.args {
+			value, ok := evaluateNode(element, subject, locals)
+			if !ok {
+				return runtimeValue{}, false
+			}
+			values[index] = value
+		}
+		return runtimeValue{kind: runtimeArray, values: values}, true
+	case nodeFunction:
+		return runtimeValue{kind: runtimeFunction, function: expression}, true
 	case nodeUnary:
-		operand, ok := evaluateNode(expression.left, subject)
+		operand, ok := evaluateNode(expression.left, subject, locals)
 		if !ok {
 			return runtimeValue{}, false
 		}
@@ -76,6 +107,14 @@ func evaluateNode(expression *node, subject runtimeValue) (runtimeValue, bool) {
 				operand.number = -operand.number
 				return operand, true
 			}
+		case "typeof":
+			name := map[runtimeKind]string{
+				runtimeNumber: "number", runtimeBigInt: "bigint", runtimeString: "string",
+				runtimeBoolean: "boolean", runtimeFunction: "function", runtimeUnknown: "undefined",
+			}[operand.kind]
+			if name != "" {
+				return runtimeValue{kind: runtimeString, text: name}, true
+			}
 			if operand.kind == runtimeBigInt {
 				operand.bigint = new(big.Int).Neg(operand.bigint)
 				return operand, true
@@ -83,15 +122,42 @@ func evaluateNode(expression *node, subject runtimeValue) (runtimeValue, bool) {
 		}
 		return runtimeValue{}, false
 	case nodeMember:
-		object, ok := evaluateNode(expression.left, subject)
-		if !ok || expression.text != "length" || object.kind != runtimeString {
+		object, ok := evaluateNode(expression.left, subject, locals)
+		if !ok || expression.text != "length" || (object.kind != runtimeString && object.kind != runtimeArray) {
 			return runtimeValue{}, false
 		}
-		return runtimeValue{kind: runtimeNumber, number: float64(len(object.text))}, true
+		length := len(object.text)
+		if object.kind == runtimeArray {
+			length = len(object.values)
+		}
+		return runtimeValue{kind: runtimeNumber, number: float64(length)}, true
+	case nodeIndex:
+		object, ok := evaluateNode(expression.left, subject, locals)
+		if !ok || object.kind != runtimeArray {
+			return runtimeValue{}, false
+		}
+		index, ok := evaluateNode(expression.right, subject, locals)
+		if !ok || index.kind != runtimeNumber || math.Trunc(index.number) != index.number || index.number < 0 || int(index.number) >= len(object.values) {
+			return runtimeValue{}, false
+		}
+		return object.values[int(index.number)], true
 	case nodeCall:
-		return evaluateCall(expression, subject)
+		return evaluateCall(expression, subject, locals)
 	case nodeBinary:
-		return evaluateBinary(expression, subject)
+		return evaluateBinary(expression, subject, locals)
+	case nodeConditional:
+		condition, ok := evaluateNode(expression.left, subject, locals)
+		if !ok {
+			return runtimeValue{}, false
+		}
+		truth, ok := truthy(condition)
+		if !ok {
+			return runtimeValue{}, false
+		}
+		if truth {
+			return evaluateNode(expression.right, subject, locals)
+		}
+		return evaluateNode(expression.third, subject, locals)
 	default:
 		return runtimeValue{}, false
 	}
@@ -107,21 +173,25 @@ func truthy(value runtimeValue) (bool, bool) {
 		return value.bigint.Sign() != 0, true
 	case runtimeString:
 		return value.text != "", true
+	case runtimeNull, runtimeUnknown:
+		return false, true
+	case runtimeArray, runtimeFunction:
+		return true, true
 	default:
 		return false, false
 	}
 }
 
-func evaluateCall(expression *node, subject runtimeValue) (runtimeValue, bool) {
+func evaluateCall(expression *node, subject runtimeValue, locals map[string]runtimeValue) (runtimeValue, bool) {
 	callee := expression.left
-	if callee == nil || callee.kind != nodeMember || callee.left == nil || callee.left.kind != nodeIdentifier || len(expression.args) != 1 {
+	if callee == nil || callee.kind != nodeMember || callee.left == nil || len(expression.args) != 1 {
 		return runtimeValue{}, false
 	}
-	argument, ok := evaluateNode(expression.args[0], subject)
+	argument, ok := evaluateNode(expression.args[0], subject, locals)
 	if !ok {
 		return runtimeValue{}, false
 	}
-	if callee.left.text == "Number" {
+	if callee.left.kind == nodeIdentifier && callee.left.text == "Number" {
 		switch callee.text {
 		case "isFinite":
 			return runtimeValue{kind: runtimeBoolean, boolean: argument.kind == runtimeNumber && !math.IsNaN(argument.number) && !math.IsInf(argument.number, 0)}, true
@@ -129,19 +199,53 @@ func evaluateCall(expression *node, subject runtimeValue) (runtimeValue, bool) {
 			return runtimeValue{kind: runtimeBoolean, boolean: argument.kind == runtimeNumber && !math.IsNaN(argument.number) && !math.IsInf(argument.number, 0) && math.Trunc(argument.number) == argument.number}, true
 		}
 	}
-	if callee.left.text == "Math" && callee.text == "abs" && argument.kind == runtimeNumber {
+	if callee.left.kind == nodeIdentifier && callee.left.text == "Math" && callee.text == "abs" && argument.kind == runtimeNumber {
 		argument.number = math.Abs(argument.number)
 		return argument, true
+	}
+	object, ok := evaluateNode(callee.left, subject, locals)
+	if ok && object.kind == runtimeArray && argument.kind == runtimeFunction && (callee.text == "every" || callee.text == "some") {
+		result := callee.text == "every"
+		for index, value := range object.values {
+			callbackLocals := make(map[string]runtimeValue, len(locals)+len(argument.function.params))
+			for name, local := range locals {
+				callbackLocals[name] = local
+			}
+			if len(argument.function.params) > 0 {
+				callbackLocals[argument.function.params[0]] = value
+			}
+			if len(argument.function.params) > 1 {
+				callbackLocals[argument.function.params[1]] = runtimeValue{kind: runtimeNumber, number: float64(index)}
+			}
+			callback, known := evaluateNode(argument.function.left, subject, callbackLocals)
+			truth, truthKnown := truthy(callback)
+			if !known || !truthKnown {
+				return runtimeValue{}, false
+			}
+			if callee.text == "every" && !truth {
+				return runtimeValue{kind: runtimeBoolean, boolean: false}, true
+			}
+			if callee.text == "some" && truth {
+				return runtimeValue{kind: runtimeBoolean, boolean: true}, true
+			}
+		}
+		return runtimeValue{kind: runtimeBoolean, boolean: result}, true
 	}
 	return runtimeValue{}, false
 }
 
-func evaluateBinary(expression *node, subject runtimeValue) (runtimeValue, bool) {
-	left, ok := evaluateNode(expression.left, subject)
+func evaluateBinary(expression *node, subject runtimeValue, locals map[string]runtimeValue) (runtimeValue, bool) {
+	left, ok := evaluateNode(expression.left, subject, locals)
 	if !ok {
 		return runtimeValue{}, false
 	}
-	if expression.text == "&&" || expression.text == "||" {
+	if expression.text == "&&" || expression.text == "||" || expression.text == "??" {
+		if expression.text == "??" {
+			if left.kind != runtimeNull && left.kind != runtimeUnknown {
+				return left, true
+			}
+			return evaluateNode(expression.right, subject, locals)
+		}
 		leftTruthy, ok := truthy(left)
 		if !ok {
 			return runtimeValue{}, false
@@ -149,9 +253,9 @@ func evaluateBinary(expression *node, subject runtimeValue) (runtimeValue, bool)
 		if expression.text == "&&" && !leftTruthy || expression.text == "||" && leftTruthy {
 			return runtimeValue{kind: runtimeBoolean, boolean: leftTruthy}, true
 		}
-		return evaluateNode(expression.right, subject)
+		return evaluateNode(expression.right, subject, locals)
 	}
-	right, ok := evaluateNode(expression.right, subject)
+	right, ok := evaluateNode(expression.right, subject, locals)
 	if !ok || left.kind != right.kind {
 		return runtimeValue{}, false
 	}

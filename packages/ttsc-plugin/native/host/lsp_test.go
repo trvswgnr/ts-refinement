@@ -3,7 +3,9 @@ package host
 import (
 	"encoding/json"
 	"net/url"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -14,10 +16,15 @@ func TestLSPRemovesStaticallyDisprovenAssertion(t *testing.T) {
 	}
 	fileName := filepath.Join(repositoryRoot, "fixtures/ttsc/invalid/index.ts")
 	uri := (&url.URL{Scheme: "file", Path: filepath.ToSlash(fileName)}).String()
-	requestedRange := lspRange{
-		Start: lspPosition{Line: 10, Character: 0},
-		End:   lspPosition{Line: 10, Character: 200},
+	source, err := os.ReadFile(fileName)
+	if err != nil {
+		t.Fatal(err)
 	}
+	start := strings.Index(string(source), "export const knownBad =")
+	if start < 0 {
+		t.Fatal("knownBad fixture declaration was not found")
+	}
+	requestedRange := lspRangeForSpan(string(source), start, len("export const knownBad = -1 as Positive;"))
 	rangeJSON, _ := json.Marshal(requestedRange)
 	contextJSON, _ := json.Marshal(lspCodeActionContext{Only: []string{"quickfix"}})
 	actions, err := computeLSPCodeActions([]string{

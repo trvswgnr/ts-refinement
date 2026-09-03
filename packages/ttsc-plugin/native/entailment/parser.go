@@ -15,18 +15,25 @@ const (
 	nodeBigInt
 	nodeString
 	nodeBoolean
+	nodeNull
+	nodeArray
 	nodeMember
+	nodeIndex
 	nodeCall
+	nodeFunction
 	nodeUnary
 	nodeBinary
+	nodeConditional
 )
 
 type node struct {
-	kind  nodeKind
-	text  string
-	left  *node
-	right *node
-	args  []*node
+	kind   nodeKind
+	text   string
+	left   *node
+	right  *node
+	third  *node
+	args   []*node
+	params []string
 }
 
 type tokenKind uint8
@@ -40,8 +47,13 @@ const (
 	tokenOperator
 	tokenLeftParen
 	tokenRightParen
+	tokenLeftBracket
+	tokenRightBracket
 	tokenDot
 	tokenComma
+	tokenQuestion
+	tokenColon
+	tokenArrow
 )
 
 type token struct {
@@ -111,14 +123,29 @@ func (l *lexer) next() (token, error) {
 		return token{kind: tokenLeftParen, text: "("}, nil
 	case ')':
 		return token{kind: tokenRightParen, text: ")"}, nil
+	case '[':
+		return token{kind: tokenLeftBracket, text: "["}, nil
+	case ']':
+		return token{kind: tokenRightBracket, text: "]"}, nil
 	case '.':
 		return token{kind: tokenDot, text: "."}, nil
 	case ',':
 		return token{kind: tokenComma, text: ","}, nil
+	case '?':
+		if l.index < len(l.source) && l.source[l.index] == '?' {
+			l.index++
+			return token{kind: tokenOperator, text: "??"}, nil
+		}
+		return token{kind: tokenQuestion, text: "?"}, nil
+	case ':':
+		return token{kind: tokenColon, text: ":"}, nil
 	}
-	for _, operator := range []string{"===", "!==", "&&", "||", ">=", "<=", "==", "!="} {
+	for _, operator := range []string{"===", "!==", "=>", "&&", "||", ">=", "<=", "==", "!="} {
 		if strings.HasPrefix(l.source[start:], operator) {
 			l.index = start + len(operator)
+			if operator == "=>" {
+				return token{kind: tokenArrow, text: operator}, nil
+			}
 			return token{kind: tokenOperator, text: operator}, nil
 		}
 	}
@@ -172,16 +199,18 @@ func (p *parser) take() token {
 
 func precedence(operator string) int {
 	switch operator {
-	case "||":
+	case "??":
 		return 1
-	case "&&":
+	case "||":
 		return 2
-	case "===", "!==", "==", "!=", ">", ">=", "<", "<=":
+	case "&&":
 		return 3
-	case "+", "-":
+	case "===", "!==", "==", "!=", ">", ">=", "<", "<=":
 		return 4
-	case "*", "/", "%":
+	case "+", "-":
 		return 5
+	case "*", "/", "%":
+		return 6
 	default:
 		return 0
 	}
@@ -200,7 +229,47 @@ func (p *parser) expression(minimum int) (*node, error) {
 		}
 		left = &node{kind: nodeBinary, text: operator, left: left, right: right}
 	}
+	if minimum == 0 && p.peek().kind == tokenQuestion {
+		p.take()
+		whenTrue, err := p.expression(0)
+		if err != nil {
+			return nil, err
+		}
+		if p.take().kind != tokenColon {
+			return nil, fmt.Errorf("expected ':' in conditional expression")
+		}
+		whenFalse, err := p.expression(0)
+		if err != nil {
+			return nil, err
+		}
+		left = &node{kind: nodeConditional, left: left, right: whenTrue, third: whenFalse}
+	}
 	return left, nil
+}
+
+func (p *parser) arrowParameters() ([]string, bool) {
+	start := p.index
+	parameters := []string{}
+	if p.peek().kind != tokenRightParen {
+		for {
+			parameter := p.take()
+			if parameter.kind != tokenIdentifier {
+				p.index = start
+				return nil, false
+			}
+			parameters = append(parameters, parameter.text)
+			if p.peek().kind != tokenComma {
+				break
+			}
+			p.take()
+		}
+	}
+	if p.take().kind != tokenRightParen || p.peek().kind != tokenArrow {
+		p.index = start
+		return nil, false
+	}
+	p.take()
+	return parameters, true
 }
 
 func (p *parser) prefix() (*node, error) {
@@ -211,8 +280,24 @@ func (p *parser) prefix() (*node, error) {
 		switch tok.text {
 		case "true", "false":
 			current = &node{kind: nodeBoolean, text: tok.text}
+		case "null":
+			current = &node{kind: nodeNull}
+		case "typeof":
+			operand, err := p.expression(7)
+			if err != nil {
+				return nil, err
+			}
+			current = &node{kind: nodeUnary, text: tok.text, left: operand}
 		default:
 			current = &node{kind: nodeIdentifier, text: tok.text}
+			if p.peek().kind == tokenArrow {
+				p.take()
+				body, err := p.expression(0)
+				if err != nil {
+					return nil, err
+				}
+				current = &node{kind: nodeFunction, params: []string{tok.text}, left: body}
+			}
 		}
 	case tokenNumber:
 		current = &node{kind: nodeNumber, text: tok.text}
@@ -224,12 +309,20 @@ func (p *parser) prefix() (*node, error) {
 		if tok.text != "!" && tok.text != "+" && tok.text != "-" {
 			return nil, fmt.Errorf("unexpected prefix operator %q", tok.text)
 		}
-		operand, err := p.expression(6)
+		operand, err := p.expression(7)
 		if err != nil {
 			return nil, err
 		}
 		current = &node{kind: nodeUnary, text: tok.text, left: operand}
 	case tokenLeftParen:
+		if parameters, ok := p.arrowParameters(); ok {
+			body, err := p.expression(0)
+			if err != nil {
+				return nil, err
+			}
+			current = &node{kind: nodeFunction, params: parameters, left: body}
+			break
+		}
 		expression, err := p.expression(0)
 		if err != nil {
 			return nil, err
@@ -238,6 +331,25 @@ func (p *parser) prefix() (*node, error) {
 			return nil, fmt.Errorf("expected closing parenthesis")
 		}
 		current = expression
+	case tokenLeftBracket:
+		elements := []*node{}
+		if p.peek().kind != tokenRightBracket {
+			for {
+				element, err := p.expression(0)
+				if err != nil {
+					return nil, err
+				}
+				elements = append(elements, element)
+				if p.peek().kind != tokenComma {
+					break
+				}
+				p.take()
+			}
+		}
+		if p.take().kind != tokenRightBracket {
+			return nil, fmt.Errorf("expected closing bracket")
+		}
+		current = &node{kind: nodeArray, args: elements}
 	default:
 		return nil, fmt.Errorf("unexpected token %q", tok.text)
 	}
@@ -271,74 +383,135 @@ func (p *parser) prefix() (*node, error) {
 				return nil, fmt.Errorf("expected closing parenthesis")
 			}
 			current = &node{kind: nodeCall, left: current, args: arguments}
+		case tokenLeftBracket:
+			p.take()
+			index, err := p.expression(0)
+			if err != nil {
+				return nil, err
+			}
+			if p.take().kind != tokenRightBracket {
+				return nil, fmt.Errorf("expected closing bracket")
+			}
+			current = &node{kind: nodeIndex, left: current, right: index}
 		default:
 			return current, nil
 		}
 	}
 }
 
-func normalizeSubjects(root *node) {
-	globals := map[string]bool{
-		"Array": true, "Math": true, "Number": true, "Infinity": true, "NaN": true, "undefined": true,
-	}
-	var visit func(*node)
-	visit = func(current *node) {
+var standardGlobals = map[string]bool{
+	"Array": true, "BigInt": true, "Boolean": true, "Infinity": true, "JSON": true,
+	"Map": true, "Math": true, "NaN": true, "Number": true, "Object": true,
+	"RegExp": true, "Set": true, "String": true, "Symbol": true, "WeakMap": true,
+	"WeakSet": true, "isFinite": true, "isNaN": true, "parseFloat": true,
+	"parseInt": true, "undefined": true,
+}
+
+var disallowedGlobals = map[string]bool{
+	"AggregateError": true, "ArrayBuffer": true, "Atomics": true, "BigInt64Array": true,
+	"BigUint64Array": true, "DataView": true, "Date": true, "Error": true,
+	"EvalError": true, "FinalizationRegistry": true, "Float32Array": true,
+	"Float64Array": true, "Function": true, "Int8Array": true, "Int16Array": true,
+	"Int32Array": true, "Intl": true, "Promise": true, "Proxy": true, "RangeError": true,
+	"ReferenceError": true, "Reflect": true, "SharedArrayBuffer": true, "SyntaxError": true,
+	"TypeError": true, "URIError": true, "Uint8Array": true, "Uint8ClampedArray": true,
+	"Uint16Array": true, "Uint32Array": true, "WeakRef": true, "WebAssembly": true,
+	"decodeURI": true, "decodeURIComponent": true, "encodeURI": true,
+	"encodeURIComponent": true, "escape": true, "eval": true, "globalThis": true,
+	"unescape": true,
+}
+
+func normalizeSubjects(root *node, subject string) {
+	localIndex := 0
+	var visit func(*node, map[string]string)
+	visit = func(current *node, locals map[string]string) {
 		if current == nil {
 			return
 		}
-		if current.kind == nodeIdentifier && !globals[current.text] {
+		if current.kind == nodeIdentifier && current.text == subject {
 			current.text = "$subject"
+		} else if current.kind == nodeIdentifier {
+			if local := locals[current.text]; local != "" {
+				current.text = local
+			}
 		}
-		visit(current.left)
-		visit(current.right)
+		nestedLocals := locals
+		if current.kind == nodeFunction {
+			nestedLocals = make(map[string]string, len(locals)+len(current.params))
+			for name, normalized := range locals {
+				nestedLocals[name] = normalized
+			}
+			for index, name := range current.params {
+				normalized := fmt.Sprintf("$local%d", localIndex)
+				localIndex++
+				nestedLocals[name] = normalized
+				current.params[index] = normalized
+			}
+		}
+		visit(current.left, nestedLocals)
+		visit(current.right, nestedLocals)
+		visit(current.third, nestedLocals)
 		for _, argument := range current.args {
-			visit(argument)
+			visit(argument, nestedLocals)
 		}
 	}
-	visit(root)
+	visit(root, map[string]string{})
 }
 
-func validatePredicate(root *node) error {
-	globals := map[string]bool{
-		"Array": true, "Math": true, "Number": true, "Infinity": true, "NaN": true, "undefined": true,
-	}
+func validatePredicate(root *node) (string, error) {
 	subjects := map[string]bool{}
-	var visit func(*node) error
-	visit = func(current *node) error {
+	var visit func(*node, map[string]bool) error
+	visit = func(current *node, locals map[string]bool) error {
 		if current == nil {
 			return nil
 		}
 		if current.kind == nodeIdentifier {
-			if current.text == "Date" {
-				return fmt.Errorf("global Date is not allowed")
+			if disallowedGlobals[current.text] {
+				return fmt.Errorf("global %s is not allowed", current.text)
 			}
-			if !globals[current.text] {
+			if !standardGlobals[current.text] && !locals[current.text] {
 				subjects[current.text] = true
 			}
 		}
 		if current.kind == nodeMember && current.text == "random" && current.left != nil && current.left.kind == nodeIdentifier && current.left.text == "Math" {
 			return fmt.Errorf("global Math.random is not allowed")
 		}
-		if err := visit(current.left); err != nil {
+		nestedLocals := locals
+		if current.kind == nodeFunction {
+			nestedLocals = make(map[string]bool, len(locals)+len(current.params))
+			for name := range locals {
+				nestedLocals[name] = true
+			}
+			for _, parameter := range current.params {
+				nestedLocals[parameter] = true
+			}
+		}
+		if err := visit(current.left, nestedLocals); err != nil {
 			return err
 		}
-		if err := visit(current.right); err != nil {
+		if err := visit(current.right, nestedLocals); err != nil {
+			return err
+		}
+		if err := visit(current.third, nestedLocals); err != nil {
 			return err
 		}
 		for _, argument := range current.args {
-			if err := visit(argument); err != nil {
+			if err := visit(argument, nestedLocals); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
-	if err := visit(root); err != nil {
-		return err
+	if err := visit(root, map[string]bool{}); err != nil {
+		return "", err
 	}
 	if len(subjects) > 1 {
-		return fmt.Errorf("cannot infer subject from %d identifiers", len(subjects))
+		return "", fmt.Errorf("cannot infer subject from %d identifiers", len(subjects))
 	}
-	return nil
+	for subject := range subjects {
+		return subject, nil
+	}
+	return "", nil
 }
 
 func compileNode(root *node, subject string) string {
@@ -359,18 +532,32 @@ func compileNode(root *node, subject string) string {
 		return strconv.Quote(root.text)
 	case nodeBoolean:
 		return root.text
+	case nodeNull:
+		return "null"
+	case nodeArray:
+		elements := make([]string, len(root.args))
+		for index, element := range root.args {
+			elements[index] = compileNode(element, subject)
+		}
+		return "[" + strings.Join(elements, ", ") + "]"
 	case nodeMember:
 		return compileNode(root.left, subject) + "." + root.text
+	case nodeIndex:
+		return compileNode(root.left, subject) + "[" + compileNode(root.right, subject) + "]"
 	case nodeCall:
 		arguments := make([]string, len(root.args))
 		for index, argument := range root.args {
 			arguments[index] = compileNode(argument, subject)
 		}
 		return compileNode(root.left, subject) + "(" + strings.Join(arguments, ", ") + ")"
+	case nodeFunction:
+		return "(" + strings.Join(root.params, ", ") + ") => " + compileNode(root.left, subject)
 	case nodeUnary:
 		return "(" + root.text + compileNode(root.left, subject) + ")"
 	case nodeBinary:
 		return "(" + compileNode(root.left, subject) + " " + root.text + " " + compileNode(root.right, subject) + ")"
+	case nodeConditional:
+		return "(" + compileNode(root.left, subject) + " ? " + compileNode(root.right, subject) + " : " + compileNode(root.third, subject) + ")"
 	default:
 		return ""
 	}
@@ -391,18 +578,32 @@ func canonical(root *node) string {
 		return "string:" + strconv.Quote(root.text)
 	case nodeBoolean:
 		return "boolean:" + root.text
+	case nodeNull:
+		return "null"
+	case nodeArray:
+		elements := make([]string, len(root.args))
+		for index, element := range root.args {
+			elements[index] = canonical(element)
+		}
+		return "array(" + strings.Join(elements, ",") + ")"
 	case nodeMember:
 		return "member(" + canonical(root.left) + "," + root.text + ")"
+	case nodeIndex:
+		return "index(" + canonical(root.left) + "," + canonical(root.right) + ")"
 	case nodeCall:
 		arguments := make([]string, len(root.args))
 		for index, argument := range root.args {
 			arguments[index] = canonical(argument)
 		}
 		return "call(" + canonical(root.left) + "," + strings.Join(arguments, ",") + ")"
+	case nodeFunction:
+		return "function(" + strings.Join(root.params, ",") + "," + canonical(root.left) + ")"
 	case nodeUnary:
 		return "unary(" + root.text + "," + canonical(root.left) + ")"
 	case nodeBinary:
 		return "binary(" + root.text + "," + canonical(root.left) + "," + canonical(root.right) + ")"
+	case nodeConditional:
+		return "conditional(" + canonical(root.left) + "," + canonical(root.right) + "," + canonical(root.third) + ")"
 	default:
 		return ""
 	}

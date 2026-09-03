@@ -3,6 +3,7 @@ import type { Refined } from "ts-refinement";
 type Positive = Refined<number, "value > 0">;
 type GreaterThanFive = Refined<number, "value > 5">;
 type NonEmpty = Refined<string, "value.length > 0">;
+type AllPositive = Refined<number[], "values.every((item) => item > 0)">;
 type NestedPositive = { readonly value: Positive };
 type NestedGreaterThanFive = { readonly value: GreaterThanFive };
 type Pair = readonly [Positive, NonEmpty?, ...Positive[]];
@@ -32,6 +33,7 @@ interface RawTree {
 }
 
 declare const dynamic: number;
+declare const dynamicArray: number[];
 declare const greaterThanFive: GreaterThanFive;
 declare const nestedGreaterThanFive: NestedGreaterThanFive;
 declare const dynamicUser: { readonly age: number; readonly name?: string };
@@ -44,7 +46,9 @@ declare const dynamicResult:
 declare const dynamicTree: RawTree;
 
 export const knownGood = 5 as Positive;
+export const knownAllPositive = [1, 2, 3] as AllPositive;
 export const runtimeChecked = dynamic as Positive;
+export const runtimeAllPositive = dynamicArray as AllPositive;
 export const entailedAssignment: Positive = greaterThanFive;
 export let entailedMutation: Positive = knownGood;
 entailedMutation = greaterThanFive;

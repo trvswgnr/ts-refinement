@@ -24,10 +24,11 @@ func ParsePredicate(source string) (Predicate, error) {
 	if err != nil {
 		return Predicate{}, err
 	}
-	if err := validatePredicate(root); err != nil {
+	subject, err := validatePredicate(root)
+	if err != nil {
 		return Predicate{}, err
 	}
-	normalizeSubjects(root)
+	normalizeSubjects(root, subject)
 	return Predicate{Source: source, root: root, key: canonical(root)}, nil
 }
 

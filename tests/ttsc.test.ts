@@ -57,7 +57,7 @@ describe("TypeScript-Go native plugin", () => {
       readFileSync(resolve(validOutDir, ".ts-refinement-manifest.json"), "utf8"),
     );
     expect(manifest).toMatchObject({ schemaVersion: 1 });
-    expect(manifest.sites).toHaveLength(8);
+    expect(manifest.sites).toHaveLength(9);
     expect(manifest.sites.every((site: { module: string }) => site.module === "index.ts")).toBe(
       true,
     );
