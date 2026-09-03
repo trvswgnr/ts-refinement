@@ -77,6 +77,12 @@ interface NestedRefinementFixture {
   readonly checkValues: (value: number[]) => number[];
 }
 
+interface IndexSignatureFixture {
+  readonly checkDataScores: (value: Record<string, number>) => Record<string, number>;
+  readonly checkNumericScores: (value: Record<string, number>) => Record<string, number>;
+  readonly checkSymbolScores: (value: Record<symbol, number>) => Record<symbol, number>;
+}
+
 const rebuildTestTimeout = 15_000;
 
 function generatedPosition(code: string, offset: number) {
@@ -324,6 +330,33 @@ describe("Rolldown plugin", () => {
     };
     cyclicTree.children.push(cyclicTree);
     expect(nested.checkTree(cyclicTree)).toBe(cyclicTree);
+  });
+
+  it("validates each index-signature key domain", async () => {
+    const bundle = await build(fixtureFile("index-signatures.ts"));
+    const generated = await bundle.generate({ format: "esm" });
+    const chunk = generated.output.find((output) => output.type === "chunk");
+    if (chunk === undefined) throw new Error("bundle did not emit a chunk");
+    const moduleUrl = `data:text/javascript;base64,${Buffer.from(chunk.code).toString("base64")}#${Date.now()}`;
+    const fixture = (await import(moduleUrl)) as IndexSignatureFixture;
+
+    expect(() => fixture.checkNumericScores({ "-1": -1 })).toThrowError(
+      expect.objectContaining({ path: '["-1"]', value: -1 }),
+    );
+    expect(() => fixture.checkNumericScores({ "1.5": -2 })).toThrowError(
+      expect.objectContaining({ path: '["1.5"]', value: -2 }),
+    );
+    const symbol = Symbol("bad");
+    expect(() => fixture.checkSymbolScores({ [symbol]: -1 })).toThrowError(
+      expect.objectContaining({ path: "[Symbol(bad)]", value: -1 }),
+    );
+    expect(fixture.checkDataScores({ "data-ok": 1, other: -1 })).toEqual({
+      "data-ok": 1,
+      other: -1,
+    });
+    expect(() => fixture.checkDataScores({ "data-bad": -1 })).toThrowError(
+      expect.objectContaining({ path: '["data-bad"]', value: -1 }),
+    );
   });
 
   it("analyzes and maps the exact source supplied by a prior plugin", async () => {

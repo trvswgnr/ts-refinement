@@ -2,6 +2,7 @@ package host
 
 import (
 	"fmt"
+	"math"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -14,7 +15,9 @@ import (
 )
 
 var identifierProperty = regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*$`)
-var numericProperty = regexp.MustCompile(`^(?:0|[1-9][0-9]*)$`)
+var decimalNumber = regexp.MustCompile(`^[+-]?(?:(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?)$`)
+var prefixedNumber = regexp.MustCompile(`^0(?:[xX][0-9A-Fa-f]+|[oO][0-7]+|[bB][01]+)$`)
+var bigintIndexValue = regexp.MustCompile(`^-?(?:0|[1-9][0-9]*|0[xX][0-9A-Fa-f]+|0[oO][0-7]+|0[bB][01]+)$`)
 
 type staticLeaf struct {
 	node *shimast.Node
@@ -142,13 +145,16 @@ func staticLeavesAtPath(
 		}
 		return leaves, true
 	case analysis.PathIndex:
+		if segment.Key == "symbol" {
+			return nil, false
+		}
 		properties, known := staticObjectProperties(node)
 		if !known {
 			return nil, false
 		}
 		leaves := []staticLeaf{}
 		for name, child := range properties {
-			if segment.Key == "number" && !numericProperty.MatchString(name) {
+			if !matchesIndexName(segment, name) {
 				continue
 			}
 			children, known := staticLeavesAtPath(file, child, remaining, propertyPath(path, name))
@@ -161,6 +167,74 @@ func staticLeavesAtPath(
 	default:
 		return nil, false
 	}
+}
+
+func matchesIndexName(segment analysis.PathSegment, name string) bool {
+	switch segment.Key {
+	case "string":
+		return true
+	case "number":
+		if name == "-0" {
+			return false
+		}
+		value, err := strconv.ParseFloat(name, 64)
+		return err == nil && strconv.FormatFloat(value, 'g', -1, 64) == name || name == "NaN" || name == "Infinity" || name == "-Infinity"
+	case "template":
+		captures, ok := templateIndexCaptures(segment.Pattern, name)
+		if !ok {
+			return false
+		}
+		for index, capture := range captures {
+			switch segment.Pattern.Placeholders[index] {
+			case "number":
+				if !isTemplateNumber(capture) {
+					return false
+				}
+			case "bigint":
+				if !bigintIndexValue.MatchString(capture) {
+					return false
+				}
+			}
+		}
+		return true
+	default:
+		return false
+	}
+}
+
+func templateIndexCaptures(pattern *analysis.IndexPattern, name string) ([]string, bool) {
+	if pattern == nil || len(pattern.Texts) != len(pattern.Placeholders)+1 {
+		return nil, false
+	}
+	var source strings.Builder
+	source.WriteString("^")
+	for index, text := range pattern.Texts {
+		source.WriteString(regexp.QuoteMeta(text))
+		if index < len(pattern.Placeholders) {
+			source.WriteString("(?s:(.*?))")
+		}
+	}
+	source.WriteString("$")
+	match := regexp.MustCompile(source.String()).FindStringSubmatch(name)
+	if match == nil {
+		return nil, false
+	}
+	return match[1:], true
+}
+
+func isTemplateNumber(value string) bool {
+	if value == "" {
+		return false
+	}
+	trimmed := strings.TrimSpace(value)
+	if prefixedNumber.MatchString(trimmed) {
+		return true
+	}
+	if !decimalNumber.MatchString(trimmed) {
+		return false
+	}
+	number, err := strconv.ParseFloat(trimmed, 64)
+	return err == nil && !math.IsInf(number, 0) && !math.IsNaN(number)
 }
 
 func unwrapStaticExpression(node *shimast.Node) *shimast.Node {

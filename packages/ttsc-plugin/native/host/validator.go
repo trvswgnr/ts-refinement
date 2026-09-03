@@ -3,6 +3,7 @@ package host
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/ts-refinement/ttsc-plugin/native/analysis"
@@ -164,15 +165,22 @@ func emitTraversal(
 		case analysis.PathIndex:
 			key := fmt.Sprintf("__ts_refinement_key%s_%d", namespace, variableIndex)
 			variableIndex++
+			match := fmt.Sprintf("__ts_refinement_match%s_%d", namespace, variableIndex)
+			variableIndex++
 			pathSegment := fmt.Sprintf("__ts_refinement_path%s_%d", namespace, variableIndex)
 			variableIndex++
-			lines := []string{fmt.Sprintf("%sfor (const %s of Object.keys(%s)) {", indent, key, subject)}
-			if segment.Key == "number" {
-				lines = append(lines, fmt.Sprintf("%s  if (!/^(?:0|[1-9]\\d*)$/.test(%s)) continue;", indent, key))
+			keys := fmt.Sprintf("__ts_refinement_keys%s_%d", namespace, variableIndex)
+			inherited := fmt.Sprintf("__ts_refinement_inherited%s_%d", namespace, variableIndex)
+			variableIndex++
+			lines := []string{
+				fmt.Sprintf("%sconst %s = new Set(Reflect.ownKeys(%s));", indent, keys, subject),
+				fmt.Sprintf("%sfor (const %s in %s) %s.add(%s);", indent, inherited, subject, keys, inherited),
+				fmt.Sprintf("%sfor (const %s of %s) {", indent, key, keys),
 			}
+			lines = append(lines, indexKeyGuard(segment, key, match, indent+"  ")...)
 			lines = append(lines,
 				fmt.Sprintf("%s  const %s = %s[%s];", indent, nested, subject, key),
-				fmt.Sprintf("%s  const %s = /^[A-Za-z_$][\\w$]*$/.test(%s) ? \".\" + %s : \"[\" + JSON.stringify(%s) + \"]\";", indent, pathSegment, key, key, key),
+				fmt.Sprintf("%s  const %s = typeof %s === \"symbol\" ? \"[\" + String(%s) + \"]\" : /^[A-Za-z_$][\\w$]*$/.test(%s) ? \".\" + %s : \"[\" + JSON.stringify(%s) + \"]\";", indent, pathSegment, key, key, key, key, key),
 			)
 			lines = append(lines, visit(nested, fmt.Sprintf("(%s + %s)", path, pathSegment), tail, indent+"  ")...)
 			return append(lines, indent+"}")
@@ -192,6 +200,49 @@ func emitTraversal(
 		}
 	}
 	return strings.Join(visit(rootSubject, rootPath, segments, rootIndent), "\n")
+}
+
+func indexKeyGuard(segment analysis.PathSegment, key, match, indent string) []string {
+	switch segment.Key {
+	case "number":
+		return []string{fmt.Sprintf("%sif (typeof %s !== \"string\" || String(Number(%s)) !== %s) continue;", indent, key, key, key)}
+	case "string":
+		return []string{fmt.Sprintf("%sif (typeof %s !== \"string\") continue;", indent, key)}
+	case "symbol":
+		return []string{fmt.Sprintf("%sif (typeof %s !== \"symbol\") continue;", indent, key)}
+	case "template":
+		return templateKeyGuard(segment.Pattern, key, match, indent)
+	default:
+		return []string{fmt.Sprintf("%scontinue;", indent)}
+	}
+}
+
+func templateKeyGuard(pattern *analysis.IndexPattern, key, match, indent string) []string {
+	var source strings.Builder
+	conditions := []string{}
+	for index, text := range pattern.Texts {
+		source.WriteString(strings.ReplaceAll(regexp.QuoteMeta(text), "/", "\\/"))
+		if index >= len(pattern.Placeholders) {
+			continue
+		}
+		source.WriteString("([\\s\\S]*?)")
+		capture := fmt.Sprintf("%s[%d]", match, index+1)
+		switch pattern.Placeholders[index] {
+		case "number":
+			conditions = append(conditions, fmt.Sprintf("%s !== \"\" && Number.isFinite(Number(%s))", capture, capture))
+		case "bigint":
+			conditions = append(conditions, fmt.Sprintf("/^-?(?:0|[1-9]\\d*|0[xX][\\dA-Fa-f]+|0[oO][0-7]+|0[bB][01]+)$/.test(%s)", capture))
+		}
+	}
+	condition := ""
+	if len(conditions) > 0 {
+		condition = " || !(" + strings.Join(conditions, " && ") + ")"
+	}
+	return []string{
+		fmt.Sprintf("%sif (typeof %s !== \"string\") continue;", indent, key),
+		fmt.Sprintf("%sconst %s = /^%s$/u.exec(%s);", indent, match, source.String(), key),
+		fmt.Sprintf("%sif (%s === null%s) continue;", indent, match, condition),
+	}
 }
 
 func pathKey(path []analysis.PathSegment) string {

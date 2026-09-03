@@ -51,6 +51,37 @@ function propertyPathSegment(name: string): string {
   return /^[A-Za-z_$][\w$]*$/u.test(name) ? `.${name}` : `[${JSON.stringify(name)}]`;
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\/]/gu, "\\$&");
+}
+
+function templateIndexGuard(
+  segment: Extract<RefinementPathSegment, { readonly key: "template" }>,
+  key: string,
+  match: string,
+  indent: string,
+): readonly string[] {
+  const source = segment.pattern.texts
+    .map(
+      (text, index) =>
+        `${escapeRegExp(text)}${index < segment.pattern.placeholders.length ? "([\\s\\S]*?)" : ""}`,
+    )
+    .join("");
+  const conditions = segment.pattern.placeholders.flatMap((placeholder, index) => {
+    const capture = `${match}[${index + 1}]`;
+    if (placeholder === "string") return [];
+    if (placeholder === "number") {
+      return [`${capture} !== "" && Number.isFinite(Number(${capture}))`];
+    }
+    return [`/^-?(?:0|[1-9]\\d*|0[xX][\\dA-Fa-f]+|0[oO][0-7]+|0[bB][01]+)$/.test(${capture})`];
+  });
+  return [
+    `${indent}if (typeof ${key} !== "string") continue;`,
+    `${indent}const ${match} = /^${source}$/u.exec(${key});`,
+    `${indent}if (${match} === null${conditions.length === 0 ? "" : ` || !(${conditions.join(" && ")})`}) continue;`,
+  ];
+}
+
 type TraversalLeaf = (subject: string, path: string, indent: string) => readonly string[];
 
 function emitTraversal(
@@ -111,17 +142,27 @@ function emitTraversal(
     if (segment.kind === "index") {
       const key = `key${namespace}_${variableIndex}`;
       variableIndex += 1;
+      const match = `match${namespace}_${variableIndex}`;
+      variableIndex += 1;
       const keyGuard =
         segment.key === "number"
-          ? `${indent}  if (!/^(?:0|[1-9]\\d*)$/.test(${key})) continue;`
-          : null;
+          ? [
+              `${indent}  if (typeof ${key} !== "string" || String(Number(${key})) !== ${key}) continue;`,
+            ]
+          : segment.key === "string"
+            ? [`${indent}  if (typeof ${key} !== "string") continue;`]
+            : segment.key === "symbol"
+              ? [`${indent}  if (typeof ${key} !== "symbol") continue;`]
+              : templateIndexGuard(segment, key, match, `${indent}  `);
       const pathSegment = `pathSegment${namespace}_${variableIndex}`;
       variableIndex += 1;
       return [
-        `${indent}for (const ${key} of Object.keys(${subject})) {`,
-        ...(keyGuard === null ? [] : [keyGuard]),
+        `${indent}const keys${namespace}_${variableIndex} = new Set(Reflect.ownKeys(${subject}));`,
+        `${indent}for (const inherited${namespace}_${variableIndex} in ${subject}) keys${namespace}_${variableIndex}.add(inherited${namespace}_${variableIndex});`,
+        `${indent}for (const ${key} of keys${namespace}_${variableIndex}) {`,
+        ...keyGuard,
         `${indent}  const ${nested} = ${subject}[${key}];`,
-        `${indent}  const ${pathSegment} = /^[A-Za-z_$][\\w$]*$/.test(${key}) ? "." + ${key} : "[" + JSON.stringify(${key}) + "]";`,
+        `${indent}  const ${pathSegment} = typeof ${key} === "symbol" ? "[" + String(${key}) + "]" : /^[A-Za-z_$][\\w$]*$/.test(${key}) ? "." + ${key} : "[" + JSON.stringify(${key}) + "]";`,
         ...visit(nested, `(${path} + ${pathSegment})`, remaining, `${indent}  `),
         `${indent}}`,
       ];

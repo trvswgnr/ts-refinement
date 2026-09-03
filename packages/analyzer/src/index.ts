@@ -63,6 +63,7 @@ export {
   type RefinementDefinition,
   type RefinementCheck,
   type RefinementChecksResolution,
+  type RefinementIndexPattern,
   type RefinementPathSegment,
   type RefinementRecursion,
   type RefinementResolution,

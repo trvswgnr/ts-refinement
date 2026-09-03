@@ -171,6 +171,31 @@ describe("TypeScript refinement analysis", () => {
     expect(results[1]?.diagnostics[0]?.message).toContain("at '[0]'");
   });
 
+  it("matches numeric, symbol, and template-literal index domains", () => {
+    const state = fixtureProgram();
+    const invalidSource = state.program.getSourceFile(fixtureFile("index-signatures-invalid.ts"));
+    const runtimeSource = state.program.getSourceFile(fixtureFile("index-signatures.ts"));
+    if (invalidSource === undefined || runtimeSource === undefined) {
+      throw new Error("fixture was not loaded");
+    }
+
+    const invalidResults = analyzeSourceFile(state.context, invalidSource);
+    expect(invalidResults.map((result) => result.proof.kind)).toEqual(["false", "false"]);
+    expect(invalidResults.map((result) => result.diagnostics[0]?.code)).toEqual([90200, 90200]);
+
+    const runtimeResults = analyzeSourceFile(state.context, runtimeSource);
+    expect(runtimeResults).toHaveLength(3);
+    expect(runtimeResults[0]?.site.checks[0]?.path).toEqual([{ key: "number", kind: "index" }]);
+    expect(runtimeResults[1]?.site.checks[0]?.path).toEqual([{ key: "symbol", kind: "index" }]);
+    expect(runtimeResults[2]?.site.checks[0]?.path).toEqual([
+      {
+        key: "template",
+        kind: "index",
+        pattern: { placeholders: ["string"], texts: ["data-", ""] },
+      },
+    ]);
+  });
+
   it("evaluates arithmetic through nested refinement assertions", () => {
     const state = fixtureProgram();
     const source = state.program.getSourceFile(fixtureFile("nested-static.ts"));

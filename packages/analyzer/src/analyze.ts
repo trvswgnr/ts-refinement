@@ -90,6 +90,46 @@ function unknownLeaf(path: string): readonly StaticRefinementLeaf[] {
   return [{ path, value: unknownValue }];
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+function templateIndexCaptures(
+  segment: Extract<RefinementPathSegment, { readonly key: "template" }>,
+  name: string,
+): readonly string[] | null {
+  const source = segment.pattern.texts
+    .map(
+      (text, index) =>
+        `${escapeRegExp(text)}${index < segment.pattern.placeholders.length ? "([\\s\\S]*?)" : ""}`,
+    )
+    .join("");
+  return new RegExp(`^${source}$`, "u").exec(name)?.slice(1) ?? null;
+}
+
+function isBigIntIndexValue(value: string): boolean {
+  return /^-?(?:0|[1-9]\d*|0[xX][\dA-Fa-f]+|0[oO][0-7]+|0[bB][01]+)$/u.test(value);
+}
+
+function matchesIndexSegment(
+  segment: Extract<RefinementPathSegment, { readonly kind: "index" }>,
+  name: string,
+): boolean {
+  if (segment.key === "string") return true;
+  if (segment.key === "number") return String(Number(name)) === name;
+  if (segment.key === "symbol") return false;
+  const captures = templateIndexCaptures(segment, name);
+  return (
+    captures !== null &&
+    captures.every((capture, index) => {
+      const placeholder = segment.pattern.placeholders[index];
+      if (placeholder === "string") return true;
+      if (placeholder === "number") return capture !== "" && Number.isFinite(Number(capture));
+      return isBigIntIndexValue(capture);
+    })
+  );
+}
+
 function valuesAtUnion(
   value: StaticValue,
   segment: Extract<RefinementPathSegment, { readonly kind: "union" }>,
@@ -151,7 +191,7 @@ function valuesAtIndex(
     return unknownLeaf(path);
   }
   return Object.entries(value.value).flatMap(([name, child]) => {
-    if (segment.key === "number" && !/^(?:0|[1-9]\d*)$/u.test(name)) return [];
+    if (!matchesIndexSegment(segment, name)) return [];
     return valuesAtPath(knownValue(child), remaining, propertyPath(path, name));
   });
 }

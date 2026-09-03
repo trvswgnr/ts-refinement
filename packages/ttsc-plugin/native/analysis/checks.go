@@ -2,6 +2,7 @@ package analysis
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	shimast "github.com/microsoft/typescript-go/shim/ast"
@@ -20,12 +21,18 @@ const (
 type PathSegment struct {
 	Kind     string
 	Key      string
+	Pattern  *IndexPattern
 	Name     string
 	Optional bool
 	Index    int
 	Start    int
 	Property string
 	Value    any
+}
+
+type IndexPattern struct {
+	Placeholders []string
+	Texts        []string
 }
 
 type Check struct {
@@ -169,16 +176,64 @@ func ResolveChecks(checker *shimchecker.Checker, targetType *shimchecker.Type, l
 			}))
 		}
 		for _, index := range shimchecker.Checker_getIndexInfosOfType(checker, target) {
-			key := "string"
-			if index.KeyType().Flags()&shimchecker.TypeFlagsNumberLike != 0 {
-				key = "number"
+			segment, ok := indexPathSegment(index.KeyType())
+			if !ok {
+				result.Issues = append(result.Issues, Issue{
+					Code:    DiagnosticUnableResolveMetadata,
+					Message: fmt.Sprintf("Index signature key type '%s' cannot be validated at runtime.", checker.TypeToString(index.KeyType())),
+				})
+				continue
 			}
-			visit(index.ValueType(), appendPath(path, PathSegment{Kind: PathIndex, Key: key}))
+			visit(index.ValueType(), appendPath(path, segment))
 		}
 	}
 
 	visit(targetType, nil)
 	return result
+}
+
+func indexPathSegment(keyType *shimchecker.Type) (PathSegment, bool) {
+	switch {
+	case keyType.Flags()&shimchecker.TypeFlagsNumberLike != 0:
+		return PathSegment{Kind: PathIndex, Key: "number"}, true
+	case keyType.Flags()&shimchecker.TypeFlagsESSymbolLike != 0:
+		return PathSegment{Kind: PathIndex, Key: "symbol"}, true
+	case keyType.Flags()&shimchecker.TypeFlagsTemplateLiteral != 0:
+		template := keyType.AsTemplateLiteralType()
+		placeholders := make([]string, len(template.Types()))
+		for index, placeholderType := range template.Types() {
+			placeholder, ok := templateIndexPlaceholder(placeholderType)
+			if !ok {
+				return PathSegment{}, false
+			}
+			placeholders[index] = placeholder
+		}
+		return PathSegment{
+			Kind: PathIndex,
+			Key:  "template",
+			Pattern: &IndexPattern{
+				Placeholders: placeholders,
+				Texts:        append([]string(nil), template.Texts()...),
+			},
+		}, true
+	case keyType.Flags()&shimchecker.TypeFlagsStringLike != 0:
+		return PathSegment{Kind: PathIndex, Key: "string"}, true
+	default:
+		return PathSegment{}, false
+	}
+}
+
+func templateIndexPlaceholder(target *shimchecker.Type) (string, bool) {
+	switch {
+	case target.Flags()&(shimchecker.TypeFlagsAny|shimchecker.TypeFlagsString) != 0:
+		return "string", true
+	case target.Flags()&shimchecker.TypeFlagsNumber != 0:
+		return "number", true
+	case target.Flags()&shimchecker.TypeFlagsBigInt != 0:
+		return "bigint", true
+	default:
+		return "", false
+	}
 }
 
 func arrayElementType(checker *shimchecker.Checker, target *shimchecker.Type) *shimchecker.Type {

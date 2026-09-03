@@ -12,6 +12,9 @@ type NestedPositive = { readonly value: Positive };
 type NestedGreaterThanFive = { readonly value: GreaterThanFive };
 type Pair = readonly [Positive, NonEmpty?, ...Positive[]];
 type Scores = { readonly [name: string]: Positive };
+type NumericScores = { readonly [key: number]: Positive };
+type SymbolScores = { readonly [key: symbol]: Positive };
+type DataScores = { readonly [key: `data-${string}`]: Positive };
 
 interface User {
   readonly age: Positive;
@@ -46,6 +49,9 @@ declare const dynamicUser: { readonly age: number; readonly name?: string };
 declare const dynamicValues: number[];
 declare const dynamicPair: readonly [number, string?, ...number[]];
 declare const dynamicScores: Readonly<Record<string, number>>;
+declare const dynamicNumericScores: Readonly<Record<number, number>>;
+declare const dynamicSymbolScores: { readonly [key: symbol]: number };
+declare const dynamicDataScores: { readonly [key: `data-${string}`]: number };
 declare const dynamicResult:
   | { readonly kind: "count"; readonly count: number }
   | { readonly kind: "user"; readonly user: { readonly age: number; readonly name?: string } };
@@ -106,5 +112,8 @@ export const runtimeValues = dynamicValues as Positive[];
 export const runtimeBox = { value: dynamic } as Box<Positive>;
 export const runtimePair = dynamicPair as Pair;
 export const runtimeScores = dynamicScores as Scores;
+export const runtimeNumericScores = dynamicNumericScores as NumericScores;
+export const runtimeSymbolScores = dynamicSymbolScores as SymbolScores;
+export const runtimeDataScores = dynamicDataScores as DataScores;
 export const runtimeResult = dynamicResult as Result;
 export const runtimeTree = dynamicTree as Tree;

@@ -25,9 +25,17 @@ export interface RefinementDefinition {
   readonly predicates: readonly NormalizedPredicate[];
 }
 
+export interface RefinementIndexPattern {
+  readonly placeholders: readonly ("bigint" | "number" | "string")[];
+  readonly texts: readonly string[];
+}
+
 export type RefinementPathSegment =
   | { readonly kind: "array" }
-  | { readonly key: "number" | "string"; readonly kind: "index" }
+  | { readonly key: "number"; readonly kind: "index" }
+  | { readonly key: "string"; readonly kind: "index" }
+  | { readonly key: "symbol"; readonly kind: "index" }
+  | { readonly key: "template"; readonly kind: "index"; readonly pattern: RefinementIndexPattern }
   | { readonly kind: "property"; readonly name: string; readonly optional: boolean }
   | { readonly index: number; readonly kind: "tuple"; readonly optional: boolean }
   | { readonly kind: "tupleRest"; readonly start: number }
@@ -550,6 +558,47 @@ function arrayElementType(context: AnalyzerContext, type: ts.Type): ts.Type | un
   return context.checker.getTypeArguments(type as ts.TypeReference)[0];
 }
 
+function templateIndexPlaceholder(
+  context: AnalyzerContext,
+  type: ts.Type,
+): "bigint" | "number" | "string" | null {
+  if ((type.flags & (context.ts.TypeFlags.Any | context.ts.TypeFlags.String)) !== 0) {
+    return "string";
+  }
+  if ((type.flags & context.ts.TypeFlags.Number) !== 0) return "number";
+  if ((type.flags & context.ts.TypeFlags.BigInt) !== 0) return "bigint";
+  return null;
+}
+
+function indexPathSegment(
+  context: AnalyzerContext,
+  keyType: ts.Type,
+): Extract<RefinementPathSegment, { readonly kind: "index" }> | null {
+  if ((keyType.flags & context.ts.TypeFlags.NumberLike) !== 0) {
+    return { key: "number", kind: "index" };
+  }
+  if ((keyType.flags & context.ts.TypeFlags.ESSymbolLike) !== 0) {
+    return { key: "symbol", kind: "index" };
+  }
+  if ((keyType.flags & context.ts.TypeFlags.TemplateLiteral) !== 0) {
+    const template = keyType as ts.TemplateLiteralType;
+    const placeholders = template.types.map((type) => templateIndexPlaceholder(context, type));
+    if (placeholders.some((placeholder) => placeholder === null)) return null;
+    return {
+      key: "template",
+      kind: "index",
+      pattern: {
+        placeholders: placeholders.filter((placeholder) => placeholder !== null),
+        texts: template.texts,
+      },
+    };
+  }
+  if ((keyType.flags & context.ts.TypeFlags.StringLike) !== 0) {
+    return { key: "string", kind: "index" };
+  }
+  return null;
+}
+
 function discriminantValue(
   context: AnalyzerContext,
   type: ts.Type,
@@ -831,9 +880,15 @@ export function resolveRefinementChecks(
       visit(withoutUndefined(context, childType), [...path, { kind: "property", name, optional }]);
     }
     for (const indexInfo of context.checker.getIndexInfosOfType(type)) {
-      const key =
-        (indexInfo.keyType.flags & context.ts.TypeFlags.NumberLike) !== 0 ? "number" : "string";
-      visit(indexInfo.type, [...path, { key, kind: "index" }]);
+      const segment = indexPathSegment(context, indexInfo.keyType);
+      if (segment === null) {
+        issues.push({
+          code: DiagnosticCode.UnableToResolveMetadata,
+          message: `Index signature key type '${context.checker.typeToString(indexInfo.keyType)}' cannot be validated at runtime.`,
+        });
+      } else {
+        visit(indexInfo.type, [...path, segment]);
+      }
     }
   }
 
