@@ -66,7 +66,7 @@ describe("shared entailment corpus", () => {
       const source = entry.source.map(predicate);
       const target = entry.target.map(predicate);
       expect(entails(source, target, entry.facts), entry.name).toBe(entry.expected);
-      if (!entry.expected) continue;
+      let sawCounterexample = false;
       for (const sample of entry.samples) {
         const sourceResults = source.map((item) =>
           evaluateExpression(item.expression, { known: true, value: sample }),
@@ -75,12 +75,16 @@ describe("shared entailment corpus", () => {
           evaluateExpression(item.expression, { known: true, value: sample }),
         );
         if ([...sourceResults, ...targetResults].some((result) => !result.known)) continue;
-        expect(
-          [...sourceResults, ...targetResults].every(
-            (result) => result.known && Boolean(result.value),
-          ),
-          `${entry.name}: ${String(sample)}`,
-        ).toBe(true);
+        const sourceHolds = sourceResults.every((result) => result.known && Boolean(result.value));
+        const targetHolds = targetResults.every((result) => result.known && Boolean(result.value));
+        if (entry.expected) {
+          expect(sourceHolds && targetHolds, `${entry.name}: ${String(sample)}`).toBe(true);
+        } else if (sourceHolds && !targetHolds) {
+          sawCounterexample = true;
+        }
+      }
+      if (!entry.expected && entry.name.startsWith("generated number implication ")) {
+        expect(sawCounterexample, entry.name).toBe(true);
       }
     }
   });

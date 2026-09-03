@@ -4,7 +4,6 @@ import {
   assert,
   bigInt,
   constantFrom,
-  double,
   integer,
   oneof,
   property,
@@ -21,7 +20,6 @@ import {
   type NormalizedPredicate,
   type StaticRuntimeValue,
 } from "@ts-refinement/analyzer";
-import { numberPredicateSources } from "../spec/entailment-generators.ts";
 
 function predicate(source: string): NormalizedPredicate {
   const parsed = parsePredicate(ts, source);
@@ -182,23 +180,6 @@ describe("normalized predicate entailment", () => {
         const item = predicate(text);
         expect(entails([item], [item])).toBe(true);
       }),
-    );
-  });
-
-  it("never proves an invalid supported number implication over generated samples", () => {
-    const conjunction = numberPredicateSources.map(predicates);
-    const value = oneof(
-      constantFrom(NaN, Infinity, -Infinity, -0, 0, 0.5, -0.5),
-      double({ noDefaultInfinity: true, noNaN: true }),
-    );
-
-    assert(
-      property(conjunction, conjunction, value, (source, target, sample) => {
-        if (entails(source, target) && holds(source, sample)) {
-          expect(holds(target, sample)).toBe(true);
-        }
-      }),
-      { numRuns: 1_000 },
     );
   });
 

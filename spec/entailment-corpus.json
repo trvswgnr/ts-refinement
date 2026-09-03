@@ -147,438 +147,775 @@
       "target": ["Math.abs(value) > 0"]
     },
     {
-      "expected": false,
-      "samples": [],
+      "expected": true,
+      "samples": [-7],
       "source": ["n === -7"],
-      "target": ["n === 18"],
+      "target": ["n === -7"],
       "name": "generated number implication 001"
     },
     {
       "expected": false,
-      "samples": [],
-      "source": ["Number.isFinite(n)"],
-      "target": ["-n < 14", "-n <= 3", "2 * n + 1 < -18"],
+      "samples": [-7],
+      "source": ["n === -7"],
+      "target": ["n === 18"],
       "name": "generated number implication 002"
     },
     {
-      "expected": false,
-      "samples": [],
-      "source": ["n === -1", "-n >= 17", "-n >= -2"],
-      "target": ["2 * n + 1 >= 19"],
+      "expected": true,
+      "samples": [-128, -127.75, -127.5],
+      "source": ["Number.isFinite(n)"],
+      "target": ["Number.isFinite(n)"],
       "name": "generated number implication 003"
     },
     {
       "expected": false,
-      "samples": [],
-      "source": ["2 * n + 1 <= 7", "2 * n + 1 > -2", "-n < -16"],
-      "target": ["-n <= 16"],
+      "samples": [-128, -127.75, -127.5],
+      "source": ["Number.isFinite(n)"],
+      "target": ["-n < 14", "-n <= 3", "2 * n + 1 < -18"],
       "name": "generated number implication 004"
     },
     {
       "expected": true,
-      "samples": [],
+      "samples": [4, 10, 16],
       "source": ["n % 2 === 0", "n % 3 === 1", "n >= -8"],
-      "target": [],
+      "target": ["n % 2 === 0", "n % 3 === 1", "n >= -8"],
       "name": "generated number implication 005"
     },
     {
-      "expected": false,
-      "samples": [],
+      "expected": true,
+      "samples": [
+        {
+          "kind": "number",
+          "value": "NaN"
+        },
+        {
+          "kind": "number",
+          "value": "-Infinity"
+        },
+        {
+          "kind": "number",
+          "value": "Infinity"
+        }
+      ],
       "source": [],
-      "target": ["Number.isInteger(n)"],
+      "target": [],
       "name": "generated number implication 006"
     },
     {
       "expected": false,
-      "samples": [],
-      "source": ["n === 11", "Number.isFinite(n)", "-n <= 7"],
-      "target": ["2 * n + 1 < 4"],
+      "samples": [
+        {
+          "kind": "number",
+          "value": "NaN"
+        },
+        {
+          "kind": "number",
+          "value": "-Infinity"
+        },
+        {
+          "kind": "number",
+          "value": "Infinity"
+        }
+      ],
+      "source": [],
+      "target": ["Number.isInteger(n)"],
       "name": "generated number implication 007"
     },
     {
-      "expected": false,
-      "samples": [],
-      "source": ["n === 15", "2 * n + 1 <= -3"],
-      "target": ["n > -8", "n <= -20", "n < -3"],
+      "expected": true,
+      "samples": [11],
+      "source": ["n === 11", "Number.isFinite(n)", "-n <= 7"],
+      "target": ["n === 11", "Number.isFinite(n)", "-n <= 7"],
       "name": "generated number implication 008"
     },
     {
       "expected": false,
-      "samples": [],
-      "source": [],
-      "target": ["2 * n + 1 <= 14"],
+      "samples": [11],
+      "source": ["n === 11", "Number.isFinite(n)", "-n <= 7"],
+      "target": ["2 * n + 1 < 4"],
       "name": "generated number implication 009"
     },
     {
       "expected": false,
-      "samples": [],
-      "source": ["n % 3 === 1", "-n >= 11"],
-      "target": ["2 * n + 1 < -3", "-n >= 2", "Number.isInteger(n)"],
+      "samples": [
+        {
+          "kind": "number",
+          "value": "NaN"
+        },
+        {
+          "kind": "number",
+          "value": "Infinity"
+        },
+        6.75
+      ],
+      "source": [],
+      "target": ["2 * n + 1 <= 14"],
       "name": "generated number implication 010"
     },
     {
-      "expected": false,
-      "samples": [],
+      "expected": true,
+      "samples": [
+        {
+          "kind": "number",
+          "value": "Infinity"
+        },
+        13.25,
+        13.5
+      ],
       "source": ["!(n <= 0)", "-n < -13"],
-      "target": ["2 * n + 1 < -14"],
+      "target": ["!(n <= 0)", "-n < -13"],
       "name": "generated number implication 011"
     },
     {
       "expected": false,
-      "samples": [],
-      "source": ["n <= 6", "n >= 20", "-n <= 9"],
-      "target": ["-n <= -11", "n < 20", "n === 10"],
+      "samples": [
+        {
+          "kind": "number",
+          "value": "Infinity"
+        },
+        13.25,
+        13.5
+      ],
+      "source": ["!(n <= 0)", "-n < -13"],
+      "target": ["2 * n + 1 < -14"],
       "name": "generated number implication 012"
     },
     {
       "expected": false,
-      "samples": [],
+      "samples": [
+        {
+          "kind": "number",
+          "value": "NaN"
+        },
+        {
+          "kind": "number",
+          "value": "-Infinity"
+        },
+        {
+          "kind": "number",
+          "value": "Infinity"
+        }
+      ],
       "source": [],
       "target": ["n === -9"],
       "name": "generated number implication 013"
     },
     {
       "expected": false,
-      "samples": [],
+      "samples": [-128, -127.75, -127.5],
       "source": ["Number.isFinite(n)"],
       "target": ["n === 1", "-n >= -16"],
       "name": "generated number implication 014"
     },
     {
-      "expected": false,
-      "samples": [],
+      "expected": true,
+      "samples": [7, 7.25, 7.5],
       "source": ["!(n <= 0)", "2 * n + 1 >= 15", "-n >= -9"],
-      "target": ["Number.isInteger(n)", "n % 3 === 1"],
+      "target": ["!(n <= 0)", "2 * n + 1 >= 15", "-n >= -9"],
       "name": "generated number implication 015"
     },
     {
       "expected": false,
-      "samples": [],
-      "source": ["2 * n + 1 <= 8", "n % 2 === 0", "n % 2 === 0"],
-      "target": ["2 * n + 1 >= -4", "n > -1"],
+      "samples": [7.25, 7.5, 7.75],
+      "source": ["!(n <= 0)", "2 * n + 1 >= 15", "-n >= -9"],
+      "target": ["Number.isInteger(n)", "n % 3 === 1"],
       "name": "generated number implication 016"
     },
     {
       "expected": true,
-      "samples": [],
-      "source": [],
-      "target": [],
+      "samples": [-128, -126, -124],
+      "source": ["2 * n + 1 <= 8", "n % 2 === 0", "n % 2 === 0"],
+      "target": ["2 * n + 1 <= 8", "n % 2 === 0", "n % 2 === 0"],
       "name": "generated number implication 017"
     },
     {
       "expected": false,
-      "samples": [],
-      "source": ["n < 16", "2 * n + 1 >= 3", "-n >= 5"],
-      "target": ["Number.isInteger(n)", "2 * n + 1 < -20", "2 * n + 1 < -3"],
+      "samples": [-128, -126, -124],
+      "source": ["2 * n + 1 <= 8", "n % 2 === 0", "n % 2 === 0"],
+      "target": ["2 * n + 1 >= -4", "n > -1"],
       "name": "generated number implication 018"
     },
     {
-      "expected": false,
-      "samples": [],
+      "expected": true,
+      "samples": [-128, -127, -126],
       "source": ["Number.isInteger(n)"],
-      "target": ["n >= 4", "Number.isFinite(n)"],
+      "target": ["Number.isInteger(n)"],
       "name": "generated number implication 019"
     },
     {
       "expected": false,
-      "samples": [],
-      "source": ["n === 5"],
-      "target": ["2 * n + 1 < 0", "n === -1"],
+      "samples": [-128, -127, -126],
+      "source": ["Number.isInteger(n)"],
+      "target": ["n >= 4", "Number.isFinite(n)"],
       "name": "generated number implication 020"
     },
     {
-      "expected": false,
-      "samples": [],
-      "source": [],
-      "target": ["2 * n + 1 <= 18"],
+      "expected": true,
+      "samples": [5],
+      "source": ["n === 5"],
+      "target": ["n === 5"],
       "name": "generated number implication 021"
     },
     {
       "expected": false,
-      "samples": [],
-      "source": ["n < -6", "n < -13", "-n <= -13"],
-      "target": ["n % 2 === 0", "-n < -16", "n >= -10"],
+      "samples": [5],
+      "source": ["n === 5"],
+      "target": ["2 * n + 1 < 0", "n === -1"],
       "name": "generated number implication 022"
     },
     {
       "expected": false,
-      "samples": [],
-      "source": ["-n < 20", "-n > 12", "2 * n + 1 > 2"],
-      "target": ["2 * n + 1 > -8"],
+      "samples": [
+        {
+          "kind": "number",
+          "value": "NaN"
+        },
+        {
+          "kind": "number",
+          "value": "Infinity"
+        },
+        8.75
+      ],
+      "source": [],
+      "target": ["2 * n + 1 <= 18"],
       "name": "generated number implication 023"
     },
     {
       "expected": false,
-      "samples": [],
+      "samples": [
+        {
+          "kind": "number",
+          "value": "NaN"
+        },
+        {
+          "kind": "number",
+          "value": "-Infinity"
+        },
+        {
+          "kind": "number",
+          "value": "Infinity"
+        }
+      ],
       "source": [],
       "target": ["n === -13", "n > 14", "-n <= 14"],
       "name": "generated number implication 024"
     },
     {
-      "expected": false,
-      "samples": [],
+      "expected": true,
+      "samples": [2, 4, 6],
       "source": ["!(n <= 0)", "2 * n + 1 < 14", "n % 2 === 0"],
-      "target": ["Number.isFinite(n)"],
+      "target": ["!(n <= 0)", "2 * n + 1 < 14", "n % 2 === 0"],
       "name": "generated number implication 025"
     },
     {
       "expected": false,
-      "samples": [],
+      "samples": [
+        {
+          "kind": "number",
+          "value": "NaN"
+        },
+        {
+          "kind": "number",
+          "value": "Infinity"
+        },
+        8
+      ],
       "source": [],
       "target": ["2 * n + 1 < 17"],
       "name": "generated number implication 026"
     },
     {
-      "expected": false,
-      "samples": [],
-      "source": ["2 * n + 1 >= -19", "n === -20"],
-      "target": ["n > 10", "2 * n + 1 > 18"],
+      "expected": true,
+      "samples": [
+        {
+          "kind": "number",
+          "value": "-Infinity"
+        },
+        -128,
+        -127.75
+      ],
+      "source": ["2 * n + 1 < -11"],
+      "target": ["2 * n + 1 < -11"],
       "name": "generated number implication 027"
     },
     {
       "expected": false,
-      "samples": [],
+      "samples": [
+        {
+          "kind": "number",
+          "value": "-Infinity"
+        },
+        -128,
+        -127.75
+      ],
       "source": ["2 * n + 1 < -11"],
       "target": ["n === 11", "n >= 15"],
       "name": "generated number implication 028"
     },
     {
-      "expected": false,
-      "samples": [],
+      "expected": true,
+      "samples": [
+        {
+          "kind": "number",
+          "value": "Infinity"
+        },
+        17,
+        17.25
+      ],
       "source": ["-n <= -17"],
-      "target": ["n < -9", "-n <= 12", "-n < -20"],
+      "target": ["-n <= -17"],
       "name": "generated number implication 029"
     },
     {
       "expected": false,
-      "samples": [],
-      "source": ["2 * n + 1 < -9"],
-      "target": ["-n <= -11"],
+      "samples": [
+        {
+          "kind": "number",
+          "value": "Infinity"
+        },
+        17,
+        17.25
+      ],
+      "source": ["-n <= -17"],
+      "target": ["n < -9", "-n <= 12", "-n < -20"],
       "name": "generated number implication 030"
     },
     {
       "expected": true,
-      "samples": [],
-      "source": ["2 * n + 1 <= 20"],
-      "target": [],
+      "samples": [
+        {
+          "kind": "number",
+          "value": "-Infinity"
+        },
+        -128,
+        -127.75
+      ],
+      "source": ["2 * n + 1 < -9"],
+      "target": ["2 * n + 1 < -9"],
       "name": "generated number implication 031"
     },
     {
       "expected": false,
-      "samples": [],
-      "source": [],
-      "target": ["Number.isFinite(n)", "2 * n + 1 <= -2", "n > -11"],
+      "samples": [
+        {
+          "kind": "number",
+          "value": "-Infinity"
+        },
+        -128,
+        -127.75
+      ],
+      "source": ["2 * n + 1 < -9"],
+      "target": ["-n <= -11"],
       "name": "generated number implication 032"
     },
     {
-      "expected": false,
-      "samples": [],
-      "source": [],
-      "target": ["n <= -10", "-n >= 17"],
+      "expected": true,
+      "samples": [
+        {
+          "kind": "number",
+          "value": "-Infinity"
+        },
+        -128,
+        -127.75
+      ],
+      "source": ["2 * n + 1 <= 20"],
+      "target": ["2 * n + 1 <= 20"],
       "name": "generated number implication 033"
     },
     {
       "expected": false,
-      "samples": [],
-      "source": ["n >= -19", "2 * n + 1 < 10"],
-      "target": ["2 * n + 1 > 2", "n >= 12", "-n > 10"],
+      "samples": [
+        {
+          "kind": "number",
+          "value": "NaN"
+        },
+        {
+          "kind": "number",
+          "value": "-Infinity"
+        },
+        {
+          "kind": "number",
+          "value": "Infinity"
+        }
+      ],
+      "source": [],
+      "target": ["Number.isFinite(n)", "2 * n + 1 <= -2", "n > -11"],
       "name": "generated number implication 034"
     },
     {
-      "expected": true,
-      "samples": [],
-      "source": ["2 * n + 1 > 4", "n > -1", "-n > -7"],
-      "target": [],
+      "expected": false,
+      "samples": [
+        {
+          "kind": "number",
+          "value": "NaN"
+        },
+        {
+          "kind": "number",
+          "value": "Infinity"
+        },
+        -16.75
+      ],
+      "source": [],
+      "target": ["n <= -10", "-n >= 17"],
       "name": "generated number implication 035"
     },
     {
-      "expected": false,
-      "samples": [],
-      "source": ["-n <= 17", "!(n <= 0)", "n <= -14"],
-      "target": ["-n > 11"],
+      "expected": true,
+      "samples": [-19, -18.75, -18.5],
+      "source": ["n >= -19", "2 * n + 1 < 10"],
+      "target": ["n >= -19", "2 * n + 1 < 10"],
       "name": "generated number implication 036"
     },
     {
       "expected": false,
-      "samples": [],
-      "source": [],
-      "target": ["-n > -5", "n < 11"],
+      "samples": [-19, -18.75, -18.5],
+      "source": ["n >= -19", "2 * n + 1 < 10"],
+      "target": ["2 * n + 1 > 2", "n >= 12", "-n > 10"],
       "name": "generated number implication 037"
     },
     {
       "expected": false,
-      "samples": [],
-      "source": ["-n <= 4"],
-      "target": ["n === -20", "n <= -4", "-n > -4"],
+      "samples": [
+        {
+          "kind": "number",
+          "value": "NaN"
+        },
+        {
+          "kind": "number",
+          "value": "Infinity"
+        },
+        5
+      ],
+      "source": [],
+      "target": ["-n > -5", "n < 11"],
       "name": "generated number implication 038"
     },
     {
       "expected": false,
-      "samples": [],
-      "source": ["2 * n + 1 < -16"],
-      "target": ["2 * n + 1 > -4", "Number.isInteger(n)"],
+      "samples": [
+        {
+          "kind": "number",
+          "value": "Infinity"
+        },
+        -4,
+        -3.75
+      ],
+      "source": ["-n <= 4"],
+      "target": ["n === -20", "n <= -4", "-n > -4"],
       "name": "generated number implication 039"
     },
     {
-      "expected": true,
-      "samples": [],
-      "source": ["n >= 19", "2 * n + 1 <= 13"],
-      "target": [],
+      "expected": false,
+      "samples": [
+        {
+          "kind": "number",
+          "value": "-Infinity"
+        },
+        -128,
+        -127.75
+      ],
+      "source": ["2 * n + 1 < -16"],
+      "target": ["2 * n + 1 > -4", "Number.isInteger(n)"],
       "name": "generated number implication 040"
     },
     {
-      "expected": true,
-      "samples": [],
-      "source": ["2 * n + 1 < 1", "-n > -15", "-n > 15"],
-      "target": [],
+      "expected": false,
+      "samples": [
+        {
+          "kind": "number",
+          "value": "NaN"
+        },
+        {
+          "kind": "number",
+          "value": "-Infinity"
+        },
+        {
+          "kind": "number",
+          "value": "Infinity"
+        }
+      ],
+      "source": [],
+      "target": ["n % 2 === 0"],
       "name": "generated number implication 041"
     },
     {
       "expected": false,
-      "samples": [],
-      "source": [],
-      "target": ["n % 2 === 0"],
+      "samples": [
+        {
+          "kind": "number",
+          "value": "-Infinity"
+        },
+        -128,
+        -127.75
+      ],
+      "source": ["-n >= 19"],
+      "target": ["n >= 2", "2 * n + 1 <= 18"],
       "name": "generated number implication 042"
     },
     {
       "expected": false,
-      "samples": [],
-      "source": ["-n >= 19"],
-      "target": ["n >= 2", "2 * n + 1 <= 18"],
+      "samples": [-5, -4, -3],
+      "source": ["-n <= 12", "Number.isInteger(n)", "2 * n + 1 >= -9"],
+      "target": ["-n > 13"],
       "name": "generated number implication 043"
     },
     {
-      "expected": true,
-      "samples": [],
-      "source": ["n >= 6"],
-      "target": [],
+      "expected": false,
+      "samples": [
+        {
+          "kind": "number",
+          "value": "NaN"
+        },
+        {
+          "kind": "number",
+          "value": "-Infinity"
+        },
+        -128
+      ],
+      "source": [],
+      "target": ["2 * n + 1 > -9", "n >= -11"],
       "name": "generated number implication 044"
     },
     {
       "expected": false,
-      "samples": [],
-      "source": ["-n <= 12", "Number.isInteger(n)", "2 * n + 1 >= -9"],
-      "target": ["-n > 13"],
+      "samples": [-128, -126, -124],
+      "source": ["n % 2 === 0"],
+      "target": ["n % 2 === 0", "n >= -5", "2 * n + 1 < 15"],
       "name": "generated number implication 045"
     },
     {
       "expected": false,
-      "samples": [],
+      "samples": [
+        {
+          "kind": "number",
+          "value": "NaN"
+        },
+        {
+          "kind": "number",
+          "value": "-Infinity"
+        },
+        {
+          "kind": "number",
+          "value": "Infinity"
+        }
+      ],
       "source": [],
-      "target": ["2 * n + 1 > -9", "n >= -11"],
+      "target": ["n % 2 === 0", "n === 18", "-n < 13"],
       "name": "generated number implication 046"
     },
     {
       "expected": false,
-      "samples": [],
-      "source": ["n === 3", "n === 16", "n % 2 === 0"],
-      "target": ["n >= -7", "-n > -1", "-n >= -7"],
+      "samples": [
+        {
+          "kind": "number",
+          "value": "-Infinity"
+        },
+        -128,
+        -127.75
+      ],
+      "source": ["2 * n + 1 <= -18"],
+      "target": ["Number.isFinite(n)", "!(n <= 0)"],
       "name": "generated number implication 047"
     },
     {
       "expected": false,
-      "samples": [],
-      "source": ["n % 2 === 0"],
-      "target": ["n % 2 === 0", "n >= -5", "2 * n + 1 < 15"],
+      "samples": [-12, -11.75, -11.5],
+      "source": ["-n <= 12", "2 * n + 1 <= -12"],
+      "target": ["n > 1"],
       "name": "generated number implication 048"
     },
     {
-      "expected": true,
-      "samples": [],
-      "source": ["n <= -14", "2 * n + 1 <= -1", "n > -9"],
-      "target": [],
+      "expected": false,
+      "samples": [
+        {
+          "kind": "number",
+          "value": "NaN"
+        },
+        {
+          "kind": "number",
+          "value": "-Infinity"
+        },
+        {
+          "kind": "number",
+          "value": "Infinity"
+        }
+      ],
+      "source": [],
+      "target": ["n === -16", "2 * n + 1 >= 2"],
       "name": "generated number implication 049"
     },
     {
       "expected": false,
-      "samples": [],
-      "source": [],
-      "target": ["n % 2 === 0", "n === 18", "-n < 13"],
+      "samples": [2, 4, 6],
+      "source": ["!(n <= 0)", "n % 2 === 0"],
+      "target": ["-n >= -18", "-n >= 4", "-n > -19"],
       "name": "generated number implication 050"
     },
     {
-      "expected": true,
-      "samples": [],
-      "source": ["2 * n + 1 > -8"],
-      "target": [],
+      "expected": false,
+      "samples": [
+        {
+          "kind": "number",
+          "value": "Infinity"
+        },
+        12,
+        12.25
+      ],
+      "source": ["-n <= -12", "2 * n + 1 >= -19", "2 * n + 1 >= -3"],
+      "target": ["-n > -4"],
       "name": "generated number implication 051"
     },
     {
       "expected": false,
-      "samples": [],
-      "source": ["2 * n + 1 <= -18"],
-      "target": ["Number.isFinite(n)", "!(n <= 0)"],
+      "samples": [-7.75, -7.5, -7.25],
+      "source": ["-n >= -14", "Number.isFinite(n)", "2 * n + 1 > -15"],
+      "target": ["!(n <= 0)", "2 * n + 1 >= 2", "Number.isInteger(n)"],
       "name": "generated number implication 052"
     },
     {
       "expected": false,
-      "samples": [],
-      "source": ["n <= -2", "!(n <= 0)", "Number.isFinite(n)"],
-      "target": ["-n > -16"],
+      "samples": [
+        {
+          "kind": "number",
+          "value": "-Infinity"
+        },
+        -127.75,
+        -127.5
+      ],
+      "source": ["n <= -14", "2 * n + 1 <= 11"],
+      "target": ["n % 2 === 0"],
       "name": "generated number implication 053"
     },
     {
-      "expected": true,
-      "samples": [],
-      "source": ["n > -19"],
-      "target": [],
+      "expected": false,
+      "samples": [-128, -127, -126],
+      "source": ["Number.isInteger(n)"],
+      "target": ["n < 17", "-n <= 16", "-n <= 11"],
       "name": "generated number implication 054"
     },
     {
       "expected": false,
-      "samples": [],
-      "source": ["-n <= 12", "2 * n + 1 <= -12"],
-      "target": ["n > 1"],
+      "samples": [
+        {
+          "kind": "number",
+          "value": "-Infinity"
+        },
+        -128,
+        -127.75
+      ],
+      "source": ["2 * n + 1 < 2"],
+      "target": ["-n <= -19", "Number.isInteger(n)"],
       "name": "generated number implication 055"
     },
     {
-      "expected": true,
-      "samples": [],
-      "source": ["Number.isFinite(n)"],
-      "target": [],
+      "expected": false,
+      "samples": [
+        {
+          "kind": "number",
+          "value": "NaN"
+        },
+        {
+          "kind": "number",
+          "value": "-Infinity"
+        },
+        {
+          "kind": "number",
+          "value": "Infinity"
+        }
+      ],
+      "source": [],
+      "target": ["n % 2 === 0", "2 * n + 1 < -16"],
       "name": "generated number implication 056"
     },
     {
-      "expected": true,
-      "samples": [],
-      "source": ["2 * n + 1 <= 7"],
-      "target": [],
+      "expected": false,
+      "samples": [4],
+      "source": ["n === 4"],
+      "target": ["2 * n + 1 < -9", "-n >= 9", "!(n <= 0)"],
       "name": "generated number implication 057"
     },
     {
       "expected": false,
-      "samples": [],
-      "source": ["n % 3 === 1", "n < -14"],
-      "target": ["Number.isInteger(n)", "-n > 11", "n % 3 === 1"],
+      "samples": [
+        {
+          "kind": "number",
+          "value": "Infinity"
+        },
+        8.25,
+        8.5
+      ],
+      "source": ["2 * n + 1 > 17"],
+      "target": ["2 * n + 1 >= 4", "2 * n + 1 <= 7", "n % 2 === 0"],
       "name": "generated number implication 058"
     },
     {
-      "expected": true,
-      "samples": [],
-      "source": ["n % 3 === 1"],
-      "target": [],
+      "expected": false,
+      "samples": [
+        {
+          "kind": "number",
+          "value": "NaN"
+        },
+        {
+          "kind": "number",
+          "value": "-Infinity"
+        },
+        {
+          "kind": "number",
+          "value": "Infinity"
+        }
+      ],
+      "source": [],
+      "target": ["n > -20", "n === 2"],
       "name": "generated number implication 059"
     },
     {
-      "expected": true,
-      "samples": [],
-      "source": ["-n > 6", "-n > 19"],
-      "target": [],
+      "expected": false,
+      "samples": [
+        {
+          "kind": "number",
+          "value": "-Infinity"
+        },
+        -128,
+        -127.75
+      ],
+      "source": ["2 * n + 1 <= -19"],
+      "target": ["n % 3 === 1", "n <= 17", "-n <= 19"],
       "name": "generated number implication 060"
     },
     {
       "expected": false,
-      "samples": [],
-      "source": ["-n >= 11", "2 * n + 1 > 5"],
-      "target": ["!(n <= 0)"],
+      "samples": [-3.75, -3.5, -3.25],
+      "source": ["2 * n + 1 < 14", "2 * n + 1 > -7"],
+      "target": ["Number.isInteger(n)", "2 * n + 1 > -9"],
       "name": "generated number implication 061"
     },
     {
       "expected": false,
-      "samples": [],
-      "source": [],
-      "target": ["n === -16", "2 * n + 1 >= 2"],
+      "samples": [
+        {
+          "kind": "number",
+          "value": "-Infinity"
+        },
+        -128,
+        -127.75
+      ],
+      "source": ["n <= 10"],
+      "target": ["!(n <= 0)", "Number.isInteger(n)"],
       "name": "generated number implication 062"
+    },
+    {
+      "expected": false,
+      "samples": [1.75, 2, 2.25],
+      "source": ["Number.isFinite(n)", "2 * n + 1 > 4"],
+      "target": ["n >= 2", "n < -1", "-n >= -19"],
+      "name": "generated number implication 063"
+    },
+    {
+      "expected": false,
+      "samples": [-10, -9.75, -9.5],
+      "source": ["2 * n + 1 >= -19"],
+      "target": ["-n < -14", "n >= -19"],
+      "name": "generated number implication 064"
     }
   ],
   "schemaVersion": 1

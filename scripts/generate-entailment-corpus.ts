@@ -8,10 +8,11 @@ import ts from "typescript";
 import * as v from "valibot";
 
 import {
-  entails,
+  evaluateExpression,
   normalizePredicate,
   parsePredicate,
   type NormalizedPredicate,
+  type StaticRuntimeValue,
 } from "@ts-refinement/analyzer";
 import { generatedEntailmentInputs } from "../spec/entailment-generators.ts";
 
@@ -41,6 +42,23 @@ function predicate(source: string): NormalizedPredicate {
   return normalizePredicate(ts, parsed.predicate);
 }
 
+function holds(sources: readonly string[], value: StaticRuntimeValue): boolean {
+  return sources.every((source) => {
+    const result = evaluateExpression(predicate(source).expression, { known: true, value });
+    return result.known && Boolean(result.value);
+  });
+}
+
+function encodedSample(value: StaticRuntimeValue): unknown {
+  if (typeof value === "number" && !Number.isFinite(value)) {
+    return {
+      kind: "number",
+      value: Number.isNaN(value) ? "NaN" : value === Infinity ? "Infinity" : "-Infinity",
+    };
+  }
+  return value;
+}
+
 function formatCorpus(source: string): string {
   const directory = mkdtempSync(resolve(tmpdir(), "ts-refinement-corpus-"));
   const candidate = resolve(directory, "entailment-corpus.json");
@@ -59,21 +77,55 @@ function formatCorpus(source: string): string {
 const current = v.parse(corpusSchema, JSON.parse(readFileSync(corpusPath, "utf8")));
 const curated = current.cases.filter((entry) => !entry.name.startsWith(generatedPrefix));
 const seen = new Set<string>();
-const generated = sample(generatedEntailmentInputs, { numRuns: 64, seed: 0x5eed }).flatMap(
-  ({ source, target }): readonly Omit<CorpusCase, "name">[] => {
+const seenReflexive = new Set<string>();
+const candidates: readonly StaticRuntimeValue[] = [
+  NaN,
+  -Infinity,
+  Infinity,
+  ...Array.from({ length: 1_025 }, (_, index) => (index - 512) / 4),
+];
+const generated: Omit<CorpusCase, "name">[] = [];
+let negativeCount = 0;
+let reflexiveCount = 0;
+for (const { source, target } of sample(generatedEntailmentInputs, {
+  numRuns: 256,
+  seed: 0x5eed,
+})) {
+  const sourceWitnesses = candidates.filter((candidate) => holds(source, candidate));
+  if (sourceWitnesses.length === 0) continue;
+
+  const sourceKey = JSON.stringify(source);
+  if (reflexiveCount < 16 && !seenReflexive.has(sourceKey)) {
+    seenReflexive.add(sourceKey);
+    reflexiveCount += 1;
+    generated.push({
+      expected: true,
+      samples: sourceWitnesses.slice(0, 3).map(encodedSample),
+      source,
+      target: source,
+    });
+  }
+
+  const counterexamples = sourceWitnesses.filter((candidate) => !holds(target, candidate));
+  if (negativeCount < 48 && counterexamples.length > 0) {
     const key = JSON.stringify({ source, target });
-    if (seen.has(key)) return [];
+    if (seen.has(key)) continue;
     seen.add(key);
-    return [
-      {
-        expected: entails(source.map(predicate), target.map(predicate)),
-        samples: [],
-        source,
-        target,
-      },
-    ];
-  },
-);
+    negativeCount += 1;
+    generated.push({
+      expected: false,
+      samples: counterexamples.slice(0, 3).map(encodedSample),
+      source,
+      target,
+    });
+  }
+  if (negativeCount === 48 && reflexiveCount === 16) break;
+}
+if (negativeCount !== 48 || reflexiveCount !== 16) {
+  throw new Error(
+    `Unable to generate the required corpus cases: ${negativeCount} negative, ${reflexiveCount} reflexive.`,
+  );
+}
 const next: Corpus = {
   cases: [
     ...curated,

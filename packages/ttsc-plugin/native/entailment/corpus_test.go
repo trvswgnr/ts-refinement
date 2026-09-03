@@ -49,9 +49,7 @@ func TestSharedCorpus(t *testing.T) {
 			if actual := Entails(source, target, entry.Facts); actual != entry.Expected {
 				t.Fatalf("Entails() = %v, want %v", actual, entry.Expected)
 			}
-			if !entry.Expected {
-				return
-			}
+			sawCounterexample := false
 			for _, sample := range entry.Samples {
 				sourceText, supported := corpusSampleSource(sample)
 				if !supported {
@@ -62,9 +60,15 @@ func TestSharedCorpus(t *testing.T) {
 				if !sourceKnown || !targetKnown {
 					continue
 				}
-				if !sourceHolds || !targetHolds {
+				if entry.Expected && (!sourceHolds || !targetHolds) {
 					t.Fatalf("positive sample %s does not satisfy source and target", sample)
 				}
+				if !entry.Expected && sourceHolds && !targetHolds {
+					sawCounterexample = true
+				}
+			}
+			if !entry.Expected && strings.HasPrefix(entry.Name, "generated number implication ") && !sawCounterexample {
+				t.Fatal("negative case has no source-true, target-false sample")
 			}
 		})
 	}
@@ -93,10 +97,19 @@ func corpusSampleSource(sample json.RawMessage) (string, bool) {
 			Kind  string `json:"kind"`
 			Value string `json:"value"`
 		}
-		if json.Unmarshal(trimmed, &encoded) != nil || encoded.Kind != "bigint" {
+		if json.Unmarshal(trimmed, &encoded) != nil {
 			return "", false
 		}
-		return encoded.Value + "n", true
+		if encoded.Kind == "bigint" {
+			return encoded.Value + "n", true
+		}
+		if encoded.Kind == "number" && (encoded.Value == "NaN" || encoded.Value == "Infinity") {
+			return encoded.Value, true
+		}
+		if encoded.Kind == "number" && encoded.Value == "-Infinity" {
+			return "-Infinity", true
+		}
+		return "", false
 	}
 	if trimmed[0] == '"' || bytes.Equal(trimmed, []byte("true")) || bytes.Equal(trimmed, []byte("false")) {
 		return string(trimmed), true
