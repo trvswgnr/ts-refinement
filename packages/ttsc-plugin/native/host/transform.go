@@ -359,6 +359,18 @@ func proveAssertion(
 		diagnostic := nodeDiagnostic(file, site.expression, analysis.DiagnosticSourceNotAssignable, message)
 		return false, &diagnostic
 	}
+	guards := collectGuardPredicates(checker, file, site)
+	if len(guards) > 0 {
+		facts := entailment.Facts{}
+		for _, base := range target.BaseTypes {
+			if base.Flags()&shimchecker.TypeFlagsStringLike != 0 || shimchecker.Checker_isArrayType(checker, base) {
+				facts.SubjectLength = true
+			}
+		}
+		if entailment.Entails(guards, target.Predicates, facts) {
+			return true, nil
+		}
+	}
 
 	expressionSource := nodeText(file, site.expression)
 	allKnown := true

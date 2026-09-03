@@ -3,6 +3,7 @@ import type { ImportedAboveLimit } from "./captured.ts";
 
 type Positive = Refined<number, "value > 0">;
 type GreaterThanFive = Refined<number, "value > 5">;
+type ExactlyFive = Refined<number, "value === 5">;
 type NonEmpty = Refined<string, "value.length > 0">;
 type AllPositive = Refined<number[], "values.every((item) => item > 0)">;
 const LIMIT = 5 as const;
@@ -63,6 +64,28 @@ entailedMutation = greaterThanFive;
 
 export function entailedReturn(): Positive {
   return greaterThanFive;
+}
+
+export function guardedAssertion(value: number): Positive {
+  if (value > 0) return value as Positive;
+  throw new Error("invalid");
+}
+
+export function guardedElse(value: number): ExactlyFive {
+  if (value !== 5) throw new Error("invalid");
+  else return value as ExactlyFive;
+}
+
+export function guardedConditional(value: number): Positive | null {
+  return value > 0 ? (value as Positive) : null;
+}
+
+export function guardedAfterWrite(value: number): Positive {
+  if (value > 0) {
+    value = dynamic;
+    return value as Positive;
+  }
+  throw new Error("invalid");
 }
 
 export const entailedArray: Positive[] = [greaterThanFive];
