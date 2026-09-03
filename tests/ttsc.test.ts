@@ -25,7 +25,7 @@ function runTtsc(project: "invalid" | "unrelated-invalid" | "valid", outDir: str
   );
 }
 
-function runTtscCheck(project: "imported-invalid") {
+function runTtscCheck(project: "imported-invalid" | "publish-unconfigured") {
   return spawnSync(
     ttsc,
     ["check", "--project", resolve(root, `fixtures/ttsc/${project}/tsconfig.json`)],
@@ -113,5 +113,11 @@ describe("TypeScript-Go native plugin", () => {
     const result = runTtscCheck("imported-invalid");
     expect(result.status).toBe(2);
     expect(`${result.stdout}${result.stderr}`).toMatch(/imported\.ts.*RF1000200/su);
+  }, 60_000);
+
+  it("warns when exported refinements lack publish verification", () => {
+    const result = runTtscCheck("publish-unconfigured");
+    expect(result.status).toBe(0);
+    expect(`${result.stdout}${result.stderr}`).toMatch(/warning RF1000500:.*Positive/su);
   }, 60_000);
 });

@@ -37,6 +37,29 @@ func TestLSPReportsRefinementDiagnostics(t *testing.T) {
 	}
 }
 
+func TestLSPReportsPublishVerificationWarnings(t *testing.T) {
+	repositoryRoot, err := filepath.Abs("../../../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fileName := filepath.Join(repositoryRoot, "fixtures/ttsc/publish-unconfigured/index.ts")
+	uri := (&url.URL{Scheme: "file", Path: filepath.ToSlash(fileName)}).String()
+	result, err := computeLSPDiagnostics([]string{
+		"--cwd=" + repositoryRoot,
+		"--tsconfig=fixtures/ttsc/publish-unconfigured/tsconfig.json",
+		"--uri=" + uri,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, diagnostic := range result.Document {
+		if diagnostic.Code == "RF1000500" && diagnostic.Severity == 2 {
+			return
+		}
+	}
+	t.Fatalf("missing RF1000500 LSP warning: %#v", result.Document)
+}
+
 func TestLSPRemovesStaticallyDisprovenAssertion(t *testing.T) {
 	repositoryRoot, err := filepath.Abs("../../../..")
 	if err != nil {

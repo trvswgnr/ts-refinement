@@ -1,0 +1,7 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "plugins": [{ "transform": "@ts-refinement/ttsc/check" }]
+  },
+  "include": ["index.ts", "../../../packages/core/src/index.ts"]
+}

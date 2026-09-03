@@ -43,7 +43,7 @@ func RunCheck(args []string) int {
 	if len(refinementDiagnostics) > 0 {
 		writeProtocolDiagnostics(os.Stderr, refinementDiagnostics)
 	}
-	if driver.CountErrors(typeScriptDiagnostics) > 0 || len(refinementDiagnostics) > 0 {
+	if driver.CountErrors(typeScriptDiagnostics) > 0 || countRefinementErrors(refinementDiagnostics) > 0 {
 		return 2
 	}
 	return 0
@@ -67,8 +67,19 @@ func collectProjectRefinementDiagnostics(program *driver.Program) []protocolDiag
 			_, assertions := transformFile(program.Checker, file)
 			diagnostics = appendUniqueDiagnostics(diagnostics, seen, assertions)
 		}
+		diagnostics = appendUniqueDiagnostics(diagnostics, seen, publishVerificationDiagnostics(program.Checker, file))
 	}
 	return diagnostics
+}
+
+func countRefinementErrors(diagnostics []protocolDiagnostic) int {
+	count := 0
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Category == "error" {
+			count++
+		}
+	}
+	return count
 }
 
 func canContainRefinementDefinition(source string) bool {

@@ -20,6 +20,7 @@ const (
 	DiagnosticSourceNotAssignable   int32 = 1000101
 	DiagnosticStaticallyDisproven   int32 = 1000200
 	DiagnosticUnableResolveMetadata int32 = 1000400
+	DiagnosticPublishVerification   int32 = 1000500
 )
 
 type Issue struct {

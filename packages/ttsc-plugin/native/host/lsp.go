@@ -142,6 +142,7 @@ func computeLSPDiagnostics(args []string) (lspDiagnosticsResult, error) {
 	diagnostics := refinementDefinitionDiagnostics(program.Checker, file)
 	_, assertionDiagnostics := transformFile(program.Checker, file)
 	diagnostics = append(diagnostics, assertionDiagnostics...)
+	diagnostics = append(diagnostics, publishVerificationDiagnostics(program.Checker, file)...)
 	seen := map[string]struct{}{}
 	for _, diagnostic := range diagnostics {
 		if diagnostic.Start == nil || diagnostic.Length == nil {
@@ -152,9 +153,13 @@ func computeLSPDiagnostics(args []string) (lspDiagnosticsResult, error) {
 			continue
 		}
 		seen[key] = struct{}{}
+		severity := 1
+		if diagnostic.Category == "warning" {
+			severity = 2
+		}
 		result.Document = append(result.Document, lspDiagnostic{
 			Range:    lspRangeForSpan(file.Text(), *diagnostic.Start, *diagnostic.Length),
-			Severity: 1,
+			Severity: severity,
 			Code:     fmt.Sprint(diagnostic.Code),
 			Source:   "ts-refinement",
 			Message:  diagnostic.MessageText,

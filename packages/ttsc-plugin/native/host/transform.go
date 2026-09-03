@@ -591,18 +591,23 @@ func writeTransformOutput(output transformOutput, status int) int {
 
 func writeProtocolDiagnostics(output *os.File, diagnostics []protocolDiagnostic) {
 	for _, diagnostic := range diagnostics {
+		category := diagnostic.Category
+		if category == "" {
+			category = "error"
+		}
 		if diagnostic.File != nil && diagnostic.Line != nil && diagnostic.Character != nil {
 			fmt.Fprintf(
 				output,
-				"%s(%d,%d): error %v: %s\n",
+				"%s(%d,%d): %s %v: %s\n",
 				*diagnostic.File,
 				*diagnostic.Line,
 				*diagnostic.Character,
+				category,
 				diagnostic.Code,
 				diagnostic.MessageText,
 			)
 			continue
 		}
-		fmt.Fprintf(output, "error %v: %s\n", diagnostic.Code, diagnostic.MessageText)
+		fmt.Fprintf(output, "%s %v: %s\n", category, diagnostic.Code, diagnostic.MessageText)
 	}
 }
