@@ -1,10 +1,5 @@
 import { readFile } from "node:fs/promises";
-import type {
-  LoadFnOutput,
-  LoadHook,
-  ResolveFnOutput,
-  ResolveHook,
-} from "node:module";
+import type { LoadFnOutput, LoadHook, ResolveFnOutput, ResolveHook } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import ts from "typescript";
