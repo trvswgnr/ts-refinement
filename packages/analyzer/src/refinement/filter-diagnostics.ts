@@ -375,6 +375,72 @@ function typeParameterEntailment(
   return undefined;
 }
 
+function arrayElementType(context: AnalyzerContext, type: ts.Type): ts.Type | undefined {
+  if (!context.checker.isArrayType(type)) return undefined;
+  return context.checker.getTypeArguments(type as ts.TypeReference)[0];
+}
+
+function isReadonlyArray(type: ts.Type): boolean {
+  return type.getSymbol()?.getName() === "ReadonlyArray";
+}
+
+function tupleEntailment(
+  context: AnalyzerContext,
+  source: ts.Type,
+  target: ts.Type,
+  visit: EntailmentVisit,
+): boolean | undefined {
+  if (!context.checker.isTupleType(target)) return undefined;
+  if (!context.checker.isTupleType(source)) return false;
+  const sourceReference = tupleTypeReference(context, source);
+  const targetReference = tupleTypeReference(context, target);
+  const sourceTarget = sourceReference.target as ts.TupleType;
+  const targetTarget = targetReference.target as ts.TupleType;
+  if (sourceTarget.readonly && !targetTarget.readonly) return false;
+  if (
+    sourceTarget.elementFlags.length !== targetTarget.elementFlags.length ||
+    sourceTarget.elementFlags.some((flags, index) => flags !== targetTarget.elementFlags[index])
+  ) {
+    return false;
+  }
+  const sourceElements = context.checker.getTypeArguments(sourceReference);
+  const targetElements = context.checker.getTypeArguments(targetReference);
+  return sourceElements.every((element, index) => {
+    const targetElement = targetElements[index];
+    return targetElement !== undefined && visit(element, targetElement);
+  });
+}
+
+function arrayEntailment(
+  context: AnalyzerContext,
+  source: ts.Type,
+  target: ts.Type,
+  visit: EntailmentVisit,
+): boolean | undefined {
+  const targetElement = arrayElementType(context, target);
+  if (targetElement === undefined) return undefined;
+  if (isReadonlyArray(source) && !isReadonlyArray(target)) return false;
+  if (context.checker.isTupleType(source)) {
+    return context.checker
+      .getTypeArguments(tupleTypeReference(context, source))
+      .every((element) => visit(element, targetElement));
+  }
+  const sourceElement = arrayElementType(context, source);
+  return sourceElement !== undefined && visit(sourceElement, targetElement);
+}
+
+function collectionEntailment(
+  context: AnalyzerContext,
+  source: ts.Type,
+  target: ts.Type,
+  visit: EntailmentVisit,
+): boolean | undefined {
+  return (
+    tupleEntailment(context, source, target, visit) ??
+    arrayEntailment(context, source, target, visit)
+  );
+}
+
 function propertiesAreEntailed(
   context: AnalyzerContext,
   source: ts.Type,
@@ -423,7 +489,7 @@ function indexSignaturesAreEntailed(
     }
     for (const sourceIndex of context.checker.getIndexInfosOfType(source)) {
       if (
-        indexTypeApplies(context, sourceIndex.keyType, targetIndex.keyType) &&
+        indexTypesOverlap(context, sourceIndex.keyType, targetIndex.keyType) &&
         !visit(sourceIndex.type, targetIndex.type)
       ) {
         return false;
@@ -433,11 +499,14 @@ function indexSignaturesAreEntailed(
   return true;
 }
 
-function indexTypeApplies(context: AnalyzerContext, source: ts.Type, target: ts.Type): boolean {
+function indexTypesOverlap(context: AnalyzerContext, source: ts.Type, target: ts.Type): boolean {
   return (
+    context.checker.isTypeAssignableTo(source, target) ||
     context.checker.isTypeAssignableTo(target, source) ||
     ((source.flags & context.ts.TypeFlags.String) !== 0 &&
-      (target.flags & context.ts.TypeFlags.NumberLike) !== 0)
+      (target.flags & context.ts.TypeFlags.NumberLike) !== 0) ||
+    ((target.flags & context.ts.TypeFlags.String) !== 0 &&
+      (source.flags & context.ts.TypeFlags.NumberLike) !== 0)
   );
 }
 
@@ -760,12 +829,14 @@ function refinementStructureIsEntailed(
     sourceTargets.add(target);
     visited.set(source, sourceTargets);
 
-    const refinementResult = refinementTypeEntailment(context, source, target, visit);
-    if (refinementResult !== undefined) return refinementResult;
     const unionResult = unionEntailment(source, target, visit);
     if (unionResult !== undefined) return unionResult;
+    const refinementResult = refinementTypeEntailment(context, source, target, visit);
+    if (refinementResult !== undefined) return refinementResult;
     const typeParameterResult = typeParameterEntailment(context, source, target, visit);
     if (typeParameterResult !== undefined) return typeParameterResult;
+    const collectionResult = collectionEntailment(context, source, target, visit);
+    if (collectionResult !== undefined) return collectionResult;
 
     if (
       (source.flags & context.ts.TypeFlags.Object) === 0 ||

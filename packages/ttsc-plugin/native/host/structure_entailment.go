@@ -102,6 +102,23 @@ func refinementStructureIsEntailed(checker *shimchecker.Checker, sourceType, tar
 		}
 		targets[target] = struct{}{}
 
+		if source.Flags()&shimchecker.TypeFlagsUnion != 0 {
+			for _, part := range source.Types() {
+				if !visit(part, target) {
+					return false
+				}
+			}
+			return true
+		}
+		if target.Flags()&shimchecker.TypeFlagsUnion != 0 {
+			for _, part := range target.Types() {
+				if visit(source, part) {
+					return true
+				}
+			}
+			return false
+		}
+
 		sourceResolution := analysis.Resolve(checker, source)
 		targetResolution := analysis.Resolve(checker, target)
 		if targetResolution.Refinement {
@@ -141,27 +158,14 @@ func refinementStructureIsEntailed(checker *shimchecker.Checker, sourceType, tar
 			return false
 		}
 
-		if source.Flags()&shimchecker.TypeFlagsUnion != 0 {
-			for _, part := range source.Types() {
-				if !visit(part, target) {
-					return false
-				}
-			}
-			return true
-		}
-		if target.Flags()&shimchecker.TypeFlagsUnion != 0 {
-			for _, part := range target.Types() {
-				if visit(source, part) {
-					return true
-				}
-			}
-			return false
-		}
 		if source.Flags()&shimchecker.TypeFlagsTypeParameter != 0 {
 			return visit(checker.GetBaseConstraintOfType(source), target)
 		}
 		if target.Flags()&shimchecker.TypeFlagsTypeParameter != 0 {
 			return visit(source, checker.GetBaseConstraintOfType(target))
+		}
+		if result, handled := collectionEntailment(checker, source, target, visit); handled {
+			return result
 		}
 		if source.Flags()&shimchecker.TypeFlagsObject == 0 || target.Flags()&shimchecker.TypeFlagsObject == 0 {
 			return checker.IsTypeAssignableTo(source, target)
@@ -200,7 +204,7 @@ func refinementStructureIsEntailed(checker *shimchecker.Checker, sourceType, tar
 				}
 			}
 			for _, sourceIndex := range shimchecker.Checker_getIndexInfosOfType(checker, source) {
-				if indexTypeApplies(checker, sourceIndex.KeyType(), targetIndex.KeyType()) &&
+				if indexTypesOverlap(checker, sourceIndex.KeyType(), targetIndex.KeyType()) &&
 					!visit(sourceIndex.ValueType(), targetIndex.ValueType()) {
 					return false
 				}
@@ -211,6 +215,78 @@ func refinementStructureIsEntailed(checker *shimchecker.Checker, sourceType, tar
 			signaturesAreEntailed(checker, source, target, shimchecker.SignatureKindConstruct, visit)
 	}
 	return visit(sourceType, targetType)
+}
+
+func collectionEntailment(
+	checker *shimchecker.Checker,
+	source, target *shimchecker.Type,
+	visit func(*shimchecker.Type, *shimchecker.Type) bool,
+) (bool, bool) {
+	if shimchecker.IsTupleType(target) {
+		if !shimchecker.IsTupleType(source) {
+			return false, true
+		}
+		sourceTuple := source.TargetTupleType()
+		targetTuple := target.TargetTupleType()
+		if sourceTuple.IsReadonly() && !targetTuple.IsReadonly() {
+			return false, true
+		}
+		sourceFlags := sourceTuple.ElementFlags()
+		targetFlags := targetTuple.ElementFlags()
+		if len(sourceFlags) != len(targetFlags) {
+			return false, true
+		}
+		for index, flags := range sourceFlags {
+			if flags != targetFlags[index] {
+				return false, true
+			}
+		}
+		sourceElements := shimchecker.Checker_getTypeArguments(checker, source)
+		targetElements := shimchecker.Checker_getTypeArguments(checker, target)
+		if len(sourceElements) != len(targetElements) {
+			return false, true
+		}
+		for index, element := range sourceElements {
+			if !visit(element, targetElements[index]) {
+				return false, true
+			}
+		}
+		return true, true
+	}
+
+	targetElement := collectionArrayElement(checker, target)
+	if targetElement == nil {
+		return false, false
+	}
+	if isReadonlyArrayType(source) && !isReadonlyArrayType(target) {
+		return false, true
+	}
+	if shimchecker.IsTupleType(source) {
+		for _, element := range shimchecker.Checker_getTypeArguments(checker, source) {
+			if !visit(element, targetElement) {
+				return false, true
+			}
+		}
+		return true, true
+	}
+	sourceElement := collectionArrayElement(checker, source)
+	return sourceElement != nil && visit(sourceElement, targetElement), true
+}
+
+func collectionArrayElement(checker *shimchecker.Checker, target *shimchecker.Type) *shimchecker.Type {
+	if !shimchecker.Checker_isArrayType(checker, target) {
+		return nil
+	}
+	arguments := shimchecker.Checker_getTypeArguments(checker, target)
+	if len(arguments) == 0 {
+		return nil
+	}
+	return arguments[0]
+}
+
+func isReadonlyArrayType(target *shimchecker.Type) bool {
+	symbol := target.Symbol()
+	return symbol != nil && symbol.Name == "ReadonlyArray"
 }
 
 func signatureSymbolType(checker *shimchecker.Checker, symbol *shimast.Symbol) *shimchecker.Type {
@@ -333,9 +409,10 @@ func signaturesAreEntailed(
 	return true
 }
 
-func indexTypeApplies(checker *shimchecker.Checker, source, target *shimchecker.Type) bool {
-	return checker.IsTypeAssignableTo(target, source) ||
-		source.Flags()&shimchecker.TypeFlagsString != 0 && target.Flags()&shimchecker.TypeFlagsNumberLike != 0
+func indexTypesOverlap(checker *shimchecker.Checker, source, target *shimchecker.Type) bool {
+	return checker.IsTypeAssignableTo(source, target) || checker.IsTypeAssignableTo(target, source) ||
+		source.Flags()&shimchecker.TypeFlagsString != 0 && target.Flags()&shimchecker.TypeFlagsNumberLike != 0 ||
+		target.Flags()&shimchecker.TypeFlagsString != 0 && source.Flags()&shimchecker.TypeFlagsNumberLike != 0
 }
 
 func isRefinementBrand(name string) bool {

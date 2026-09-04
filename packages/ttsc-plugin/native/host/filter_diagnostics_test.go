@@ -126,10 +126,96 @@ func TestComparesSourceAndTargetIndexDomains(t *testing.T) {
 			spans[file.Text()[*diagnostic.Start:*diagnostic.Start+*diagnostic.Length]] = true
 		}
 	}
-	if spans["validTemplateTarget"] {
-		t.Error("expected entailed template target diagnostic to be filtered")
+	for _, name := range []string{
+		"validStringToTemplate",
+		"validTemplateToString",
+		"validStringToNumber",
+		"validNumberToString",
+		"validTemplateToNarrowTemplate",
+		"validNarrowTemplateToTemplate",
+		"validSymbol",
+		"validNamedToString",
+	} {
+		if spans[name] {
+			t.Errorf("expected diagnostic on %q to be filtered", name)
+		}
 	}
-	if !spans["invalidTemplateTarget"] {
-		t.Error("expected stronger template target diagnostic to be retained")
+	for _, name := range []string{
+		"invalidStringToTemplate",
+		"invalidTemplateToString",
+		"invalidStringToNumber",
+		"invalidNumberToString",
+		"invalidTemplateToNarrowTemplate",
+		"invalidNarrowTemplateToTemplate",
+		"invalidSymbol",
+		"invalidNamedToString",
+	} {
+		if !spans[name] {
+			t.Errorf("expected diagnostic on %q to be retained", name)
+		}
+	}
+}
+
+func TestFiltersOnlyValidStructuralImplications(t *testing.T) {
+	repositoryRoot, err := filepath.Abs("../../../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, parseDiagnostics, err := driver.LoadProgram(
+		repositoryRoot,
+		filepath.Join(repositoryRoot, "fixtures/analysis/tsconfig.json"),
+		driver.LoadProgramOptions{ForceNoEmit: true},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parseDiagnostics) > 0 {
+		t.Fatalf("unexpected parse diagnostics: %#v", parseDiagnostics)
+	}
+	defer program.Close()
+
+	filtered := filterEntailedRefinementDiagnostics(program.Checker, program.SourceFiles(), program.Diagnostics())
+	fixtureName := filepath.Join("fixtures", "analysis", "entailment-structure-matrix.ts")
+	spans := map[string]bool{}
+	for _, diagnostic := range filtered {
+		if !strings.HasSuffix(filepath.Clean(diagnostic.File), fixtureName) || diagnostic.Start == nil || diagnostic.Length == nil {
+			continue
+		}
+		file := program.SourceFile(diagnostic.File)
+		if file != nil && *diagnostic.Start >= 0 && *diagnostic.Start+*diagnostic.Length <= len(file.Text()) {
+			spans[file.Text()[*diagnostic.Start:*diagnostic.Start+*diagnostic.Length]] = true
+		}
+	}
+	for _, shape := range []string{
+		"Property",
+		"Optional",
+		"Array",
+		"Tuple",
+		"OptionalTuple",
+		"RestTuple",
+		"Generic",
+		"Union",
+		"Parameter",
+		"Recursive",
+	} {
+		if spans["valid"+shape] {
+			t.Errorf("expected valid %s diagnostic to be filtered", shape)
+		}
+		if !spans["invalid"+shape] {
+			t.Errorf("expected invalid %s diagnostic to be retained", shape)
+		}
+	}
+	if spans["validMutableArray"] {
+		t.Error("expected mutable-to-readonly array diagnostic to be filtered")
+	}
+	for _, name := range []string{
+		"invalidReadonlyArray",
+		"invalidOptionalRequired",
+		"invalidTupleLength",
+		"invalidTupleMember",
+	} {
+		if !spans[name] {
+			t.Errorf("expected ordinary incompatibility on %q to be retained", name)
+		}
 	}
 }

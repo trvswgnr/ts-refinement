@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.legacy.json",
+  "compilerOptions": {
+    "plugins": [
+      { "transform": "@ts-refinement/ttsc/check" },
+      { "transform": "@ts-refinement/ttsc/transform" }
+    ]
+  }
+}

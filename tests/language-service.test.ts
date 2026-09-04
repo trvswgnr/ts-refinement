@@ -169,8 +169,56 @@ describe("TypeScript language-service plugin", () => {
     } as ts.server.PluginCreateInfo);
 
     const diagnostics = proxy.getSemanticDiagnostics(fixtureFile("entailment-index-domains.ts"));
-    expect(originalDiagnostics.map((diagnostic) => diagnostic.code)).toEqual([2322, 2322]);
-    expect(diagnostics).toEqual([originalDiagnostics[1]]);
+    expect(originalDiagnostics).toHaveLength(16);
+    expect(originalDiagnostics.every((diagnostic) => diagnostic.code === 2322)).toBe(true);
+    expect(diagnostics).toEqual(originalDiagnostics.filter((_, index) => index % 2 === 1));
+  });
+
+  it("filters only valid implications across structural type boundaries", () => {
+    const languageService = createLanguageService();
+    const getSemanticDiagnostics = languageService.getSemanticDiagnostics.bind(languageService);
+    let originalDiagnostics: readonly ts.Diagnostic[] = [];
+    languageService.getSemanticDiagnostics = (fileName) => {
+      originalDiagnostics = getSemanticDiagnostics(fileName);
+      return [...originalDiagnostics];
+    };
+
+    const plugin = init({ typescript: ts });
+    // SAFETY: These are the complete language-service fields read by the plugin under test.
+    const proxy = plugin.create({
+      config: {},
+      languageService,
+      languageServiceHost: {},
+      project: {},
+      serverHost: ts.sys,
+    } as ts.server.PluginCreateInfo);
+
+    const diagnostics = proxy.getSemanticDiagnostics(fixtureFile("entailment-structure-matrix.ts"));
+    expect(originalDiagnostics).toHaveLength(25);
+    expect(originalDiagnostics.filter((diagnostic) => diagnostic.code === 2322)).toHaveLength(24);
+    expect(originalDiagnostics.filter((diagnostic) => diagnostic.code === 4104)).toHaveLength(1);
+    expect(
+      diagnostics.map((diagnostic) =>
+        diagnostic.start === undefined || diagnostic.length === undefined
+          ? ""
+          : diagnostic.file?.text.slice(diagnostic.start, diagnostic.start + diagnostic.length),
+      ),
+    ).toEqual([
+      "invalidProperty",
+      "invalidOptional",
+      "invalidArray",
+      "invalidTuple",
+      "invalidOptionalTuple",
+      "invalidRestTuple",
+      "invalidGeneric",
+      "invalidUnion",
+      "invalidParameter",
+      "invalidRecursive",
+      "invalidReadonlyArray",
+      "invalidOptionalRequired",
+      "invalidTupleLength",
+      "invalidTupleMember",
+    ]);
   });
 
   it("preserves publish verification warnings as warning diagnostics", () => {
