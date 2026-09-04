@@ -76,6 +76,7 @@ func TestRejectsShimParsedSideEffectsAndImpureAccess(t *testing.T) {
 		`delete value.item`,
 		`Math["random"]() < 0.5`,
 		"Math[`random`]() < 0.5",
+		`Math["ra" + "ndom"]() < 0.5`,
 	} {
 		if _, err := ParsePredicate(source); err == nil {
 			t.Errorf("ParsePredicate(%q) succeeded", source)

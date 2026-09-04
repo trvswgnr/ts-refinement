@@ -130,8 +130,11 @@ func isMathRandomAccess(current *shimast.Node) bool {
 		if access.Expression.Kind != shimast.KindIdentifier || access.Expression.Text() != "Math" || access.ArgumentExpression == nil {
 			return false
 		}
-		return (access.ArgumentExpression.Kind == shimast.KindStringLiteral ||
-			access.ArgumentExpression.Kind == shimast.KindNoSubstitutionTemplateLiteral) && access.ArgumentExpression.Text() == "random"
+		if access.ArgumentExpression.Kind == shimast.KindStringLiteral ||
+			access.ArgumentExpression.Kind == shimast.KindNoSubstitutionTemplateLiteral {
+			return access.ArgumentExpression.Text() == "random"
+		}
+		return true
 	default:
 		return false
 	}
