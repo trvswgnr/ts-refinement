@@ -95,3 +95,41 @@ func TestRetainsUnprovenRefinementTransfers(t *testing.T) {
 		}
 	}
 }
+
+func TestComparesSourceAndTargetIndexDomains(t *testing.T) {
+	repositoryRoot, err := filepath.Abs("../../../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, parseDiagnostics, err := driver.LoadProgram(
+		repositoryRoot,
+		filepath.Join(repositoryRoot, "fixtures/analysis/tsconfig.json"),
+		driver.LoadProgramOptions{ForceNoEmit: true},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parseDiagnostics) > 0 {
+		t.Fatalf("unexpected parse diagnostics: %#v", parseDiagnostics)
+	}
+	defer program.Close()
+
+	filtered := filterEntailedRefinementDiagnostics(program.Checker, program.SourceFiles(), program.Diagnostics())
+	fixtureName := filepath.Join("fixtures", "analysis", "entailment-index-domains.ts")
+	spans := map[string]bool{}
+	for _, diagnostic := range filtered {
+		if !strings.HasSuffix(filepath.Clean(diagnostic.File), fixtureName) || diagnostic.Start == nil || diagnostic.Length == nil {
+			continue
+		}
+		file := program.SourceFile(diagnostic.File)
+		if file != nil && *diagnostic.Start >= 0 && *diagnostic.Start+*diagnostic.Length <= len(file.Text()) {
+			spans[file.Text()[*diagnostic.Start:*diagnostic.Start+*diagnostic.Length]] = true
+		}
+	}
+	if spans["validTemplateTarget"] {
+		t.Error("expected entailed template target diagnostic to be filtered")
+	}
+	if !spans["invalidTemplateTarget"] {
+		t.Error("expected stronger template target diagnostic to be retained")
+	}
+}

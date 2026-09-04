@@ -435,9 +435,9 @@ function indexSignaturesAreEntailed(
 
 function indexTypeApplies(context: AnalyzerContext, source: ts.Type, target: ts.Type): boolean {
   return (
-    context.checker.isTypeAssignableTo(source, target) ||
-    ((target.flags & context.ts.TypeFlags.String) !== 0 &&
-      (source.flags & context.ts.TypeFlags.NumberLike) !== 0)
+    context.checker.isTypeAssignableTo(target, source) ||
+    ((source.flags & context.ts.TypeFlags.String) !== 0 &&
+      (target.flags & context.ts.TypeFlags.NumberLike) !== 0)
   );
 }
 

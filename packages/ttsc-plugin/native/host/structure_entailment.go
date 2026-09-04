@@ -334,8 +334,8 @@ func signaturesAreEntailed(
 }
 
 func indexTypeApplies(checker *shimchecker.Checker, source, target *shimchecker.Type) bool {
-	return checker.IsTypeAssignableTo(source, target) ||
-		target.Flags()&shimchecker.TypeFlagsString != 0 && source.Flags()&shimchecker.TypeFlagsNumberLike != 0
+	return checker.IsTypeAssignableTo(target, source) ||
+		source.Flags()&shimchecker.TypeFlagsString != 0 && target.Flags()&shimchecker.TypeFlagsNumberLike != 0
 }
 
 func isRefinementBrand(name string) bool {

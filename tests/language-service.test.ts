@@ -149,6 +149,30 @@ describe("TypeScript language-service plugin", () => {
     ]);
   });
 
+  it("compares source and target index domains before filtering diagnostics", () => {
+    const languageService = createLanguageService();
+    const getSemanticDiagnostics = languageService.getSemanticDiagnostics.bind(languageService);
+    let originalDiagnostics: readonly ts.Diagnostic[] = [];
+    languageService.getSemanticDiagnostics = (fileName) => {
+      originalDiagnostics = getSemanticDiagnostics(fileName);
+      return [...originalDiagnostics];
+    };
+
+    const plugin = init({ typescript: ts });
+    // SAFETY: These are the complete language-service fields read by the plugin under test.
+    const proxy = plugin.create({
+      config: {},
+      languageService,
+      languageServiceHost: {},
+      project: {},
+      serverHost: ts.sys,
+    } as ts.server.PluginCreateInfo);
+
+    const diagnostics = proxy.getSemanticDiagnostics(fixtureFile("entailment-index-domains.ts"));
+    expect(originalDiagnostics.map((diagnostic) => diagnostic.code)).toEqual([2322, 2322]);
+    expect(diagnostics).toEqual([originalDiagnostics[1]]);
+  });
+
   it("preserves publish verification warnings as warning diagnostics", () => {
     const directory = resolve(import.meta.dirname, "../fixtures/publish/unconfigured");
     const languageService = createLanguageService(directory);
