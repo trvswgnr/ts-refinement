@@ -29,6 +29,11 @@ const packages = [
     name: "@ts-refinement/typescript-plugin",
     profile: "node16",
   },
+  {
+    directory: "packages/ttsc-plugin",
+    name: "@ts-refinement/ttsc",
+    profile: "esm-only",
+  },
 ];
 
 async function run(command, arguments_, cwd = repositoryRoot) {
@@ -104,16 +109,30 @@ async function validateMetadata() {
   assert.deepEqual(manifests.get("@ts-refinement/runtime").optionalDependencies, undefined);
   assert.deepEqual(manifests.get("@ts-refinement/runtime").peerDependencies, undefined);
   assert.deepEqual(manifests.get("@ts-refinement/analyzer").dependencies, undefined);
-  assert.deepEqual(manifests.get("@ts-refinement/cli").dependencies, { valibot: "1.4.2" });
+  assert.deepEqual(manifests.get("@ts-refinement/cli").dependencies, {
+    acorn: "^8.18.0",
+    "acorn-walk": "^8.3.5",
+    valibot: "1.4.2",
+  });
+  assert.equal(manifests.get("@ts-refinement/cli").peerDependencies, undefined);
+  assert.deepEqual(manifests.get("@ts-refinement/typescript-plugin").dependencies, {
+    "@ts-refinement/analyzer": "0.1.0",
+  });
+  assert.deepEqual(manifests.get("@ts-refinement/ttsc").dependencies, undefined);
   assert.equal(
-    manifests.get("@ts-refinement/cli").peerDependencies["ts-refinement"],
+    manifests.get("@ts-refinement/ttsc").peerDependencies["ts-refinement"],
     manifests.get("ts-refinement").version,
   );
-  assert.deepEqual(manifests.get("@ts-refinement/typescript-plugin").dependencies, undefined);
+  assert.equal(
+    manifests.get("@ts-refinement/ttsc").peerDependencies["@ts-refinement/runtime"],
+    manifests.get("@ts-refinement/runtime").version,
+  );
   assert.deepEqual(manifests.get("@ts-refinement/rolldown").dependencies, {
     "@ts-refinement/unplugin": "0.1.0",
   });
   assert.deepEqual(manifests.get("@ts-refinement/unplugin").dependencies, {
+    "@jridgewell/remapping": "^2.3.5",
+    "@ts-refinement/analyzer": "0.1.0",
     "magic-string": "^0.30.21",
     unplugin: "^3.3.0",
   });
@@ -180,15 +199,44 @@ async function validateFullInstall(temporaryDirectory, artifacts) {
   await cp(join(repositoryRoot, "fixtures/package-consumer/full"), consumerDirectory, {
     recursive: true,
   });
+  const legacyArtifacts = artifacts.filter((artifact) => artifact.name !== "@ts-refinement/ttsc");
   await install(consumerDirectory, [
-    ...artifacts.map((artifact) => artifact.tarball),
+    ...legacyArtifacts.map((artifact) => artifact.tarball),
     "rolldown@1.2.6",
-    "typescript@5.9.3",
+    "ts-patch@4.0.1",
+    "typescript@6.0.3",
+    "vitest@4.1.11",
   ]);
-  const tsc = join(consumerDirectory, "node_modules", ".bin", "tsc");
+  const tspc = join(consumerDirectory, "node_modules", ".bin", "tspc");
+  const vitest = join(consumerDirectory, "node_modules", ".bin", "vitest");
   const refinement = join(consumerDirectory, "node_modules", ".bin", "ts-refinement");
-  await run(tsc, ["--project", "tsconfig.json"], consumerDirectory);
-  await run(refinement, ["check", "--project", "tsconfig.json"], consumerDirectory);
+  await run(
+    "node",
+    ["-e", 'require("@ts-refinement/typescript-plugin/transformer")'],
+    consumerDirectory,
+  );
+  await run(tspc, ["--project", "tsconfig.json"], consumerDirectory);
+  await run(tspc, ["--project", "tsconfig.emit.json"], consumerDirectory);
+  const tspcOutput = await readFile(
+    join(consumerDirectory, "tspc-dist", "refinement-build.js"),
+    "utf8",
+  );
+  assert.match(tspcOutput, /function checkPositive\(value\)/u);
+  assert.doesNotMatch(tspcOutput, /as Positive/u);
+  await run(vitest, ["run", "--config", "vitest.config.ts"], consumerDirectory);
+
+  const loaderRun = await run(
+    process.execPath,
+    [
+      "--loader",
+      "@ts-refinement/unplugin/loader",
+      "--input-type=module",
+      "--eval",
+      'const module = await import("./refinement-build.ts"); console.log(module.checkPositive(2)); try { module.checkPositive(-1); } catch (error) { console.log(error.name, error.value); }',
+    ],
+    consumerDirectory,
+  );
+  assert.match(loaderRun.stdout, /2\nRefinementError -1\n/u);
 
   await writeFile(
     join(consumerDirectory, "cli-invalid.ts"),
@@ -208,6 +256,12 @@ export const disproven = -1 as Positive;
         module: "NodeNext",
         moduleResolution: "NodeNext",
         noEmit: true,
+        plugins: [
+          {
+            transform: "@ts-refinement/typescript-plugin/transformer",
+            transformProgram: true,
+          },
+        ],
         strict: true,
         target: "ES2022",
       },
@@ -215,15 +269,55 @@ export const disproven = -1 as Positive;
     })}\n`,
   );
   await assert.rejects(
-    run(refinement, ["check", "--project", "cli-invalid-tsconfig.json"], consumerDirectory),
+    run(tspc, ["--project", "cli-invalid-tsconfig.json"], consumerDirectory),
     (error) => {
-      assert.equal(error.code, 1);
+      assert.notEqual(error.code, 0);
       assert.match(error.stdout, /error TS2322:/u);
-      assert.match(error.stdout, /error RF1200:/u);
+      assert.match(error.stdout, /RF1000200:/u);
       return true;
     },
   );
   await run("node", ["verify.mjs"], consumerDirectory);
+  await run(refinement, ["verify", "dist"], consumerDirectory);
+}
+
+async function validateNativeInstall(temporaryDirectory, artifacts) {
+  const consumerDirectory = join(temporaryDirectory, "native-consumer");
+  await cp(join(repositoryRoot, "fixtures/package-consumer/native"), consumerDirectory, {
+    recursive: true,
+  });
+  const requiredNames = [
+    "ts-refinement",
+    "@ts-refinement/cli",
+    "@ts-refinement/runtime",
+    "@ts-refinement/ttsc",
+  ];
+  const nativeArtifacts = requiredNames.map((name) => {
+    const artifact = artifacts.find((candidate) => candidate.name === name);
+    assert.ok(artifact, `Missing package artifact '${name}'.`);
+    return artifact.tarball;
+  });
+  await install(consumerDirectory, [...nativeArtifacts, "ttsc@0.28.5", "typescript@7.0.2"]);
+  const ttsc = join(consumerDirectory, "node_modules", ".bin", "ttsc");
+  const ttsx = join(consumerDirectory, "node_modules", ".bin", "ttsx");
+  const refinement = join(consumerDirectory, "node_modules", ".bin", "ts-refinement");
+  await run(ttsc, ["check", "--project", "tsconfig.json"], consumerDirectory);
+  await run(
+    ttsc,
+    ["build", "--project", "tsconfig.json", "--emit", "--outDir", "dist"],
+    consumerDirectory,
+  );
+  const emitted = await readFile(join(consumerDirectory, "dist", "index.js"), "utf8");
+  assert.match(emitted, /known = 5;/u);
+  assert.match(emitted, /new __ts_refinement_error/u);
+  assert.doesNotMatch(emitted, /as Positive/u);
+  await assert.rejects(
+    run(ttsx, ["--project", "tsconfig.json", "runner.ts"], consumerDirectory),
+    (error) => {
+      assert.match(error.stderr, /RefinementError/u);
+      return true;
+    },
+  );
   await run(refinement, ["verify", "dist"], consumerDirectory);
 }
 
@@ -234,6 +328,7 @@ try {
   await validateTarballs(artifacts);
   await validateMinimalInstall(temporaryDirectory, artifacts);
   await validateFullInstall(temporaryDirectory, artifacts);
+  await validateNativeInstall(temporaryDirectory, artifacts);
 } finally {
   await rm(temporaryDirectory, { force: true, recursive: true });
 }

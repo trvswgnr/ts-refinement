@@ -27,6 +27,10 @@ interface Domain {
   upper: Bound | null;
 }
 
+export interface EntailmentFacts {
+  readonly subjectLength?: boolean;
+}
+
 interface Comparison {
   readonly bound: Bound;
   readonly kind: ScalarKind;
@@ -731,6 +735,26 @@ function addComparison(domain: Domain, comparison: Comparison): void {
   }
 }
 
+function normalizeIntegralBounds(domain: Domain): void {
+  if (!domain.integral) return;
+  if (
+    domain.lower !== null &&
+    !domain.lower.inclusive &&
+    typeof domain.lower.value === "number" &&
+    Number.isSafeInteger(domain.lower.value + 1)
+  ) {
+    domain.lower = { inclusive: true, value: domain.lower.value + 1 };
+  }
+  if (
+    domain.upper !== null &&
+    !domain.upper.inclusive &&
+    typeof domain.upper.value === "number" &&
+    Number.isSafeInteger(domain.upper.value - 1)
+  ) {
+    domain.upper = { inclusive: true, value: domain.upper.value - 1 };
+  }
+}
+
 function isNonnegative(domain: Domain): boolean {
   if (domain.lower === null) return false;
   const zero = typeof domain.lower.value === "bigint" ? 0n : 0;
@@ -769,6 +793,7 @@ function congruenceEntails(domain: Domain, target: CongruenceFact): boolean {
 export function entails(
   source: readonly NormalizedPredicate[],
   target: readonly NormalizedPredicate[],
+  facts: EntailmentFacts = {},
 ): boolean {
   const sourceAtoms = source.flatMap((predicate) => flattenConjunction(predicate.expression));
   const exactAtoms = new Set(sourceAtoms.map(serializeExpression));
@@ -782,6 +807,13 @@ export function entails(
       domains.set(key, domain);
     }
     return domain;
+  }
+
+  if (facts.subjectLength === true) {
+    const domain = getDomain(lengthTerm, "number");
+    domain.finite = true;
+    domain.integral = true;
+    domain.lower = { inclusive: true, value: 0 };
   }
 
   for (const atom of sourceAtoms) {
@@ -816,6 +848,11 @@ export function entails(
       domain.bigintTyped = true;
     }
     addComparison(domain, comparison);
+  }
+
+  for (const domain of domains.values()) {
+    normalizeIntegralBounds(domain);
+    if (domain.lower !== null && domain.upper !== null) domain.finite = true;
   }
 
   for (const atom of sourceAtoms) {

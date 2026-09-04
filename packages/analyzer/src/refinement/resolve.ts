@@ -1,3 +1,5 @@
+import { dirname, join, resolve } from "node:path";
+
 import type * as ts from "typescript";
 
 import { DiagnosticCode } from "../diagnostics.ts";
@@ -25,6 +27,47 @@ export interface RefinementDefinition {
   readonly predicates: readonly NormalizedPredicate[];
 }
 
+export interface RefinementIndexPattern {
+  readonly placeholders: readonly ("bigint" | "number" | "string")[];
+  readonly texts: readonly string[];
+}
+
+export type RefinementPathSegment =
+  | { readonly kind: "array" }
+  | { readonly key: "number"; readonly kind: "index" }
+  | { readonly key: "string"; readonly kind: "index" }
+  | { readonly key: "symbol"; readonly kind: "index" }
+  | { readonly key: "template"; readonly kind: "index"; readonly pattern: RefinementIndexPattern }
+  | { readonly kind: "property"; readonly name: string; readonly optional: boolean }
+  | {
+      readonly fromEnd?: number;
+      readonly index: number;
+      readonly kind: "tuple";
+      readonly optional: boolean;
+    }
+  | { readonly end: number; readonly kind: "tupleRest"; readonly start: number }
+  | {
+      readonly kind: "union";
+      readonly property: string;
+      readonly value: boolean | null | number | string;
+    };
+
+export interface RefinementCheck {
+  readonly definition: RefinementDefinition;
+  readonly path: readonly RefinementPathSegment[];
+}
+
+export interface RefinementRecursion {
+  readonly path: readonly RefinementPathSegment[];
+  readonly targetPath: readonly RefinementPathSegment[];
+}
+
+export interface RefinementChecksResolution {
+  readonly checks: readonly RefinementCheck[];
+  readonly issues: readonly RefinementResolutionIssue[];
+  readonly recursions: readonly RefinementRecursion[];
+}
+
 export interface RefinementResolutionIssue {
   readonly code: number;
   readonly message: string;
@@ -44,23 +87,78 @@ export type RefinementResolution =
     };
 
 const resolutionCaches = new WeakMap<ts.Program, WeakMap<ts.Type, RefinementResolution>>();
+const sourcePackageNames = new WeakMap<ts.SourceFile, string | null>();
 
 function flattenIntersection(tsModule: typeof ts, type: ts.Type): readonly ts.Type[] {
   if (!type.isIntersection()) return [type];
   return type.types.flatMap((part) => flattenIntersection(tsModule, part));
 }
 
-function isRefinementMarkerSymbol(tsModule: typeof ts, symbol: ts.Symbol): boolean {
+function parsedPackageName(
+  context: AnalyzerContext,
+  packagePath: string,
+  source: string,
+): string | null {
+  const parsed = context.ts.parseJsonText(packagePath, source);
+  const statement = parsed.statements[0];
+  if (
+    statement === undefined ||
+    !context.ts.isExpressionStatement(statement) ||
+    !context.ts.isObjectLiteralExpression(statement.expression)
+  ) {
+    return null;
+  }
+  for (let index = statement.expression.properties.length - 1; index >= 0; index -= 1) {
+    const property = statement.expression.properties[index];
+    if (
+      property !== undefined &&
+      context.ts.isPropertyAssignment(property) &&
+      ((context.ts.isIdentifier(property.name) && property.name.text === "name") ||
+        (context.ts.isStringLiteral(property.name) && property.name.text === "name")) &&
+      context.ts.isStringLiteral(property.initializer)
+    ) {
+      return property.initializer.text;
+    }
+  }
+  return null;
+}
+
+function packageName(context: AnalyzerContext, sourceFile: ts.SourceFile): string | null {
+  const cached = sourcePackageNames.get(sourceFile);
+  if (cached !== undefined) return cached;
+
+  let directory = dirname(resolve(sourceFile.fileName));
+  for (;;) {
+    const packagePath = join(directory, "package.json");
+    const source = context.ts.sys.readFile(packagePath);
+    if (source !== undefined) {
+      const name = parsedPackageName(context, packagePath, source);
+      sourcePackageNames.set(sourceFile, name);
+      return name;
+    }
+    const parent = dirname(directory);
+    if (parent === directory) {
+      sourcePackageNames.set(sourceFile, null);
+      return null;
+    }
+    directory = parent;
+  }
+}
+
+function isRefinementMarkerSymbol(context: AnalyzerContext, symbol: ts.Symbol): boolean {
   for (const declaration of symbol.declarations ?? []) {
-    if (!tsModule.isPropertySignature(declaration) || declaration.name === undefined) continue;
-    if (!tsModule.isComputedPropertyName(declaration.name)) continue;
-    if (!tsModule.isIdentifier(declaration.name.expression)) continue;
+    if (!context.ts.isPropertySignature(declaration) || declaration.name === undefined) continue;
+    if (!context.ts.isComputedPropertyName(declaration.name)) continue;
+    if (!context.ts.isIdentifier(declaration.name.expression)) continue;
     if (declaration.name.expression.text !== "refinementBrand") continue;
 
     let ancestor: ts.Node | undefined = declaration.parent;
     while (ancestor !== undefined) {
-      if (tsModule.isTypeAliasDeclaration(ancestor)) {
-        return ancestor.name.text === "Refined";
+      if (context.ts.isTypeAliasDeclaration(ancestor)) {
+        return (
+          ancestor.name.text === "Refined" &&
+          packageName(context, declaration.getSourceFile()) === "ts-refinement"
+        );
       }
       ancestor = ancestor.parent;
     }
@@ -74,7 +172,7 @@ function markerForType(
 ): { readonly declaration: ts.Declaration; readonly symbol: ts.Symbol } | null {
   const symbol = context.checker
     .getPropertiesOfType(type)
-    .find((property) => isRefinementMarkerSymbol(context.ts, property));
+    .find((property) => isRefinementMarkerSymbol(context, property));
   const declaration = symbol?.declarations?.[0];
   return symbol === undefined || declaration === undefined ? null : { declaration, symbol };
 }
@@ -95,7 +193,7 @@ function resolvedSymbol(context: AnalyzerContext, node: ts.EntityName): ts.Symbo
   return context.checker.getAliasedSymbol(symbol);
 }
 
-function isRefinedAlias(context: AnalyzerContext, symbol: ts.Symbol): boolean {
+export function isRefinedAlias(context: AnalyzerContext, symbol: ts.Symbol): boolean {
   return (symbol.declarations ?? []).some((declaration) => {
     if (!context.ts.isTypeAliasDeclaration(declaration) || declaration.name.text !== "Refined") {
       return false;
@@ -110,7 +208,7 @@ function isRefinedAlias(context: AnalyzerContext, symbol: ts.Symbol): boolean {
       context.ts.forEachChild(node, visit);
     }
     visit(declaration);
-    return containsMarker;
+    return containsMarker && packageName(context, declaration.getSourceFile()) === "ts-refinement";
   });
 }
 
@@ -509,4 +607,394 @@ export function resolveRefinement(
 ): RefinementDefinition | null {
   const resolution = resolveRefinementMetadata(context, targetType);
   return resolution.isRefinement ? resolution.definition : null;
+}
+
+function arrayElementType(context: AnalyzerContext, type: ts.Type): ts.Type | undefined {
+  if (
+    !context.checker.isArrayType(type) &&
+    !["Array", "ReadonlyArray"].includes(type.symbol?.getName() ?? "")
+  ) {
+    return undefined;
+  }
+  // SAFETY: The array guard establishes TypeReference storage for type arguments.
+  return context.checker.getTypeArguments(type as ts.TypeReference)[0];
+}
+
+function templateIndexPlaceholder(
+  context: AnalyzerContext,
+  type: ts.Type,
+): "bigint" | "number" | "string" | null {
+  if ((type.flags & (context.ts.TypeFlags.Any | context.ts.TypeFlags.String)) !== 0) {
+    return "string";
+  }
+  if ((type.flags & context.ts.TypeFlags.Number) !== 0) return "number";
+  if ((type.flags & context.ts.TypeFlags.BigInt) !== 0) return "bigint";
+  return null;
+}
+
+function indexPathSegment(
+  context: AnalyzerContext,
+  keyType: ts.Type,
+): Extract<RefinementPathSegment, { readonly kind: "index" }> | null {
+  if ((keyType.flags & context.ts.TypeFlags.NumberLike) !== 0) {
+    return { key: "number", kind: "index" };
+  }
+  if ((keyType.flags & context.ts.TypeFlags.ESSymbolLike) !== 0) {
+    return { key: "symbol", kind: "index" };
+  }
+  if ((keyType.flags & context.ts.TypeFlags.TemplateLiteral) !== 0) {
+    // SAFETY: TemplateLiteral flags are carried only by TemplateLiteralType values.
+    const template = keyType as ts.TemplateLiteralType;
+    const placeholders = template.types.map((type) => templateIndexPlaceholder(context, type));
+    if (placeholders.some((placeholder) => placeholder === null)) return null;
+    return {
+      key: "template",
+      kind: "index",
+      pattern: {
+        placeholders: placeholders.filter((placeholder) => placeholder !== null),
+        texts: template.texts,
+      },
+    };
+  }
+  if ((keyType.flags & context.ts.TypeFlags.StringLike) !== 0) {
+    return { key: "string", kind: "index" };
+  }
+  return null;
+}
+
+function discriminantValue(
+  context: AnalyzerContext,
+  type: ts.Type,
+): boolean | null | number | string | undefined {
+  if ((type.flags & context.ts.TypeFlags.StringLiteral) !== 0) {
+    // SAFETY: StringLiteral flags are carried only by StringLiteralType values.
+    return (type as ts.StringLiteralType).value;
+  }
+  if ((type.flags & context.ts.TypeFlags.NumberLiteral) !== 0) {
+    // SAFETY: NumberLiteral flags are carried only by NumberLiteralType values.
+    return (type as ts.NumberLiteralType).value;
+  }
+  if ((type.flags & context.ts.TypeFlags.BooleanLiteral) !== 0) {
+    return context.checker.typeToString(type) === "true";
+  }
+  if ((type.flags & context.ts.TypeFlags.Null) !== 0) return null;
+  return undefined;
+}
+
+function propertyType(context: AnalyzerContext, type: ts.Type, name: string): ts.Type | undefined {
+  // SAFETY: Every supported TypeScript version exposes this checker method at runtime; the
+  // classic public TypeChecker declaration omits it while the tsgo shim exports it directly.
+  const checker = context.checker as ts.TypeChecker & {
+    getTypeOfPropertyOfType(type: ts.Type, name: string): ts.Type | undefined;
+  };
+  const resolved = checker.getTypeOfPropertyOfType(type, name);
+  if (resolved !== undefined) return resolved;
+  const property = context.checker.getPropertyOfType(type, name);
+  const location = property?.valueDeclaration ?? property?.declarations?.[0];
+  return property === undefined || location === undefined
+    ? undefined
+    : context.checker.getTypeOfSymbolAtLocation(property, location);
+}
+
+function unionDiscriminant(
+  context: AnalyzerContext,
+  type: ts.UnionType,
+):
+  | readonly {
+      readonly property: string;
+      readonly type: ts.Type;
+      readonly value: boolean | null | number | string;
+    }[]
+  | null {
+  for (const property of context.checker.getPropertiesOfType(type)) {
+    const branches = type.types.map((part) => {
+      const branchPropertyType = propertyType(context, part, property.getName());
+      const value =
+        branchPropertyType === undefined
+          ? undefined
+          : discriminantValue(context, branchPropertyType);
+      return value === undefined ? null : { property: property.getName(), type: part, value };
+    });
+    if (branches.some((branch) => branch === null)) continue;
+    const resolved = branches.filter((branch) => branch !== null);
+    if (new Set(resolved.map((branch) => JSON.stringify(branch.value))).size === resolved.length) {
+      return resolved;
+    }
+  }
+  return null;
+}
+
+function checkKey(check: RefinementCheck): string {
+  return JSON.stringify({
+    path: check.path,
+    predicates: check.definition.predicates.map((predicate) => predicate.key),
+  });
+}
+
+function withoutUndefined(context: AnalyzerContext, type: ts.Type): ts.Type {
+  if (!type.isUnion()) return type;
+  const defined = type.types.filter((part) => (part.flags & context.ts.TypeFlags.Undefined) === 0);
+  return defined.length === 1 && defined[0] !== undefined ? defined[0] : type;
+}
+
+export function typeNodeContainsRefinement(
+  context: AnalyzerContext,
+  targetNode: ts.TypeNode,
+): boolean {
+  const visitedDeclarations = new Set<ts.Declaration>();
+
+  function symbolAt(node: ts.Node): ts.Symbol | undefined {
+    const symbol = context.checker.getSymbolAtLocation(node);
+    if (symbol === undefined || (symbol.flags & context.ts.SymbolFlags.Alias) === 0) {
+      return symbol;
+    }
+    return context.checker.getAliasedSymbol(symbol);
+  }
+
+  function memberType(member: ts.ClassElement | ts.TypeElement): ts.TypeNode | undefined {
+    if (
+      context.ts.isPropertySignature(member) ||
+      context.ts.isMethodSignature(member) ||
+      context.ts.isCallSignatureDeclaration(member) ||
+      context.ts.isConstructSignatureDeclaration(member) ||
+      context.ts.isIndexSignatureDeclaration(member) ||
+      context.ts.isPropertyDeclaration(member) ||
+      context.ts.isMethodDeclaration(member) ||
+      context.ts.isGetAccessorDeclaration(member) ||
+      context.ts.isSetAccessorDeclaration(member)
+    ) {
+      return member.type;
+    }
+    return undefined;
+  }
+
+  function structuredDeclarationContainsRefinement(
+    declaration: ts.ClassDeclaration | ts.InterfaceDeclaration,
+  ): boolean {
+    if (declaration.heritageClauses?.some(visit) === true) return true;
+    return declaration.members.some((member) => {
+      const type = memberType(member);
+      return type !== undefined && visit(type);
+    });
+  }
+
+  function typeParameterContainsRefinement(declaration: ts.TypeParameterDeclaration): boolean {
+    return (
+      (declaration.constraint !== undefined && visit(declaration.constraint)) ||
+      (declaration.default !== undefined && visit(declaration.default))
+    );
+  }
+
+  function declarationContainsRefinement(declaration: ts.Declaration): boolean {
+    if (visitedDeclarations.has(declaration)) return false;
+    visitedDeclarations.add(declaration);
+
+    if (context.ts.isTypeAliasDeclaration(declaration)) {
+      return visit(declaration.type);
+    }
+    if (
+      context.ts.isInterfaceDeclaration(declaration) ||
+      context.ts.isClassDeclaration(declaration)
+    ) {
+      return structuredDeclarationContainsRefinement(declaration);
+    }
+    if (context.ts.isTypeParameterDeclaration(declaration)) {
+      return typeParameterContainsRefinement(declaration);
+    }
+    return false;
+  }
+
+  function referencedDeclarationContainsRefinement(node: ts.Node): boolean {
+    const symbol = symbolAt(node);
+    return symbol !== undefined && (symbol.declarations ?? []).some(declarationContainsRefinement);
+  }
+
+  function visit(node: ts.Node): boolean {
+    if (context.ts.isTypeReferenceNode(node)) {
+      const symbol = symbolAt(node.typeName);
+      if (symbol !== undefined && isRefinedAlias(context, symbol)) return true;
+      if (node.typeArguments?.some(visit) === true) return true;
+      return referencedDeclarationContainsRefinement(node.typeName);
+    }
+    if (context.ts.isExpressionWithTypeArguments(node)) {
+      if (node.typeArguments?.some(visit) === true) return true;
+      return referencedDeclarationContainsRefinement(node.expression);
+    }
+
+    let found = false;
+    context.ts.forEachChild(node, (child) => {
+      if (!found && visit(child)) found = true;
+    });
+    return found;
+  }
+
+  return visit(targetNode);
+}
+
+export function resolveRefinementChecks(
+  context: AnalyzerContext,
+  targetType: ts.Type,
+): RefinementChecksResolution {
+  const checks: RefinementCheck[] = [];
+  const issues: RefinementResolutionIssue[] = [];
+  const recursions: RefinementRecursion[] = [];
+  const activeTypes = new Map<ts.Type, readonly RefinementPathSegment[]>();
+
+  function visitRefinement(type: ts.Type, path: readonly RefinementPathSegment[]): boolean {
+    const resolution = resolveRefinementMetadata(context, type);
+    if (!resolution.isRefinement) return false;
+    issues.push(...resolution.issues);
+    if (resolution.definition !== null) {
+      checks.push({ definition: resolution.definition, path });
+      for (const baseType of resolution.definition.baseTypes) visit(baseType, path);
+    }
+    return true;
+  }
+
+  function visitTypeParameter(type: ts.Type, path: readonly RefinementPathSegment[]): boolean {
+    if ((type.flags & context.ts.TypeFlags.TypeParameter) === 0) return false;
+    const constraint = context.checker.getBaseConstraintOfType(type);
+    if (constraint !== undefined) visit(constraint, path);
+    return true;
+  }
+
+  function visitUnion(type: ts.Type, path: readonly RefinementPathSegment[]): boolean {
+    if (!type.isUnion()) return false;
+    const defined = type.types.filter(
+      (part) => (part.flags & context.ts.TypeFlags.Undefined) === 0,
+    );
+    if (defined.length === 1 && defined[0] !== undefined) {
+      visit(defined[0], path);
+      return true;
+    }
+
+    const discriminant = unionDiscriminant(context, type);
+    if (discriminant !== null) {
+      for (const branch of discriminant) {
+        visit(branch.type, [
+          ...path,
+          { kind: "union", property: branch.property, value: branch.value },
+        ]);
+      }
+      return true;
+    }
+
+    const branchChecks: RefinementCheck[][] = [];
+    for (const branch of type.types) {
+      const start = checks.length;
+      visit(branch, path);
+      branchChecks.push(checks.splice(start));
+    }
+    const keys = branchChecks.map((branch) => branch.map(checkKey).sort().join("|"));
+    if (keys.length > 0 && keys.every((key) => key === keys[0])) {
+      checks.push(...(branchChecks[0] ?? []));
+    } else if (branchChecks.some((branch) => branch.length > 0)) {
+      issues.push({
+        code: DiagnosticCode.UnableToResolveMetadata,
+        message: "A union containing refinements requires a unique literal discriminant.",
+      });
+    }
+    return true;
+  }
+
+  function visitTuple(type: ts.Type, path: readonly RefinementPathSegment[]): boolean {
+    if (!context.checker.isTupleType(type)) return false;
+    // SAFETY: isTupleType establishes a TypeReference backed by a TupleType target.
+    const reference = type as ts.TypeReference;
+    const typeArguments = context.checker.getTypeArguments(reference);
+    // SAFETY: TypeScript stores tuple element flags on the tuple reference target.
+    const target = reference.target as ts.TupleType & {
+      readonly elementFlags?: readonly ts.ElementFlags[];
+    };
+    const flags = target.elementFlags ?? [];
+    const restIndex = flags.findIndex(
+      (elementFlags) =>
+        (elementFlags & (context.ts.ElementFlags.Rest | context.ts.ElementFlags.Variadic)) !== 0,
+    );
+    for (const [index, elementType] of typeArguments.entries()) {
+      const elementFlags = flags[index] ?? context.ts.ElementFlags.Required;
+      if (
+        (elementFlags & (context.ts.ElementFlags.Rest | context.ts.ElementFlags.Variadic)) !==
+        0
+      ) {
+        visit(elementType, [
+          ...path,
+          { end: typeArguments.length - index - 1, kind: "tupleRest", start: index },
+        ]);
+      } else {
+        const fromEnd =
+          restIndex >= 0 && index > restIndex ? typeArguments.length - index : undefined;
+        visit(elementType, [
+          ...path,
+          {
+            fromEnd,
+            index,
+            kind: "tuple",
+            optional: (elementFlags & context.ts.ElementFlags.Optional) !== 0,
+          },
+        ]);
+      }
+    }
+    return true;
+  }
+
+  function visitArray(type: ts.Type, path: readonly RefinementPathSegment[]): boolean {
+    const elementType = arrayElementType(context, type);
+    if (elementType === undefined) return false;
+    visit(elementType, [...path, { kind: "array" }]);
+    return true;
+  }
+
+  function visitObject(type: ts.Type, path: readonly RefinementPathSegment[]): void {
+    const callableIntersection =
+      (type.flags & context.ts.TypeFlags.Intersection) !== 0 &&
+      context.checker.getSignaturesOfType(type, context.ts.SignatureKind.Call).length > 0;
+    if ((type.flags & context.ts.TypeFlags.Object) === 0 && !callableIntersection) {
+      return;
+    }
+    for (const property of context.checker.getPropertiesOfType(type)) {
+      const name = property.getName();
+      if (name.startsWith("__@")) continue;
+      const childType = propertyType(context, type, name);
+      if (childType === undefined) continue;
+      const optional =
+        (property.flags & context.ts.SymbolFlags.Optional) !== 0 ||
+        (childType.isUnion() &&
+          childType.types.some((part) => (part.flags & context.ts.TypeFlags.Undefined) !== 0));
+      visit(withoutUndefined(context, childType), [...path, { kind: "property", name, optional }]);
+    }
+    for (const indexInfo of context.checker.getIndexInfosOfType(type)) {
+      const segment = indexPathSegment(context, indexInfo.keyType);
+      if (segment === null) {
+        issues.push({
+          code: DiagnosticCode.UnableToResolveMetadata,
+          message: `Index signature key type '${context.checker.typeToString(indexInfo.keyType)}' cannot be validated at runtime.`,
+        });
+      } else {
+        visit(indexInfo.type, [...path, segment]);
+      }
+    }
+  }
+
+  function visit(type: ts.Type, path: readonly RefinementPathSegment[]): void {
+    const recursiveTarget = activeTypes.get(type);
+    if (recursiveTarget !== undefined) {
+      recursions.push({ path, targetPath: recursiveTarget });
+      return;
+    }
+    activeTypes.set(type, path);
+    try {
+      if (visitRefinement(type, path)) return;
+      if (visitTypeParameter(type, path)) return;
+      if (visitUnion(type, path)) return;
+      if (visitTuple(type, path)) return;
+      if (visitArray(type, path)) return;
+      visitObject(type, path);
+    } finally {
+      activeTypes.delete(type);
+    }
+  }
+
+  visit(targetType, []);
+  return { checks, issues, recursions };
 }

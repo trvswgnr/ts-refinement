@@ -137,10 +137,28 @@ export function analyzeFreeIdentifiers(
 
   visit(expression, rootScope);
 
+  function isUnsafeMathReference(reference: ts.Identifier): boolean {
+    const parent = reference.parent;
+    if (tsModule.isPropertyAccessExpression(parent)) {
+      return parent.expression !== reference || parent.name.text === "random";
+    }
+    if (tsModule.isElementAccessExpression(parent) && parent.expression === reference) {
+      const argument = parent.argumentExpression;
+      return (
+        argument === undefined ||
+        (!tsModule.isStringLiteral(argument) &&
+          !tsModule.isNoSubstitutionTemplateLiteral(argument)) ||
+        argument.text === "random"
+      );
+    }
+    return false;
+  }
+
   return {
-    disallowedNames: [...freeReferences.keys()]
-      .filter((name) => disallowedGlobals.has(name))
-      .sort(),
+    disallowedNames: [
+      ...[...freeReferences.keys()].filter((name) => disallowedGlobals.has(name)),
+      ...(freeReferences.get("Math")?.some(isUnsafeMathReference) ? ["Math.random"] : []),
+    ].sort(),
     freeReferences,
     unresolvedNames: [...freeReferences.keys()]
       .filter((name) => !standardGlobals.has(name) && !disallowedGlobals.has(name))

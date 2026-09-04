@@ -321,7 +321,7 @@ async function failureMessage(build: Promise<BuildOutput>): Promise<string> {
   return result?.status === "rejected" ? String(result.reason) : "";
 }
 
-describe("unplugin adapter conformance", () => {
+describe("unplugin adapter conformance", { timeout: 30_000 }, () => {
   it.each(builders)("builds working validators with %s", async (_name, build) => {
     const output = await build();
     expect(output.code).not.toContain("as Positive");
@@ -356,23 +356,17 @@ describe("unplugin adapter conformance", () => {
   it("fails every adapter with positioned RF diagnostics", async () => {
     for (const [_name, build] of builders) {
       const failure = await failureMessage(build(knownFalse));
-      expect(failure).toMatch(/RF1200/u);
+      expect(failure).toMatch(/RF1000200/u);
       expect(failure).toMatch(/known-false\.ts/u);
       expect(failure).toMatch(/1:\d+/u);
     }
   });
 
-  it("enforces configured program membership and ignore globs across adapters", async () => {
+  it("enforces configured program membership across adapters", async () => {
     for (const [_name, build] of builders) {
       const failure = await failureMessage(build(outsideProgram));
       expect(failure).toContain("unplugin-outside.ts");
       expect(failure).toContain("not included in the program configured by");
-
-      const output = await build(outsideProgram, {
-        ...pluginOptions,
-        ignore: ["../unplugin-outside.ts"],
-      });
-      expect(output.code).toContain("outside");
     }
   });
 

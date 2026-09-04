@@ -9,6 +9,12 @@
     "module": "Preserve",
     "moduleDetection": "force",
     "moduleResolution": "bundler",
+    "plugins": [
+      {
+        "transform": "@ts-refinement/typescript-plugin/transformer",
+        "transformProgram": true
+      }
+    ],
     "noEmit": true,
     "noFallthroughCasesInSwitch": true,
     "noImplicitOverride": true,
@@ -29,6 +35,13 @@
     "types": ["bun"],
     "verbatimModuleSyntax": true
   },
-  "include": ["packages/**/*.ts", "tests/**/*.ts", "tsdown.config.ts", "vitest.config.ts"],
+  "include": [
+    "packages/**/*.ts",
+    "scripts/**/*.ts",
+    "spec/**/*.ts",
+    "tests/**/*.ts",
+    "tsdown.config.ts",
+    "vitest.config.ts"
+  ],
   "exclude": ["node_modules", "packages/*/dist"]
 }

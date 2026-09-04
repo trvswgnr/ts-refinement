@@ -11,7 +11,7 @@ import {
   type RefinementManifest,
   type RefinementManifestAsset,
   type RefinementManifestSite,
-} from "../../analyzer/src/index.ts";
+} from "@ts-refinement/analyzer";
 
 export interface BuildTracker {
   readonly buildId: string;
@@ -43,15 +43,29 @@ function normalizeModule(configPath: string, fileName: string): string {
 }
 
 function siteIdentity(configPath: string, analysis: AnalysisResult): RefinementManifestSite {
-  const definition = analysis.site.definition;
-  if (definition === null) throw new Error("Cannot register an unresolved refinement site.");
+  if (analysis.site.checks.length === 0) {
+    throw new Error("Cannot register an unresolved refinement site.");
+  }
   const identity = {
     length: analysis.site.node.getWidth(),
     module: normalizeModule(configPath, analysis.site.fileName),
-    predicateKeys: definition.predicates.map((predicate) => predicate.key),
+    predicateKeys: analysis.site.checks.flatMap((check) =>
+      check.definition.predicates.map((predicate) => predicate.key),
+    ),
     start: analysis.site.node.getStart(),
   };
-  const id = createHash("sha256").update(JSON.stringify(identity)).digest("hex");
+  const id = createHash("sha256")
+    .update(
+      JSON.stringify({
+        ...identity,
+        checks: analysis.site.checks.map((check) => ({
+          path: check.path,
+          predicateKeys: check.definition.predicates.map((predicate) => predicate.key),
+        })),
+        recursions: analysis.site.recursions,
+      }),
+    )
+    .digest("hex");
   return { id, ...identity };
 }
 

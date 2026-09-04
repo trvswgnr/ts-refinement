@@ -1,7 +1,7 @@
 {
   "name": "@ts-refinement/cli",
   "version": "0.1.0",
-  "description": "Refinement-aware TypeScript project checker",
+  "description": "Publish-time verification for transformed ts-refinement output",
   "keywords": [
     "cli",
     "refinement-types",
@@ -36,11 +36,9 @@
     "prepack": "bun run build"
   },
   "dependencies": {
+    "acorn": "^8.18.0",
+    "acorn-walk": "^8.3.5",
     "valibot": "1.4.2"
-  },
-  "peerDependencies": {
-    "ts-refinement": "0.1.0",
-    "typescript": ">=5.7 <7"
   },
   "engines": {
     "node": ">=20.19.0"

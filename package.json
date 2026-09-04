@@ -10,16 +10,22 @@
   ],
   "type": "module",
   "scripts": {
-    "build": "tsdown",
+    "build": "bun run --cwd packages/analyzer build && tsdown",
+    "corpus:check": "bun run --cwd packages/analyzer build && bun scripts/generate-entailment-corpus.ts --check",
+    "corpus:update": "bun run --cwd packages/analyzer build && bun scripts/generate-entailment-corpus.ts",
     "fmt": "oxfmt --check .",
     "fmt:fix": "oxfmt .",
-    "gate": "bun run typecheck && bun run lint && bun run fmt && bun run test:coverage && bun run test:package && bun run test:example",
+    "gate": "bun run typecheck && bun run corpus:check && bun run test:native && bun run lint && bun run fmt && bun run test:fast",
+    "gate:release": "bun run typecheck && bun run corpus:check && bun run test:native && bun run lint && bun run fmt && bun run test:coverage && bun run test:bundlers && bun run test:package && bun run test:example",
     "lint": "oxlint .",
     "test": "vitest run",
-    "test:coverage": "vitest run --coverage",
+    "test:bundlers": "vitest run tests/unplugin.test.ts",
+    "test:coverage": "vitest run --coverage --exclude tests/unplugin.test.ts",
     "test:example": "cd examples/tsdown && bunx tsdown",
+    "test:fast": "vitest run --exclude tests/runner.test.ts --exclude tests/transformer.test.ts --exclude tests/ttsc.test.ts --exclude tests/typescript-versions.test.ts --exclude tests/unplugin.test.ts",
+    "test:native": "cd packages/ttsc-plugin/native && go test ./...",
     "test:package": "bun run --workspaces --sequential --if-present build && node scripts/verify-packages.mjs",
-    "typecheck": "bun packages/cli/src/index.ts check"
+    "typecheck": "bun run --cwd packages/analyzer build && bun run --cwd packages/typescript-plugin build && TSP_COMPILER_TS_PATH=./node_modules/typescript/lib/typescript.js tspc --noEmit"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.2",
@@ -27,7 +33,11 @@
     "@jridgewell/trace-mapping": "^0.3.31",
     "@oxlint/plugins": "^1.80.0",
     "@rspack/core": "2.2.2",
+    "@ts-refinement/analyzer": "workspace:*",
     "@ts-refinement/cli": "workspace:*",
+    "@ts-refinement/ttsc": "workspace:*",
+    "@ts-refinement/typescript-plugin": "workspace:*",
+    "@ts-refinement/unplugin": "workspace:*",
     "@types/bun": "^1.4.0",
     "@vitest/coverage-v8": "^4.1.11",
     "esbuild": "0.28.2",
@@ -39,14 +49,20 @@
     "rolldown": "^1.2.6",
     "rollup": "4.63.1",
     "ts-loader": "9.5.4",
+    "ts-patch": "^4.0.1",
     "tsdown": "^0.22.14",
+    "ttsc": "0.28.5",
     "typescript": "^6.0.0",
     "typescript-5-7": "npm:typescript@5.7.3",
     "typescript-5-9": "npm:typescript@5.9.3",
     "unplugin": "3.3.0",
+    "valibot": "1.4.2",
     "vite": "8.2.2",
     "vitest": "^4.1.11",
     "webpack": "5.110.3"
+  },
+  "optionalDependencies": {
+    "@typescript/typescript-linux-x64": "7.0.2"
   },
   "engines": {
     "node": ">=22.18.0"

@@ -14,6 +14,6 @@ type Positive = Refined<number, "n > 0">;
 
 `ts-refinement` is declaration-only: it has no runtime entry point or dependencies. Bare TypeScript carries its brands but cannot prove predicate implication.
 
-Use `@ts-refinement/typescript-plugin` for editor diagnostics, `@ts-refinement/cli` for CI checking and publish verification, and a supported `@ts-refinement/unplugin` adapter to insert runtime checks for unknown assertion sites.
+Use `tspc` with `@ts-refinement/typescript-plugin` for TypeScript 5.7 through 6.x checking, or `ttsc` with `@ts-refinement/ttsc` for TypeScript 7 and newer. `@ts-refinement/cli` provides publish verification, and a supported `@ts-refinement/unplugin` adapter inserts runtime checks for unknown assertion sites on the legacy compiler path.
 
 See the repository README for setup, behavior, and predicate rules.

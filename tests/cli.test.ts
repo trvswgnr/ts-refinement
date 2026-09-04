@@ -1,13 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import {
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
@@ -65,78 +57,6 @@ function invoke(arguments_: readonly string[], cwd = fixtureDirectory) {
   return { code: runCli(arguments_, io), stderr, stdout };
 }
 
-describe("ts-refinement check", () => {
-  it("accepts entailed assignments through file, directory, and discovered projects", () => {
-    const config = resolve(fixtureDirectory, "valid/tsconfig.json");
-    const directory = resolve(fixtureDirectory, "valid");
-    const nested = resolve(directory, "nested");
-
-    expect(invoke(["check", "--project", config])).toEqual({ code: 0, stderr: "", stdout: "" });
-    expect(invoke(["check", "-p", directory])).toEqual({ code: 0, stderr: "", stdout: "" });
-    expect(invoke(["check"], nested)).toEqual({ code: 0, stderr: "", stdout: "" });
-  });
-
-  it("preserves inverse, refinement, and unrelated diagnostics deterministically", () => {
-    const config = resolve(fixtureDirectory, "invalid/tsconfig.json");
-    const first = invoke(["check", "--project", config]);
-    const second = invoke(["check", "--project", config]);
-
-    expect(first).toEqual(second);
-    expect(first.code).toBe(1);
-    expect(first.stderr).toBe("");
-    expect(first.stdout).toContain("error TS2322:");
-    expect(first.stdout).toContain("error RF1200:");
-    expect(first.stdout).toContain("invalid/index.ts(9,26): error RF1200:");
-    expect(first.stdout).toContain("invalid/index.ts(10,14): error TS2322:");
-  });
-
-  it("reports command and config errors with exit code 2", () => {
-    expect(invoke([])).toEqual({ code: 2, stderr: expect.stringContaining("Usage:"), stdout: "" });
-    expect(invoke(["check", "--project"])).toEqual({
-      code: 2,
-      stderr: expect.stringContaining("Usage:"),
-      stdout: "",
-    });
-    expect(invoke(["check", "-p", "missing/tsconfig.json"]).code).toBe(2);
-
-    const malformed = mkdtempSync(resolve(tmpdir(), "ts-refinement-cli-"));
-    try {
-      writeFileSync(resolve(malformed, "tsconfig.json"), '{ "compilerOptions": { "strict": true }');
-      expect(invoke(["check", "-p", malformed]).code).toBe(2);
-    } finally {
-      rmSync(malformed, { force: true, recursive: true });
-    }
-  });
-
-  it("formats TypeScript configuration diagnostics with exit code 1", () => {
-    const result = invoke(["check", "-p", "config-error"]);
-
-    expect(result.code).toBe(1);
-    expect(result.stderr).toBe("");
-    expect(result.stdout).toContain("error TS5023: Unknown compiler option 'notACompilerOption'.");
-  });
-
-  it("never emits output even when the project enables emit", () => {
-    const directory = resolve(fixtureDirectory, "no-emit");
-    const outputDirectory = resolve(directory, "dist");
-
-    expect(existsSync(outputDirectory)).toBe(false);
-    expect(invoke(["check", "-p", directory])).toEqual({ code: 0, stderr: "", stdout: "" });
-    expect(existsSync(outputDirectory)).toBe(false);
-  });
-
-  it("prints publish verification warnings without failing the check", () => {
-    const unconfigured = resolve(import.meta.dirname, "../fixtures/publish/unconfigured");
-    const configured = resolve(import.meta.dirname, "../fixtures/publish/configured");
-
-    const warning = invoke(["check"], unconfigured);
-    expect(warning.code).toBe(0);
-    expect(warning.stderr).toBe("");
-    expect(warning.stdout.match(/warning RF1500:/gu)).toHaveLength(8);
-    expect(invoke(["check"], configured)).toEqual({ code: 0, stderr: "", stdout: "" });
-  });
-});
-
 describe("ts-refinement verify", () => {
   it("verifies instrumented output and reports marker, digest, build, and syntax failures", async () => {
     const directory = await buildVerifiedOutput();
@@ -151,6 +71,15 @@ describe("ts-refinement verify", () => {
       if (firstSite === undefined) throw new Error("expected a runtime-required site");
 
       expect(invoke(["verify", directory])).toEqual({ code: 0, stderr: "", stdout: "" });
+
+      const unmanifestedAsset = resolve(directory, "stale.js");
+      writeFileSync(unmanifestedAsset, "export const stale = true;\n");
+      const staleOutput = invoke(["verify", directory]);
+      expect(staleOutput.code).toBe(1);
+      expect(staleOutput.stdout).toContain(
+        "JavaScript asset 'stale.js' is not listed in the refinement manifest",
+      );
+      rmSync(unmanifestedAsset);
 
       const customManifest = resolve(directory, "custom-manifest.json");
       renameSync(manifestPath, customManifest);
@@ -180,6 +109,47 @@ describe("ts-refinement verify", () => {
         `'${firstSite.module}' at ${firstSite.start}:${firstSite.length} (site ${firstSite.id})`,
       );
       expect(missingMarker.stdout).not.toContain("SHA-256 mismatch");
+
+      const decoyCode = `
+    console.log(${JSON.stringify(marker)});
+    export const metadata = { marker: ${JSON.stringify(marker)} };
+      const ts_refinement_validator_decoy = { assert() {} };
+      ts_refinement_validator_decoy.assert(0, ${JSON.stringify(marker)});
+    `;
+      writeFileSync(resolve(directory, "decoy.js"), decoyCode);
+      writeFileSync(
+        manifestPath,
+        JSON.stringify({
+          ...markerlessManifest,
+          assets: [
+            ...markerlessManifest.assets,
+            {
+              file: "decoy.js",
+              sha256: createHash("sha256").update(decoyCode).digest("hex"),
+            },
+          ],
+        }),
+      );
+      expect(invoke(["verify", directory]).stdout).toContain("Missing runtime marker");
+
+      const interpolatedMarkerCode = originalCode.replaceAll(
+        JSON.stringify(marker),
+        `\`${marker}\${""}\``,
+      );
+      writeFileSync(assetPath, interpolatedMarkerCode);
+      writeFileSync(
+        manifestPath,
+        JSON.stringify({
+          ...originalManifest,
+          assets: [
+            {
+              file: "nested-runtime.js",
+              sha256: createHash("sha256").update(interpolatedMarkerCode).digest("hex"),
+            },
+          ],
+        }),
+      );
+      expect(invoke(["verify", directory]).stdout).toContain("Missing runtime marker");
 
       writeFileSync(assetPath, `${originalCode}\n`);
       writeFileSync(manifestPath, originalManifestSource);

@@ -1,0 +1,218 @@
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { expectEntailmentMatrixDiagnostics } from "./entailment-matrix.ts";
+
+const root = resolve(import.meta.dirname, "..");
+const ttsc = resolve(root, "node_modules/.bin/ttsc");
+const outputRoot = mkdtempSync(resolve(tmpdir(), "ts-refinement-ttsc-"));
+
+interface NativeRuntimeFixture {
+  readonly checkCallable: (value: (() => void) & { readonly value?: number }) => void;
+  readonly checkCapturedEvery: (value: number[]) => void;
+  readonly checkMiddleRest: (value: readonly [number, ...number[], number]) => void;
+  readonly checkOptional: (value: number | { readonly value?: number }) => void;
+  readonly checkPair: (value: { readonly 0?: number; readonly length: number }) => void;
+  readonly checkScores: (value: number) => void;
+  readonly checkSubjectShadowedEvery: (value: number[]) => void;
+  readonly checkTree: (value: {
+    readonly children: { readonly length: number };
+    readonly value: number;
+  }) => void;
+  readonly checkValues: (value: { readonly length: number }) => void;
+}
+
+function runTtsc(
+  project: "external-invalid" | "invalid" | "runtime" | "unrelated-invalid" | "valid",
+  outDir: string,
+) {
+  return spawnSync(
+    ttsc,
+    [
+      "build",
+      "--project",
+      resolve(root, `fixtures/ttsc/${project}/tsconfig.json`),
+      "--emit",
+      "--outDir",
+      outDir,
+    ],
+    { cwd: root, encoding: "utf8" },
+  );
+}
+
+function runTtscCheck(project: "external-invalid" | "imported-invalid" | "publish-unconfigured") {
+  return spawnSync(
+    ttsc,
+    ["check", "--project", resolve(root, `fixtures/ttsc/${project}/tsconfig.json`)],
+    { cwd: root, encoding: "utf8" },
+  );
+}
+
+beforeAll(() => {
+  const build = spawnSync("bun", ["run", "--cwd", "packages/ttsc-plugin", "build"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  if (build.status !== 0) throw new Error(`${build.stdout}${build.stderr}`);
+});
+
+afterAll(() => {
+  rmSync(outputRoot, { force: true, recursive: true });
+});
+
+describe("TypeScript-Go native plugin", () => {
+  it("erases proofs, emits runtime checks, and rejects known failures through ttsc", () => {
+    const validOutDir = resolve(outputRoot, "valid");
+    const valid = runTtsc("valid", validOutDir);
+    expect(valid.status, `${valid.stdout}${valid.stderr}`).toBe(0);
+
+    const emitted = readFileSync(resolve(validOutDir, "fixtures/ttsc/valid/index.js"), "utf8");
+    expect(emitted).toContain("knownGood = 5;");
+    expect(emitted).toContain("knownUnderThousand = 5;");
+    expect(emitted).toContain("new __ts_refinement_error");
+    expect(emitted).toContain("runtimeChecked");
+    expect(emitted).toContain("/^[a-z]+$/.test(__ts_refinement_value)");
+    expect(emitted).toContain("({ value: __ts_refinement_value }).value > 0");
+    expect(emitted).toContain("runtimeCaptured");
+    expect(emitted).toContain("runtimeImportedCapture");
+    expect(emitted).toMatch(/if \(value > 0\)\s+return value;/u);
+    expect(emitted).toMatch(/else\s+return value;/u);
+    expect(emitted).toContain("return value > 0 ? (value) : null;");
+    expect(emitted).toMatch(/value = dynamic;\s+return \(\(__ts_refinement_value\)/u);
+    expect(emitted).not.toContain("__ts_refinement_value > LIMIT");
+    expect(emitted).not.toContain("__ts_refinement_value > IMPORTED_LIMIT");
+    expect(emitted).toContain("Reflect.ownKeys");
+    expect(emitted).toContain("String(Number(");
+    expect(emitted).toContain('!== "symbol"');
+    expect(emitted).toContain("Object.getOwnPropertySymbols");
+    expect(emitted).toContain("/^data-([\\s\\S]*?)$/u.exec");
+    expect(emitted).toContain("__ts_refinement_validate0");
+    expect(emitted).toContain("new WeakSet");
+    expect(emitted).toContain('path: ("" + __ts_refinement_path');
+    expect(emitted).not.toContain("as Positive");
+
+    const manifest = JSON.parse(
+      readFileSync(resolve(validOutDir, ".ts-refinement-manifest.json"), "utf8"),
+    );
+    expect(manifest).toMatchObject({ schemaVersion: 1 });
+    expect(manifest.sites).toHaveLength(17);
+    expect(manifest.sites.every((site: { module: string }) => site.module === "index.ts")).toBe(
+      true,
+    );
+    expect(
+      manifest.sites.every((site: { id: string }) =>
+        emitted.includes(`ts-refinement-site:${manifest.buildId}:${site.id}`),
+      ),
+    ).toBe(true);
+    const emittedAsset = manifest.assets.find(
+      (asset: { file: string }) => asset.file === "fixtures/ttsc/valid/index.js",
+    );
+    expect(emittedAsset?.sha256).toBe(createHash("sha256").update(emitted).digest("hex"));
+
+    const invalid = runTtsc("invalid", resolve(outputRoot, "invalid"));
+    const diagnostics = `${invalid.stdout}${invalid.stderr}`;
+    expect(invalid.status).toBe(2);
+    expect(diagnostics).toContain("error RF1000200:");
+    expect(diagnostics).toContain("error RF1000101:");
+    expect(diagnostics).toContain("error RF1000003:");
+    expect(diagnostics).toContain("TS2345:");
+    expect(diagnostics).toContain("Predicate capture 'MUTABLE_LIMIT'");
+    expect(diagnostics).toContain("does not satisfy refinement 'Positive'");
+    expect(diagnostics).toContain("at '.age'");
+    expect(diagnostics).toContain("at '[3]'");
+
+    const unrelatedInvalid = runTtsc("unrelated-invalid", resolve(outputRoot, "unrelated-invalid"));
+    expect(unrelatedInvalid.status).toBe(2);
+    expect(`${unrelatedInvalid.stdout}${unrelatedInvalid.stderr}`).toContain("TS2322:");
+  }, 300_000);
+
+  it("reports refinement failures from imported project modules", () => {
+    const result = runTtscCheck("imported-invalid");
+    expect(result.status).toBe(2);
+    expect(`${result.stdout}${result.stderr}`).toMatch(/imported\.ts.*RF1000200/su);
+  }, 60_000);
+
+  it("filters only valid entailment matrix assignments through ttsc", () => {
+    const result = spawnSync(
+      ttsc,
+      ["check", "--project", resolve(root, "fixtures/entailment-matrix/tsconfig.native.json")],
+      { cwd: root, encoding: "utf8" },
+    );
+    expect(result.status).toBe(2);
+    expectEntailmentMatrixDiagnostics(`${result.stdout}${result.stderr}`);
+  }, 60_000);
+
+  it("rejects malformed collection containers at runtime", async () => {
+    const outDir = resolve(outputRoot, "runtime");
+    const result = runTtsc("runtime", outDir);
+    expect(result.status, `${result.stdout}${result.stderr}`).toBe(0);
+    const moduleUrl = `${pathToFileURL(resolve(outDir, "fixtures/ttsc/runtime/index.js")).href}?${Date.now()}`;
+    // SAFETY: ttsc emitted this module from the focused runtime fixture above.
+    const runtime = (await import(moduleUrl)) as NativeRuntimeFixture;
+    const malformedArray = { length: 0 };
+    expect(() => runtime.checkValues(malformedArray)).toThrowError(
+      expect.objectContaining({ name: "RefinementError", value: malformedArray }),
+    );
+    const malformedPair = { 0: 1, length: 1 };
+    expect(() => runtime.checkPair(malformedPair)).toThrowError(
+      expect.objectContaining({ name: "RefinementError", value: malformedPair }),
+    );
+    expect(() => runtime.checkMiddleRest([1, 0, 7])).toThrowError(
+      expect.objectContaining({ name: "RefinementError", path: "[1]", value: 0 }),
+    );
+    expect(() => runtime.checkMiddleRest([1, 2, 6, 1])).toThrowError(
+      expect.objectContaining({ name: "RefinementError", path: "[3]", value: 1 }),
+    );
+    expect(() => runtime.checkMiddleRest([1, 2, 6, 7])).not.toThrow();
+    const validCallable = Object.assign(() => undefined, { value: 1 });
+    expect(() => runtime.checkCallable(validCallable)).not.toThrow();
+    expect(() => runtime.checkCallable(Object.assign(() => undefined, { value: -1 }))).toThrowError(
+      expect.objectContaining({ path: ".value", value: -1 }),
+    );
+    expect(() => runtime.checkCallable(() => undefined)).toThrowError(
+      expect.objectContaining({ path: ".value", value: undefined }),
+    );
+    expect(() => runtime.checkOptional(42)).toThrowError(
+      expect.objectContaining({ name: "RefinementError", value: 42 }),
+    );
+    expect(() => runtime.checkScores(1)).toThrowError(
+      expect.objectContaining({ name: "RefinementError", value: 1 }),
+    );
+    expect(() => runtime.checkCapturedEvery([-1])).toThrowError(
+      expect.objectContaining({ name: "RefinementError", value: [-1] }),
+    );
+    expect(() => runtime.checkSubjectShadowedEvery([-1])).toThrowError(
+      expect.objectContaining({ name: "RefinementError", value: [-1] }),
+    );
+    expect(() => runtime.checkSubjectShadowedEvery([1, 2])).not.toThrow();
+    const malformedTree = { children: { length: 0 }, value: 1 };
+    expect(() => runtime.checkTree(malformedTree)).toThrowError(
+      expect.objectContaining({
+        name: "RefinementError",
+        path: ".children",
+        value: malformedTree.children,
+      }),
+    );
+  }, 120_000);
+
+  it("warns when exported refinements lack publish verification", () => {
+    const result = runTtscCheck("publish-unconfigured");
+    expect(result.status).toBe(0);
+    expect(`${result.stdout}${result.stderr}`).toMatch(/warning RF1000500:.*Positive/su);
+  }, 60_000);
+
+  it("does not own refinement assertions in external source dependencies", () => {
+    const checked = runTtscCheck("external-invalid");
+    expect(checked.status, `${checked.stdout}${checked.stderr}`).toBe(0);
+
+    const built = runTtsc("external-invalid", resolve(outputRoot, "external-invalid"));
+    expect(built.status, `${built.stdout}${built.stderr}`).toBe(0);
+    expect(`${built.stdout}${built.stderr}`).not.toContain("RF1000200");
+  }, 120_000);
+});

@@ -1,13 +1,13 @@
 export const DiagnosticCode = {
-  InvalidExpression: 1000,
-  PredicateNotConcrete: 1001,
-  CannotInferSubject: 1002,
-  ExternalCapture: 1003,
-  UnsupportedRuntimeSyntax: 1004,
-  SourceNotAssignable: 1101,
-  StaticallyDisproven: 1200,
-  UnableToResolveMetadata: 1400,
-  PublishVerificationMissing: 1500,
+  InvalidExpression: 1000000,
+  PredicateNotConcrete: 1000001,
+  CannotInferSubject: 1000002,
+  ExternalCapture: 1000003,
+  UnsupportedRuntimeSyntax: 1000004,
+  SourceNotAssignable: 1000101,
+  StaticallyDisproven: 1000200,
+  UnableToResolveMetadata: 1000400,
+  PublishVerificationMissing: 1000500,
 } as const;
 
 export type RefinementDiagnosticSeverity = "error" | "warning";

@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "lib": ["ESNext"],
+    "module": "Preserve",
+    "moduleResolution": "bundler",
+    "noEmit": true,
+    "paths": {
+      "ts-refinement": ["../../packages/core/src/index.ts"]
+    },
+    "plugins": [
+      {
+        "transform": "@ts-refinement/typescript-plugin/transformer",
+        "transformProgram": true
+      }
+    ],
+    "strict": true,
+    "target": "ESNext"
+  },
+  "files": [
+    "../analysis/entailment-index-domains.ts",
+    "../analysis/entailment-structure-matrix.ts",
+    "../../packages/core/src/index.ts"
+  ]
+}

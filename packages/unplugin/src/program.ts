@@ -1,8 +1,9 @@
+import { statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 import type * as ts from "typescript";
 
-import type { AnalyzerContext } from "../../analyzer/src/index.ts";
+import type { AnalyzerContext } from "@ts-refinement/analyzer";
 
 export interface ProgramState {
   readonly configFiles: readonly string[];
@@ -10,8 +11,8 @@ export interface ProgramState {
   readonly context: AnalyzerContext;
   readonly program: ts.Program;
   getScriptVersion(fileName: string): number;
-  isConfigCurrent(): boolean;
-  updateSource(fileName: string, source: string): void;
+  invalidateSource(fileName: string): void;
+  mayContainRefinement(fileName: string): boolean;
 }
 
 export interface ProgramOptions {
@@ -22,12 +23,77 @@ export interface ProgramOptions {
 interface ProgramConfig {
   readonly configFiles: readonly string[];
   readonly configPath: string;
-  readonly fingerprint: string;
   readonly parsed: ts.ParsedCommandLine;
 }
 
 interface ParsedCompilerOptions extends ts.CompilerOptions {
   readonly configFile?: ts.TsConfigSourceFile;
+}
+
+function moduleSpecifierText(tsModule: typeof ts, statement: ts.Statement): string | undefined {
+  if (tsModule.isImportDeclaration(statement) || tsModule.isExportDeclaration(statement)) {
+    return statement.moduleSpecifier !== undefined &&
+      tsModule.isStringLiteralLike(statement.moduleSpecifier)
+      ? statement.moduleSpecifier.text
+      : undefined;
+  }
+  if (
+    tsModule.isImportEqualsDeclaration(statement) &&
+    tsModule.isExternalModuleReference(statement.moduleReference) &&
+    statement.moduleReference.expression !== undefined &&
+    tsModule.isStringLiteralLike(statement.moduleReference.expression)
+  ) {
+    return statement.moduleReference.expression.text;
+  }
+  return undefined;
+}
+
+function sourceModuleSpecifiers(tsModule: typeof ts, sourceFile: ts.SourceFile): readonly string[] {
+  const specifiers = new Set(
+    sourceFile.statements.flatMap((statement) => {
+      const specifier = moduleSpecifierText(tsModule, statement);
+      return specifier === undefined ? [] : [specifier];
+    }),
+  );
+  function visit(node: ts.Node): void {
+    if (
+      tsModule.isImportTypeNode(node) &&
+      tsModule.isLiteralTypeNode(node.argument) &&
+      tsModule.isStringLiteralLike(node.argument.literal)
+    ) {
+      specifiers.add(node.argument.literal.text);
+    }
+    tsModule.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+  return [...specifiers];
+}
+
+function containsGlobalAugmentation(tsModule: typeof ts, sourceFile: ts.SourceFile): boolean {
+  let found = false;
+  function visit(node: ts.Node): void {
+    if (found) return;
+    if (
+      tsModule.isModuleDeclaration(node) &&
+      (node.flags & tsModule.NodeFlags.GlobalAugmentation) !== 0
+    ) {
+      found = true;
+      return;
+    }
+    tsModule.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+  return found;
+}
+
+function resolvedImport(
+  tsModule: typeof ts,
+  containingFile: string,
+  specifier: string,
+  options: ts.CompilerOptions,
+): string | undefined {
+  return tsModule.resolveModuleName(specifier, containingFile, options, tsModule.sys).resolvedModule
+    ?.resolvedFileName;
 }
 
 function readProgramConfig(tsModule: typeof ts, options: ProgramOptions): ProgramConfig {
@@ -70,17 +136,9 @@ function readProgramConfig(tsModule: typeof ts, options: ProgramOptions): Progra
       resolve(dirname(configPath), fileName),
     ),
   ];
-  const compilerOptions = Object.entries(parsed.options).filter(([name]) => name !== "configFile");
   return {
     configFiles: [...new Set(configFiles)],
     configPath,
-    fingerprint: JSON.stringify([
-      configPath,
-      configFiles,
-      parsed.fileNames,
-      compilerOptions,
-      parsed.projectReferences,
-    ]),
     parsed,
   };
 }
@@ -98,24 +156,45 @@ export function createProgramState(
     readonly version: number;
   }
 
-  const diskScripts = new Map<string, ScriptState>();
-  const overlays = new Map<string, ScriptState>();
-  const normalizeFileName = (fileName: string) => resolve(fileName);
+  interface DiskScriptState extends ScriptState {
+    readonly mtimeMs: number;
+    readonly size: number;
+  }
 
+  const diskScripts = new Map<string, DiskScriptState>();
+  const invalidatedScripts = new Set<string>();
+  const normalizeFileName = (fileName: string) => resolve(fileName);
   function readDiskScript(fileName: string): ScriptState | undefined {
     const normalizedFileName = normalizeFileName(fileName);
+    const invalidated = invalidatedScripts.delete(normalizedFileName);
+    const stats = statSync(normalizedFileName, { throwIfNoEntry: false });
+    if (stats === undefined) {
+      diskScripts.delete(normalizedFileName);
+      return undefined;
+    }
+
+    const previous = diskScripts.get(normalizedFileName);
+    if (!invalidated && previous?.mtimeMs === stats.mtimeMs && previous.size === stats.size) {
+      return previous;
+    }
+
     const source = tsModule.sys.readFile(normalizedFileName);
     if (source === undefined) {
       diskScripts.delete(normalizedFileName);
       return undefined;
     }
 
-    const previous = diskScripts.get(normalizedFileName);
-    if (previous?.source === source) return previous;
+    if (previous?.source === source) {
+      const script = { ...previous, mtimeMs: stats.mtimeMs, size: stats.size };
+      diskScripts.set(normalizedFileName, script);
+      return script;
+    }
 
     const script = {
+      mtimeMs: stats.mtimeMs,
       snapshot: tsModule.ScriptSnapshot.fromString(source),
       source,
+      size: stats.size,
       version: (previous?.version ?? -1) + 1,
     };
     diskScripts.set(normalizedFileName, script);
@@ -123,8 +202,7 @@ export function createProgramState(
   }
 
   function getScript(fileName: string): ScriptState | undefined {
-    const normalizedFileName = normalizeFileName(fileName);
-    return overlays.get(normalizedFileName) ?? readDiskScript(normalizedFileName);
+    return readDiskScript(normalizeFileName(fileName));
   }
 
   const host: ts.LanguageServiceHost = {
@@ -140,19 +218,69 @@ export function createProgramState(
     getScriptVersion: (fileName) => String(getScript(fileName)?.version ?? 0),
     readDirectory: (path, extensions, exclude, include, depth) =>
       tsModule.sys.readDirectory(path, extensions, exclude, include, depth),
-    readFile: (fileName) =>
-      overlays.get(normalizeFileName(fileName))?.source ?? tsModule.sys.readFile(fileName),
+    readFile: (fileName) => tsModule.sys.readFile(fileName),
     realpath: (path) => tsModule.sys.realpath?.(path) ?? path,
     useCaseSensitiveFileNames: () => tsModule.sys.useCaseSensitiveFileNames,
   };
   const languageService = tsModule.createLanguageService(host, tsModule.createDocumentRegistry());
+  let currentProgram: ts.Program | undefined;
+  let refinementFiles: ReadonlySet<string> | undefined;
 
   function getProgram(): ts.Program {
+    if (currentProgram !== undefined) return currentProgram;
     const program = languageService.getProgram();
     if (program === undefined) {
       throw new Error(`Unable to create a TypeScript program from '${configPath}'.`);
     }
-    return program;
+    currentProgram = program;
+    return currentProgram;
+  }
+
+  function getRefinementFiles(): ReadonlySet<string> {
+    if (refinementFiles !== undefined) return refinementFiles;
+    const dependencies = new Map<string, string[]>();
+    const discovered = new Set<string>();
+    let hasGlobalRefinements = false;
+    for (const sourceFile of getProgram().getSourceFiles()) {
+      const fileName = normalizeFileName(sourceFile.fileName);
+      const specifiers = sourceModuleSpecifiers(tsModule, sourceFile);
+      if (specifiers.includes("ts-refinement")) {
+        discovered.add(fileName);
+        hasGlobalRefinements ||= containsGlobalAugmentation(tsModule, sourceFile);
+      }
+      dependencies.set(
+        fileName,
+        specifiers.flatMap((specifier) => {
+          const importedFile = resolvedImport(
+            tsModule,
+            sourceFile.fileName,
+            specifier,
+            parsed.options,
+          );
+          return importedFile === undefined ? [] : [normalizeFileName(importedFile)];
+        }),
+      );
+    }
+
+    if (hasGlobalRefinements) {
+      for (const sourceFile of getProgram().getSourceFiles()) {
+        discovered.add(normalizeFileName(sourceFile.fileName));
+      }
+    }
+
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const [fileName, importedFiles] of dependencies) {
+        if (discovered.has(fileName) || !importedFiles.some((name) => discovered.has(name))) {
+          continue;
+        }
+        discovered.add(fileName);
+        changed = true;
+      }
+    }
+    refinementFiles = discovered;
+    return refinementFiles;
   }
 
   return {
@@ -168,24 +296,13 @@ export function createProgramState(
     getScriptVersion(fileName) {
       return getScript(fileName)?.version ?? 0;
     },
-    isConfigCurrent() {
-      return readProgramConfig(tsModule, options).fingerprint === initialConfig.fingerprint;
+    invalidateSource(fileName) {
+      invalidatedScripts.add(normalizeFileName(fileName));
+      currentProgram = undefined;
+      refinementFiles = undefined;
     },
-    updateSource(fileName, source) {
-      const normalizedFileName = normalizeFileName(fileName);
-      const previous = getScript(normalizedFileName);
-      if (previous?.source === source) {
-        if (!overlays.has(normalizedFileName) && previous !== undefined) {
-          overlays.set(normalizedFileName, previous);
-        }
-        return;
-      }
-
-      overlays.set(normalizedFileName, {
-        snapshot: tsModule.ScriptSnapshot.fromString(source),
-        source,
-        version: (previous?.version ?? -1) + 1,
-      });
+    mayContainRefinement(fileName) {
+      return getRefinementFiles().has(normalizeFileName(fileName));
     },
   };
 }

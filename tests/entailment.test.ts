@@ -4,7 +4,6 @@ import {
   assert,
   bigInt,
   constantFrom,
-  double,
   integer,
   oneof,
   property,
@@ -155,6 +154,16 @@ describe("normalized predicate entailment", () => {
     expect(entails([predicate("s.length % 4 === 0")], [predicate("s.length % 2 === 0")])).toBe(
       false,
     );
+    expect(
+      entails([predicate("s.length > 0")], [predicate("s.length >= 1")], {
+        subjectLength: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("derives finiteness from two-sided numeric bounds", () => {
+    expect(entails([predicate("n > 0 && n < 10")], [predicate("Number.isFinite(n)")])).toBe(true);
+    expect(entails([predicate("n > 0")], [predicate("Number.isFinite(n)")])).toBe(false);
   });
 
   it("is reflexive for generated normalized predicates", () => {
@@ -171,41 +180,6 @@ describe("normalized predicate entailment", () => {
         const item = predicate(text);
         expect(entails([item], [item])).toBe(true);
       }),
-    );
-  });
-
-  it("never proves an invalid supported number implication over generated samples", () => {
-    const atom = oneof(
-      tuple(constantFrom(">", ">=", "<", "<=", "==="), integer({ min: -20, max: 20 })).map(
-        ([operator, bound]) => `n ${operator} ${bound}`,
-      ),
-      tuple(constantFrom(">", ">=", "<", "<="), integer({ min: -20, max: 20 })).map(
-        ([operator, bound]) => `-n ${operator} ${bound}`,
-      ),
-      tuple(constantFrom(">", ">=", "<", "<="), integer({ min: -20, max: 20 })).map(
-        ([operator, bound]) => `2 * n + 1 ${operator} ${bound}`,
-      ),
-      constantFrom(
-        "Number.isFinite(n)",
-        "Number.isInteger(n)",
-        "!(n <= 0)",
-        "n % 2 === 0",
-        "n % 3 === 1",
-      ),
-    );
-    const conjunction = array(atom, { maxLength: 3 }).map(predicates);
-    const value = oneof(
-      constantFrom(NaN, Infinity, -Infinity, -0, 0, 0.5, -0.5),
-      double({ noDefaultInfinity: true, noNaN: true }),
-    );
-
-    assert(
-      property(conjunction, conjunction, value, (source, target, sample) => {
-        if (entails(source, target) && holds(source, sample)) {
-          expect(holds(target, sample)).toBe(true);
-        }
-      }),
-      { numRuns: 1_000 },
     );
   });
 

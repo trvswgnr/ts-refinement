@@ -7,6 +7,7 @@ import ts from "typescript";
 
 import {
   analyzeSourceFile,
+  DiagnosticCode,
   getPublishVerificationDiagnostics,
   getRefinementDefinitionDiagnostics,
   hasConfiguredPublishVerification,
@@ -17,14 +18,35 @@ import { fixtureFile, fixtureProgram, projectProgram } from "./helpers.ts";
 const publishFixtureDirectory = resolve(import.meta.dirname, "../fixtures/publish");
 
 describe("TypeScript refinement analysis", () => {
+  it("uses diagnostic codes outside TypeScript's namespace", () => {
+    // SAFETY: Supported TypeScript runtimes expose the complete diagnostic table under this key.
+    const runtimeTypeScript = ts as typeof ts & {
+      readonly Diagnostics: Readonly<Record<string, { readonly code: number }>>;
+    };
+    const typeScriptCodes = new Set(
+      Object.values(runtimeTypeScript.Diagnostics).map((diagnostic) => diagnostic.code),
+    );
+
+    expect(Object.values(DiagnosticCode).every((code) => !typeScriptCodes.has(code))).toBe(true);
+  });
+
   it("diagnoses invalid predicates at their declarations", () => {
     const state = fixtureProgram();
     const source = state.program.getSourceFile(fixtureFile("types.ts"));
     if (source === undefined) throw new Error("fixture was not loaded");
 
     const diagnostics = getRefinementDefinitionDiagnostics(state.context, source);
-    expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual([1000, 1002]);
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual([1000000, 1000002]);
     expect(diagnostics.every((diagnostic) => diagnostic.length > 1)).toBe(true);
+  });
+
+  it("ignores unrelated local aliases named Refined", () => {
+    const state = fixtureProgram();
+    const source = state.program.getSourceFile(fixtureFile("unrelated-refined-alias.ts"));
+    if (source === undefined) throw new Error("fixture was not loaded");
+
+    expect(getRefinementDefinitionDiagnostics(state.context, source)).toEqual([]);
+    expect(analyzeSourceFile(state.context, source)).toEqual([]);
   });
 
   it("resolves aliases, composition, and proof states", () => {
@@ -60,10 +82,21 @@ describe("TypeScript refinement analysis", () => {
       (result) => result.diagnostics,
     );
     expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
-      1200, 1200, 1101, 1101, 1101,
+      1000200, 1000200, 1000101, 1000101, 1000101,
     ]);
     expect(diagnostics[0]?.message).toContain("Value '-5'");
     expect(diagnostics[1]?.message).toContain("n % 2 === 0");
+  });
+
+  it("rejects unsafe sources for nested refinement targets", () => {
+    const state = fixtureProgram();
+    const source = state.program.getSourceFile(fixtureFile("nested-unsafe.ts"));
+    if (source === undefined) throw new Error("fixture was not loaded");
+
+    const diagnostics = analyzeSourceFile(state.context, source).flatMap(
+      (result) => result.diagnostics,
+    );
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual([1000101, 1000101]);
   });
 
   it("reports predicate errors at assertion sites", () => {
@@ -74,7 +107,7 @@ describe("TypeScript refinement analysis", () => {
     const diagnostics = analyzeSourceFile(state.context, source).flatMap(
       (result) => result.diagnostics,
     );
-    expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual([1002, 1000]);
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual([1000002, 1000000]);
   });
 
   it("rejects a generic predicate that cannot be materialized", () => {
@@ -85,7 +118,131 @@ describe("TypeScript refinement analysis", () => {
     const diagnostics = analyzeSourceFile(state.context, source).flatMap(
       (result) => result.diagnostics,
     );
-    expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual([1001]);
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual([1000001]);
+  });
+
+  it("collects nested object and array refinements with access paths", () => {
+    const state = fixtureProgram();
+    const source = state.program.getSourceFile(fixtureFile("nested-refinements.ts"));
+    if (source === undefined) throw new Error("fixture was not loaded");
+
+    const results = analyzeSourceFile(state.context, source);
+    expect(results).toHaveLength(7);
+    expect(results[0]?.site.checks.map((check) => check.path)).toEqual([
+      [{ kind: "property", name: "age", optional: false }],
+      [{ kind: "property", name: "name", optional: true }],
+    ]);
+    expect(results[1]?.site.checks.map((check) => check.path)).toEqual([[{ kind: "array" }]]);
+  });
+
+  it("collects tuple, generic, index, and discriminated-union refinements", () => {
+    const state = fixtureProgram();
+    const source = state.program.getSourceFile(fixtureFile("nested-refinements.ts"));
+    if (source === undefined) throw new Error("fixture was not loaded");
+
+    const results = analyzeSourceFile(state.context, source);
+    expect(results).toHaveLength(7);
+    expect(results[2]?.site.checks.map((check) => check.path)).toEqual([
+      [{ kind: "property", name: "value", optional: false }],
+    ]);
+    expect(results[3]?.site.checks.map((check) => check.path)).toEqual([
+      [{ index: 0, kind: "tuple", optional: false }],
+      [{ index: 1, kind: "tuple", optional: true }],
+      [{ end: 0, kind: "tupleRest", start: 2 }],
+    ]);
+    expect(results[4]?.site.checks.map((check) => check.path)).toEqual([
+      [
+        { kind: "union", property: "kind", value: "count" },
+        { kind: "property", name: "count", optional: false },
+      ],
+      [
+        { kind: "union", property: "kind", value: "user" },
+        { kind: "property", name: "user", optional: false },
+        { kind: "property", name: "age", optional: false },
+      ],
+      [
+        { kind: "union", property: "kind", value: "user" },
+        { kind: "property", name: "user", optional: false },
+        { kind: "property", name: "name", optional: true },
+      ],
+    ]);
+    expect(results[5]?.site.checks.map((check) => check.path)).toEqual([
+      [{ key: "string", kind: "index" }],
+    ]);
+    expect(results[6]?.site.checks.map((check) => check.path)).toEqual([
+      [{ kind: "property", name: "value", optional: false }],
+    ]);
+    expect(results[6]?.site.recursions).toEqual([
+      {
+        path: [{ kind: "property", name: "children", optional: false }, { kind: "array" }],
+        targetPath: [],
+      },
+    ]);
+    expect(results.every((result) => result.diagnostics.length === 0)).toBe(true);
+  });
+
+  it("rejects statically invalid nested object and array values", () => {
+    const state = fixtureProgram();
+    const source = state.program.getSourceFile(fixtureFile("nested-invalid.ts"));
+    if (source === undefined) throw new Error("fixture was not loaded");
+
+    const results = analyzeSourceFile(state.context, source);
+    expect(results.map((result) => result.proof.kind)).toEqual(["false", "false", "false"]);
+    expect(results.map((result) => result.diagnostics[0]?.code)).toEqual([
+      1000200, 1000200, 1000200,
+    ]);
+    expect(results[0]?.diagnostics[0]?.message).toContain("at '.age'");
+    expect(results[1]?.diagnostics[0]?.message).toContain("at '[0]'");
+    expect(results[2]?.diagnostics[0]?.message).toContain("at '[3]'");
+  });
+
+  it("matches numeric, symbol, and template-literal index domains", () => {
+    const state = fixtureProgram();
+    const invalidSource = state.program.getSourceFile(fixtureFile("index-signatures-invalid.ts"));
+    const runtimeSource = state.program.getSourceFile(fixtureFile("index-signatures.ts"));
+    if (invalidSource === undefined || runtimeSource === undefined) {
+      throw new Error("fixture was not loaded");
+    }
+
+    const invalidResults = analyzeSourceFile(state.context, invalidSource);
+    expect(invalidResults.map((result) => result.proof.kind)).toEqual([
+      "false",
+      "false",
+      "false",
+      "true",
+    ]);
+    expect(invalidResults.map((result) => result.diagnostics[0]?.code)).toEqual([
+      1000200,
+      1000200,
+      1000200,
+      undefined,
+    ]);
+
+    const runtimeResults = analyzeSourceFile(state.context, runtimeSource);
+    expect(runtimeResults).toHaveLength(5);
+    expect(runtimeResults[0]?.site.checks[0]?.path).toEqual([{ key: "number", kind: "index" }]);
+    expect(runtimeResults[1]?.site.checks[0]?.path).toEqual([{ key: "symbol", kind: "index" }]);
+    expect(runtimeResults[2]?.site.checks[0]?.path).toEqual([
+      {
+        key: "template",
+        kind: "index",
+        pattern: { placeholders: ["string"], texts: ["data-", ""] },
+      },
+    ]);
+    expect(runtimeResults[3]?.site.checks[0]?.path).toEqual([
+      {
+        key: "template",
+        kind: "index",
+        pattern: { placeholders: ["number"], texts: ["number-", ""] },
+      },
+    ]);
+    expect(runtimeResults[4]?.site.checks[0]?.path).toEqual([
+      {
+        key: "template",
+        kind: "index",
+        pattern: { placeholders: ["bigint"], texts: ["bigint-", ""] },
+      },
+    ]);
   });
 
   it("evaluates arithmetic through nested refinement assertions", () => {
@@ -97,7 +254,7 @@ describe("TypeScript refinement analysis", () => {
     expect(results.map((result) => result.proof.kind)).toEqual(["false", "true"]);
     expect(
       results.flatMap((result) => result.diagnostics).map((diagnostic) => diagnostic.code),
-    ).toEqual([1200]);
+    ).toEqual([1000200]);
   });
 
   it("analyzes angle-bracket and as refinement assertions equivalently", () => {
@@ -139,7 +296,7 @@ describe("TypeScript refinement analysis", () => {
     const results = analyzeSourceFile(state.context, source);
     expect(results).toHaveLength(2);
     expect(results.map((result) => result.proof.kind)).toEqual(["false", "false"]);
-    expect(results.map((result) => result.diagnostics[0]?.code)).toEqual([1200, 1200]);
+    expect(results.map((result) => result.diagnostics[0]?.code)).toEqual([1000200, 1000200]);
     expect(results[0]?.diagnostics[0]?.message).toBe(results[1]?.diagnostics[0]?.message);
   });
 
@@ -234,7 +391,7 @@ describe("TypeScript refinement analysis", () => {
 
     const diagnostics = getRefinementDefinitionDiagnostics(state.context, source);
     expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
-      1003, 1003, 1003, 1003, 1003, 1003, 1003, 1003, 1003, 1002,
+      1000003, 1000003, 1000003, 1000003, 1000003, 1000003, 1000003, 1000003, 1000003, 1000002,
     ]);
     expect(diagnostics.slice(0, 9).map((diagnostic) => diagnostic.message)).toEqual(
       [
@@ -249,7 +406,7 @@ describe("TypeScript refinement analysis", () => {
         "AMBIENT",
       ].map(
         (name) =>
-          `RF1003: Predicate capture '${name}' must resolve to an immutable primitive literal.`,
+          `RF1000003: Predicate capture '${name}' must resolve to an immutable primitive literal.`,
       ),
     );
     for (const diagnostic of diagnostics) {
@@ -267,7 +424,7 @@ describe("TypeScript refinement analysis", () => {
 
     const diagnostics = getPublishVerificationDiagnostics(state.context, source);
     expect(diagnostics).toHaveLength(8);
-    expect(diagnostics.every((diagnostic) => diagnostic.code === 1500)).toBe(true);
+    expect(diagnostics.every((diagnostic) => diagnostic.code === 1000500)).toBe(true);
     expect(diagnostics.every((diagnostic) => diagnostic.severity === "warning")).toBe(true);
     expect(diagnostics.map((diagnostic) => diagnostic.message)).toEqual(
       expect.arrayContaining(

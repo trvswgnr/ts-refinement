@@ -44,14 +44,14 @@ describe("TypeScript language-service plugin", () => {
       .getSemanticDiagnostics(fixtureFile("invalid.ts"))
       .filter((diagnostic) => diagnostic.source === "ts-refinement");
     expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
-      1200, 1200, 1101, 1101, 1101,
+      1000200, 1000200, 1000101, 1000101, 1000101,
     ]);
-    expect(diagnostics[0]?.messageText).toContain("RF1200");
+    expect(diagnostics[0]?.messageText).toContain("RF1000200");
 
     const declarationDiagnostics = proxy
       .getSemanticDiagnostics(fixtureFile("types.ts"))
       .filter((diagnostic) => diagnostic.source === "ts-refinement");
-    expect(declarationDiagnostics.map((diagnostic) => diagnostic.code)).toEqual([1000, 1002]);
+    expect(declarationDiagnostics.map((diagnostic) => diagnostic.code)).toEqual([1000000, 1000002]);
   });
 
   it("suppresses brand diagnostics only for proven refinement entailment", () => {
@@ -100,6 +100,147 @@ describe("TypeScript language-service plugin", () => {
     });
   });
 
+  it("suppresses entailed refinements in every assignment position", () => {
+    const languageService = createLanguageService();
+    const getSemanticDiagnostics = languageService.getSemanticDiagnostics.bind(languageService);
+    let originalDiagnostics: readonly ts.Diagnostic[] = [];
+    languageService.getSemanticDiagnostics = (fileName) => {
+      originalDiagnostics = getSemanticDiagnostics(fileName);
+      return [...originalDiagnostics];
+    };
+
+    const plugin = init({ typescript: ts });
+    // SAFETY: These are the complete language-service fields read by the plugin under test.
+    const proxy = plugin.create({
+      config: {},
+      languageService,
+      languageServiceHost: {},
+      project: {},
+      serverHost: ts.sys,
+    } as ts.server.PluginCreateInfo);
+
+    const diagnostics = proxy
+      .getSemanticDiagnostics(fixtureFile("entailment-positions.ts"))
+      .filter((diagnostic) => diagnostic.source !== "ts-refinement");
+
+    expect(originalDiagnostics.map((diagnostic) => diagnostic.code)).toEqual([
+      2322, 2352, 2322, 2345, 2345, 2345, 2345, 2322, 2322, 2322, 2322, 2322, 2322, 2322,
+    ]);
+    expect(diagnostics).toHaveLength(1);
+    const diagnostic = diagnostics[0];
+    expect(diagnostic?.code).toBe(2345);
+    expect(
+      diagnostic?.start === undefined || diagnostic.length === undefined
+        ? ""
+        : diagnostic.file?.text.slice(diagnostic.start, diagnostic.start + diagnostic.length),
+    ).toBe("weak");
+  });
+
+  it("retains unrelated callable incompatibilities in refined structures", () => {
+    const languageService = createLanguageService();
+    const plugin = init({ typescript: ts });
+    // SAFETY: These are the complete language-service fields read by the plugin under test.
+    const proxy = plugin.create({
+      config: {},
+      languageService,
+      languageServiceHost: {},
+      project: {},
+      serverHost: ts.sys,
+    } as ts.server.PluginCreateInfo);
+
+    const diagnostics = proxy.getSemanticDiagnostics(
+      fixtureFile("entailment-callable-mismatch.ts"),
+    );
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
+      2322, 2322, 2322, 2322, 2322,
+    ]);
+  });
+
+  it("compares source and target index domains before filtering diagnostics", () => {
+    const languageService = createLanguageService();
+    const getSemanticDiagnostics = languageService.getSemanticDiagnostics.bind(languageService);
+    let originalDiagnostics: readonly ts.Diagnostic[] = [];
+    languageService.getSemanticDiagnostics = (fileName) => {
+      originalDiagnostics = getSemanticDiagnostics(fileName);
+      return [...originalDiagnostics];
+    };
+
+    const plugin = init({ typescript: ts });
+    // SAFETY: These are the complete language-service fields read by the plugin under test.
+    const proxy = plugin.create({
+      config: {},
+      languageService,
+      languageServiceHost: {},
+      project: {},
+      serverHost: ts.sys,
+    } as ts.server.PluginCreateInfo);
+
+    const diagnostics = proxy.getSemanticDiagnostics(fixtureFile("entailment-index-domains.ts"));
+    expect(originalDiagnostics).toHaveLength(16);
+    expect(originalDiagnostics.every((diagnostic) => diagnostic.code === 2322)).toBe(true);
+    expect(diagnostics).toEqual(originalDiagnostics.filter((_, index) => index % 2 === 1));
+  });
+
+  it("filters only valid implications across structural type boundaries", () => {
+    const languageService = createLanguageService();
+    const getSemanticDiagnostics = languageService.getSemanticDiagnostics.bind(languageService);
+    let originalDiagnostics: readonly ts.Diagnostic[] = [];
+    languageService.getSemanticDiagnostics = (fileName) => {
+      originalDiagnostics = getSemanticDiagnostics(fileName);
+      return [...originalDiagnostics];
+    };
+
+    const plugin = init({ typescript: ts });
+    // SAFETY: These are the complete language-service fields read by the plugin under test.
+    const proxy = plugin.create({
+      config: {},
+      languageService,
+      languageServiceHost: {},
+      project: {},
+      serverHost: ts.sys,
+    } as ts.server.PluginCreateInfo);
+
+    const diagnostics = proxy.getSemanticDiagnostics(fixtureFile("entailment-structure-matrix.ts"));
+    expect(originalDiagnostics.filter((diagnostic) => diagnostic.code === 2322)).toHaveLength(43);
+    expect(originalDiagnostics.filter((diagnostic) => diagnostic.code === 1360)).toHaveLength(2);
+    expect(originalDiagnostics.filter((diagnostic) => diagnostic.code === 4104)).toHaveLength(1);
+    expect(originalDiagnostics.filter((diagnostic) => diagnostic.code === 4104)).toHaveLength(1);
+    expect(
+      diagnostics.map((diagnostic) =>
+        diagnostic.start === undefined || diagnostic.length === undefined
+          ? ""
+          : diagnostic.file?.text.slice(diagnostic.start, diagnostic.start + diagnostic.length),
+      ),
+    ).toEqual([
+      "invalidProperty",
+      "invalidOptional",
+      "invalidArray",
+      "invalidTuple",
+      "invalidOptionalTuple",
+      "invalidRestTuple",
+      "invalidMiddleRestSuffix",
+      "invalidGeneric",
+      "invalidUnion",
+      "invalidCallableProperty",
+      "invalidParameter",
+      "invalidCallableMiddleRest",
+      "invalidRecursive",
+      "invalidReadonlyArray",
+      "invalidOptionalRequired",
+      "invalidTupleLength",
+      "invalidTupleMember",
+      "invalidOptionalToRequiredTuple",
+      "invalidRestToFixedTuple",
+      "invalidTupleExtra",
+      "invalidFixedToRestMember",
+      "satisfies",
+      "invalidGenericCallable",
+      "invalidGenericConstraint",
+      "invalidGenericArity",
+      "return",
+    ]);
+  });
+
   it("preserves publish verification warnings as warning diagnostics", () => {
     const directory = resolve(import.meta.dirname, "../fixtures/publish/unconfigured");
     const languageService = createLanguageService(directory);
@@ -117,7 +258,7 @@ describe("TypeScript language-service plugin", () => {
       .getSemanticDiagnostics(resolve(directory, "index.ts"))
       .filter((diagnostic) => diagnostic.source === "ts-refinement");
     expect(diagnostics).toHaveLength(8);
-    expect(diagnostics.every((diagnostic) => diagnostic.code === 1500)).toBe(true);
+    expect(diagnostics.every((diagnostic) => diagnostic.code === 1000500)).toBe(true);
     expect(
       diagnostics.every((diagnostic) => diagnostic.category === ts.DiagnosticCategory.Warning),
     ).toBe(true);

@@ -3,6 +3,7 @@ import { dirname, extname, matchesGlob, relative, resolve } from "node:path";
 import ts from "typescript";
 import { createUnplugin, type UnpluginFactory } from "unplugin";
 
+import { transformCandidate } from "./candidate.ts";
 import type { RefinementTypesPluginOptions } from "./options.ts";
 import { createProgramState, type ProgramState } from "./program.ts";
 import {
@@ -134,9 +135,7 @@ const factory: UnpluginFactory<RefinementTypesPluginOptions | undefined, false> 
 
     buildStart() {
       registry.clear();
-      if (state === null || !state.isConfigCurrent()) {
-        state = createProgramState(ts, options);
-      }
+      state = createProgramState(ts, options);
       tracker.reset(state.configPath);
       if (meta.framework !== "esbuild") {
         for (const configFile of state.configFiles) this.addWatchFile(configFile);
@@ -144,6 +143,14 @@ const factory: UnpluginFactory<RefinementTypesPluginOptions | undefined, false> 
           this.addWatchFile(sourceFile.fileName);
         }
       }
+    },
+
+    watchChange(id) {
+      if (state === null) return;
+      const fileName = resolve(cleanModuleId(id));
+      if (state.configFiles.includes(fileName)) state = null;
+      else if (state.program.getSourceFile(fileName) === undefined) state = null;
+      else state.invalidateSource(fileName);
     },
 
     load: {
@@ -161,7 +168,9 @@ const factory: UnpluginFactory<RefinementTypesPluginOptions | undefined, false> 
     },
 
     transform: {
-      filter: { id: /\.[cm]?tsx?(?:[?#].*)?$/u },
+      filter: {
+        id: /\.[cm]?tsx?(?:[?#].*)?$/u,
+      },
       handler(code, id) {
         const fileName = resolve(cleanModuleId(id));
         if (!isTransformableTypeScript(fileName)) return null;
@@ -179,9 +188,16 @@ const factory: UnpluginFactory<RefinementTypesPluginOptions | undefined, false> 
         );
         if (ignore.some((pattern) => matchesGlob(relativeFileName, pattern))) return null;
 
-        state.updateSource(fileName, code);
+        const candidate = transformCandidate(state, fileName, code);
+        if (candidate.kind === "skip") return null;
+        if (candidate.kind === "error") {
+          const { message } = candidate;
+          if (meta.framework === "farm") throw new Error(message);
+          else this.error({ id: fileName, message });
+          return null;
+        }
         const context = state.context;
-        const sourceFile = context.program.getSourceFile(fileName);
+        const sourceFile = candidate.sourceFile;
         if (sourceFile === undefined) {
           const message = `TypeScript module '${fileName}' is not included in the program configured by '${state.configPath}'.`;
           if (meta.framework === "farm") throw new Error(message);

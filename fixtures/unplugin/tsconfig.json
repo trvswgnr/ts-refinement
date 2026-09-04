@@ -6,10 +6,11 @@
     "moduleResolution": "bundler",
     "noEmit": true,
     "paths": {
+      "@fixture/*": ["./*"],
       "ts-refinement": ["../../packages/core/src/index.ts"]
     },
     "strict": true,
     "target": "ESNext"
   },
-  "include": ["entry.ts", "known-false.ts", "types.d.ts", "runtime.mjs"]
+  "include": ["*.ts", "*.tsx", "commonjs/*.ts", "runtime.mjs"]
 }

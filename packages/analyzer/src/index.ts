@@ -28,7 +28,7 @@ export {
   provePredicates,
   type Proof,
 } from "./proof/evaluate.ts";
-export { entails } from "./proof/entail.ts";
+export { entails, type EntailmentFacts } from "./proof/entail.ts";
 export { displayStaticValue, type StaticRuntimeValue, type StaticValue } from "./proof/values.ts";
 export {
   compileExpression,
@@ -55,11 +55,17 @@ export { filterEntailedRefinementDiagnostics } from "./refinement/filter-diagnos
 export { getPublishVerificationDiagnostics, hasConfiguredPublishVerification } from "./publish.ts";
 export {
   resolveRefinement,
+  resolveRefinementChecks,
   resolveRefinementMetadata,
   resolvePredicateAtDeclaration,
   type AnalyzerContext,
   type PredicateResolution,
   type RefinementDefinition,
+  type RefinementCheck,
+  type RefinementChecksResolution,
+  type RefinementIndexPattern,
+  type RefinementPathSegment,
+  type RefinementRecursion,
   type RefinementResolution,
   type RefinementResolutionIssue,
 } from "./refinement/resolve.ts";

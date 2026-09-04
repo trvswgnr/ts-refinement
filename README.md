@@ -22,22 +22,24 @@ The subject name is inferred. `"n > 0"`, `"value > 0"`, and `"potato > 0"` have 
 declare const dynamic: number;
 
 4 as Even; // proved valid; the assertion is erased
-5 as Even; // RF1200 editor diagnostic and build error
+5 as Even; // RF1000200 editor diagnostic and build error
 dynamic as Even; // unknown statically; a runtime validator is inserted
 ```
 
 The runtime validator evaluates the original expression once, returns its original value on success, and throws `RefinementError` on failure. Validators are deduplicated by normalized predicate semantics, including across modules in the same build.
 
-The source must already be assignable to the unrefined base type. Refining directly from `unknown`, `any`, or an incompatible type produces RF1101; this project is not a general TypeScript runtime type reifier.
+Nested validators short-circuit at the first failing leaf and expose its access path on `RefinementError.path`. Collection assertions visit each element until failure, so validating an array is O(n); avoid repeatedly asserting large collections in hot loops.
+
+The source must already be assignable to the unrefined base type. Refining directly from `unknown`, `any`, or an incompatible type produces RF1000101; this project is not a general TypeScript runtime type reifier.
 
 ## Installation
 
 ```sh
 bun add ts-refinement @ts-refinement/runtime
-bun add --dev @ts-refinement/unplugin @ts-refinement/cli @ts-refinement/typescript-plugin typescript tsdown
+bun add --dev @ts-refinement/cli typescript
 ```
 
-`ts-refinement` is type-only and has no runtime dependencies. Keep `@ts-refinement/runtime` in regular dependencies because transformed code can import it when the bundler externalizes package dependencies. Build and editor integrations belong in development dependencies.
+`ts-refinement` is type-only and has no runtime dependencies. Keep `@ts-refinement/runtime` in regular dependencies because transformed code can import it when the compiler or bundler externalizes package dependencies. `@ts-refinement/cli` verifies final JavaScript on every supported TypeScript generation. Build and editor integrations belong in development dependencies and depend on the compiler generation below.
 
 ## Packages
 
@@ -46,33 +48,68 @@ The repository publishes independently installable packages with separate depend
 - `ts-refinement` - the dependency-free, type-only `Refined<Base, Predicate>` API
 - `@ts-refinement/runtime` - the dependency-free `RefinementError` API
 - `@ts-refinement/analyzer` - the shared parser, resolver, proof engine, and diagnostics for tooling authors
-- `@ts-refinement/cli` - the refinement-aware `ts-refinement check` command
+- `@ts-refinement/cli` - publish-time verification for transformed JavaScript
 - `@ts-refinement/unplugin` - shared Vite, Rollup, Rolldown, webpack, Rspack, esbuild, and Farm adapters
 - `@ts-refinement/rolldown` - compatibility re-export of the Rolldown adapter
 - `@ts-refinement/typescript-plugin` - TypeScript language-service diagnostics
+- `@ts-refinement/ttsc` - native TypeScript-Go diagnostics and transforms
 
-The integration packages bundle the analyzer implementation they were tested with. This keeps the TypeScript plugin CommonJS-compatible and prevents ordinary users from installing the standalone analyzer package. All packages are released together at the same version, and integration peer dependencies require the matching core and runtime versions.
+Legacy integration packages pin the analyzer implementation they were tested with. The TypeScript plugin remains CommonJS-compatible for tsserver. All packages are released together at the same version, and integration peer dependencies require the matching core and runtime versions.
 
 ## Project setup
 
-Use the refinement-aware checker in CI instead of bare `tsc --noEmit`:
+TypeScript 5.7 through 6.x uses `tspc` with the Program Transformer:
+
+```sh
+bun add ts-refinement @ts-refinement/runtime
+bun add --dev @ts-refinement/cli @ts-refinement/typescript-plugin @ts-refinement/unplugin ts-patch tsdown 'typescript@>=5.7 <7'
+```
 
 ```json
 {
   "scripts": {
     "build": "tsdown",
-    "check": "ts-refinement check",
+    "check": "tspc --noEmit",
     "prepack": "bun run build && ts-refinement verify dist"
   },
-  "ts-refinement": {
-    "verify": {
-      "outDir": "dist"
-    }
+  "compilerOptions": {
+    "plugins": [
+      {
+        "transform": "@ts-refinement/typescript-plugin/transformer",
+        "transformProgram": true
+      }
+    ]
   }
 }
 ```
 
-Bare `tsc` carries the branded types but cannot delegate predicate implication to the analyzer. An inconclusive ordinary assignment therefore remains a TypeScript error unless it is checked by `ts-refinement check`.
+TypeScript 7 and newer uses `ttsc` with native check and transform stages:
+
+```sh
+bun add ts-refinement @ts-refinement/runtime
+bun add --dev @ts-refinement/cli @ts-refinement/ttsc ttsc 'typescript@>=7'
+```
+
+```json
+{
+  "scripts": {
+    "build": "ttsc build --emit",
+    "check": "ttsc check",
+    "start": "ttsx src/index.ts",
+    "prepack": "bun run build && ts-refinement verify dist"
+  },
+  "compilerOptions": {
+    "plugins": [
+      { "transform": "@ts-refinement/ttsc/check" },
+      { "transform": "@ts-refinement/ttsc/transform" }
+    ]
+  }
+}
+```
+
+Bare `tsc` carries the branded types but cannot delegate predicate implication to the analyzer. Use `tspc` on TypeScript 5.7 through 6.x or `ttsc` on TypeScript 7 and newer.
+
+Use `ttsx` to execute a TypeScript 7 entry point with the same native check and transform stages. Assertions that cannot be proven statically are validated before the module runs.
 
 Runtime safety for unknown assertion sites requires one of the supported unplugin adapters. For tsdown, use the Rolldown adapter:
 
@@ -97,11 +134,13 @@ refinementTypes({
 });
 ```
 
-The plugin recreates its TypeScript program at each build start and watches the tsconfig plus every source/type-definition file in the program. This favors correct watch rebuilds over premature incremental complexity.
+The plugin creates one TypeScript Program per build generation and retains it across module transforms. Source and config watch events invalidate the cached generation before the next build. Configure it before any plugin that rewrites TypeScript source; a changed input is rejected rather than analyzed against stale checker state.
 
-Write builds emit `dist/.ts-refinement-manifest.json`. Publishable packages that expose refinements must run `ts-refinement verify dist` directly from `prepack`; the verifier checks final JavaScript digests and every runtime-required assertion marker.
+Unplugin write builds and native `ttsc build --emit` builds emit `.ts-refinement-manifest.json` in the output directory. Publishable packages that expose refinements must run `ts-refinement verify dist` directly from `prepack`; the verifier checks final JavaScript digests and every runtime-required assertion marker.
 
 ## Editor setup
+
+TypeScript 5.7 through 6.x uses the language-service plugin:
 
 ```json
 {
@@ -115,41 +154,54 @@ Write builds emit `dist/.ts-refinement-manifest.json`. Publishable packages that
 }
 ```
 
-VS Code may need to be switched to the workspace TypeScript version. The language-service plugin adds editor diagnostics only. `ts-refinement check` owns CI diagnostics, the unplugin adapter transforms builds, and `ts-refinement verify` validates publish output.
+VS Code may need to be switched to the workspace TypeScript version. The language-service plugin adds editor diagnostics while `tspc` owns CI diagnostics.
+
+TypeScript 7 and newer uses the [ttsc VS Code extension](https://ttsc.dev/docs/setup/vscode):
+
+```sh
+npx @ttsc/vscode
+```
+
+The extension reads the workspace's `ttsc`, TypeScript, and plugin configuration. The `@ts-refinement/ttsc` check plugin supplies editor diagnostics and quick fixes as well as CI diagnostics.
 
 ## Predicate rules
 
-Predicates are parsed as JavaScript expressions. The compile-time analyzer interprets normalized IR and never executes predicate JavaScript. When an assertion requires a runtime check, the adapter compiles its predicate into JavaScript that executes in the consumer bundle. Treat predicate text as runtime code whenever static proof is inconclusive. Accepted syntax outside the runtime IR reports RF1004 instead of emitting source text.
+Predicates are parsed as JavaScript expressions. The compile-time analyzer interprets normalized IR and never executes predicate JavaScript. When an assertion requires a runtime check, the adapter compiles its predicate into JavaScript that executes in the consumer bundle. Treat predicate text as runtime code whenever static proof is inconclusive. Accepted syntax outside the runtime IR reports RF1000004 instead of emitting source text.
 
 This initial implementation permits the inferred subject, standard ECMAScript globals, and locally bound identifiers. It rejects malformed expressions, assignments, updates, `await`, `yield`, dynamic imports, and ambiguous free identifiers. Node and browser globals such as `Buffer`, `process`, `window`, and `document` are not implicit standard globals.
 
-Module-level `const` values with primitive literal initializers can be captured in predicates. The analyzer folds them into literal IR before proof and runtime compilation. Mutable, broad, object, array, function, ambient, dynamic, or unresolved captures produce RF1003.
+Module-level `const` values with primitive literal initializers can be captured in predicates. The analyzer folds them into literal IR before proof and runtime compilation. Mutable, broad, object, array, function, ambient, dynamic, or unresolved captures produce RF1000003.
 
 The initial proof engine handles primitive and array literals, trivial unary expressions, arithmetic, comparisons, strict equality, logical/nullish operations, conditionals, primitive `.length`, `Number.isInteger`, and `Number.isFinite`. Runtime predicates remain normal JavaScript, so regular expressions, array methods, and other ordinary operations work without becoming a separate refinement DSL.
 
 ## Diagnostics
 
-| Code   | Severity | Meaning                                             |
-| ------ | -------- | --------------------------------------------------- |
-| RF1000 | error    | Invalid or disallowed JavaScript expression         |
-| RF1001 | error    | Predicate is not a concrete string literal          |
-| RF1002 | error    | Subject cannot be inferred unambiguously            |
-| RF1003 | error    | Predicate attempts a disallowed external capture    |
-| RF1004 | error    | Predicate syntax cannot be compiled from runtime IR |
-| RF1101 | error    | Source is not assignable to the unrefined base type |
-| RF1200 | error    | Predicate is statically disproven                   |
-| RF1400 | error    | Refinement metadata cannot be resolved              |
-| RF1500 | warning  | Exported refinement lacks publish verification      |
+| Code      | Severity | Meaning                                             |
+| --------- | -------- | --------------------------------------------------- |
+| RF1000000 | error    | Invalid or disallowed JavaScript expression         |
+| RF1000001 | error    | Predicate is not a concrete string literal          |
+| RF1000002 | error    | Subject cannot be inferred unambiguously            |
+| RF1000003 | error    | Predicate attempts a disallowed external capture    |
+| RF1000004 | error    | Predicate syntax cannot be compiled from runtime IR |
+| RF1000101 | error    | Source is not assignable to the unrefined base type |
+| RF1000200 | error    | Predicate is statically disproven                   |
+| RF1000400 | error    | Refinement metadata cannot be resolved              |
+| RF1000500 | warning  | Exported refinement lacks publish verification      |
 
-RF1500 points to a public declaration whose nearest non-private package lacks matching `ts-refinement.verify.outDir` configuration and a direct `ts-refinement verify OUTDIR` command in `prepack`. It remains a warning in the initial release and is planned to become an error in `0.3`; severity is fixed by the diagnostic contract, not inferred from the installed package version.
+RF1000500 points to a public declaration whose nearest non-private package lacks matching `ts-refinement.verify.outDir` configuration and a direct `ts-refinement verify OUTDIR` command in `prepack`. It remains a warning in the initial release and is planned to become an error in `0.3`; severity is fixed by the diagnostic contract, not inferred from the installed package version.
 
 ## Development
 
-This repository is a Bun workspace that publishes seven npm packages. TypeScript 5.7 through 6.x is supported. TypeScript 7's native compiler does not expose the classic `Program`/`TypeChecker` and tsserver APIs required by the current analyzer; support requires an upstream-compatible compiler API or a future analyzer integration and is not currently claimed.
+This repository is a Bun workspace that publishes eight npm packages.
+
+- TypeScript 5.7 through 6.x is supported through `tspc` and the TypeScript language-service plugin.
+- TypeScript 7 and newer is supported through the native `ttsc` check, transform, and LSP sidecar.
+
+New compiler integration work lands on the `ttsc` path first. The TypeScript 5.7 through 6.x path remains supported for projects that depend on the classic compiler API.
 
 ```sh
 bun install
 bun run gate
 ```
 
-`gate` runs type checking, linting, formatting verification, the analyzer/build/runtime/language-service tests, all package builds, and the tsdown example build.
+`gate` is the fast local feedback loop: type checking, corpus parity, native Go tests, linting, formatting verification, and in-process analyzer/build/runtime/language-service tests. `gate:release` adds coverage, compiler subprocess and version matrices, bundler conformance, packed-package consumers, and the tsdown example build.
