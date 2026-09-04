@@ -194,7 +194,7 @@ describe("TypeScript language-service plugin", () => {
     } as ts.server.PluginCreateInfo);
 
     const diagnostics = proxy.getSemanticDiagnostics(fixtureFile("entailment-structure-matrix.ts"));
-    expect(originalDiagnostics.filter((diagnostic) => diagnostic.code === 2322)).toHaveLength(36);
+    expect(originalDiagnostics.filter((diagnostic) => diagnostic.code === 2322)).toHaveLength(41);
     expect(originalDiagnostics.filter((diagnostic) => diagnostic.code === 1360)).toHaveLength(2);
     expect(originalDiagnostics.filter((diagnostic) => diagnostic.code === 4104)).toHaveLength(1);
     expect(originalDiagnostics.filter((diagnostic) => diagnostic.code === 4104)).toHaveLength(1);
@@ -211,8 +211,10 @@ describe("TypeScript language-service plugin", () => {
       "invalidTuple",
       "invalidOptionalTuple",
       "invalidRestTuple",
+      "invalidMiddleRestSuffix",
       "invalidGeneric",
       "invalidUnion",
+      "invalidCallableProperty",
       "invalidParameter",
       "invalidRecursive",
       "invalidReadonlyArray",

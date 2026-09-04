@@ -119,13 +119,17 @@ func staticLeavesAtPath(
 		if !known {
 			return nil, false
 		}
-		if segment.Index >= len(elements) {
+		index := segment.Index
+		if segment.FromEnd > 0 {
+			index = len(elements) - segment.FromEnd
+		}
+		if index < 0 || index >= len(elements) {
 			if segment.Optional {
 				return nil, true
 			}
 			return nil, false
 		}
-		return staticLeavesAtPath(file, elements[segment.Index], remaining, fmt.Sprintf("%s[%d]", path, segment.Index))
+		return staticLeavesAtPath(file, elements[index], remaining, fmt.Sprintf("%s[%d]", path, index))
 	case analysis.PathArray, analysis.PathTupleRest:
 		elements, known := staticArrayElements(node)
 		if !known {
@@ -135,8 +139,12 @@ func staticLeavesAtPath(
 		if segment.Kind == analysis.PathTupleRest {
 			start = segment.Start
 		}
+		end := len(elements)
+		if segment.Kind == analysis.PathTupleRest {
+			end -= segment.End
+		}
 		leaves := []staticLeaf{}
-		for index := start; index < len(elements); index++ {
+		for index := start; index < end; index++ {
 			children, known := staticLeavesAtPath(file, elements[index], remaining, fmt.Sprintf("%s[%d]", path, index))
 			if !known {
 				return nil, false

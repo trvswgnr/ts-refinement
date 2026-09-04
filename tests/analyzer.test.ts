@@ -148,7 +148,7 @@ describe("TypeScript refinement analysis", () => {
     expect(results[3]?.site.checks.map((check) => check.path)).toEqual([
       [{ index: 0, kind: "tuple", optional: false }],
       [{ index: 1, kind: "tuple", optional: true }],
-      [{ kind: "tupleRest", start: 2 }],
+      [{ end: 0, kind: "tupleRest", start: 2 }],
     ]);
     expect(results[4]?.site.checks.map((check) => check.path)).toEqual([
       [
@@ -187,10 +187,13 @@ describe("TypeScript refinement analysis", () => {
     if (source === undefined) throw new Error("fixture was not loaded");
 
     const results = analyzeSourceFile(state.context, source);
-    expect(results.map((result) => result.proof.kind)).toEqual(["false", "false"]);
-    expect(results.map((result) => result.diagnostics[0]?.code)).toEqual([1000200, 1000200]);
+    expect(results.map((result) => result.proof.kind)).toEqual(["false", "false", "false"]);
+    expect(results.map((result) => result.diagnostics[0]?.code)).toEqual([
+      1000200, 1000200, 1000200,
+    ]);
     expect(results[0]?.diagnostics[0]?.message).toContain("at '.age'");
     expect(results[1]?.diagnostics[0]?.message).toContain("at '[0]'");
+    expect(results[2]?.diagnostics[0]?.message).toContain("at '[3]'");
   });
 
   it("matches numeric, symbol, and template-literal index domains", () => {

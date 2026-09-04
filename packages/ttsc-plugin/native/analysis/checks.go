@@ -25,7 +25,9 @@ type PathSegment struct {
 	Name     string
 	Optional bool
 	Index    int
+	FromEnd  int
 	Start    int
+	End      int
 	Property string
 	Value    any
 }
@@ -137,16 +139,30 @@ func ResolveChecks(checker *shimchecker.Checker, targetType *shimchecker.Type, l
 		if shimchecker.IsTupleType(target) {
 			typeArguments := shimchecker.Checker_getTypeArguments(checker, target)
 			flags := target.TargetTupleType().ElementFlags()
+			restIndex := -1
+			for index, elementFlags := range flags {
+				if elementFlags&(shimchecker.ElementFlagsRest|shimchecker.ElementFlagsVariadic) != 0 {
+					restIndex = index
+					break
+				}
+			}
 			for index, elementType := range typeArguments {
 				elementFlags := shimchecker.ElementFlagsRequired
 				if index < len(flags) {
 					elementFlags = flags[index]
 				}
 				if elementFlags&(shimchecker.ElementFlagsRest|shimchecker.ElementFlagsVariadic) != 0 {
-					visit(elementType, appendPath(path, PathSegment{Kind: PathTupleRest, Start: index}))
-				} else {
 					visit(elementType, appendPath(path, PathSegment{
-						Kind: PathTuple, Index: index, Optional: elementFlags&shimchecker.ElementFlagsOptional != 0,
+						Kind: PathTupleRest, Start: index, End: len(typeArguments) - index - 1,
+					}))
+				} else {
+					fromEnd := 0
+					if restIndex >= 0 && index > restIndex {
+						fromEnd = len(typeArguments) - index
+					}
+					visit(elementType, appendPath(path, PathSegment{
+						Kind: PathTuple, Index: index, FromEnd: fromEnd,
+						Optional: elementFlags&shimchecker.ElementFlagsOptional != 0,
 					}))
 				}
 			}
@@ -158,8 +174,9 @@ func ResolveChecks(checker *shimchecker.Checker, targetType *shimchecker.Type, l
 			return
 		}
 
-		if target.Flags()&shimchecker.TypeFlagsObject == 0 ||
-			len(shimchecker.Checker_getSignaturesOfType(checker, target, shimchecker.SignatureKindCall)) > 0 {
+		callableIntersection := target.Flags()&shimchecker.TypeFlagsIntersection != 0 &&
+			len(shimchecker.Checker_getSignaturesOfType(checker, target, shimchecker.SignatureKindCall)) > 0
+		if target.Flags()&shimchecker.TypeFlagsObject == 0 && !callableIntersection {
 			return
 		}
 		for _, property := range shimchecker.Checker_getPropertiesOfType(checker, target) {

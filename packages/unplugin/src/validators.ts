@@ -140,8 +140,12 @@ function emitTraversal(
     }
 
     if (segment.kind === "tuple") {
-      const nestedPath = `(${path} + ${JSON.stringify(`[${segment.index}]`)})`;
-      const lines = [...guardLines, `${indent}const ${nested} = ${subject}[${segment.index}];`];
+      const elementIndex =
+        segment.fromEnd === undefined
+          ? `${segment.index}`
+          : `${subject}.length - ${segment.fromEnd}`;
+      const nestedPath = `(${path} + "[" + (${elementIndex}) + "]")`;
+      const lines = [...guardLines, `${indent}const ${nested} = ${subject}[${elementIndex}];`];
       if (segment.optional) {
         lines.push(`${indent}if (${nested} !== undefined) {`);
         lines.push(...visit(nested, nestedPath, remaining, `${indent}  `));
@@ -196,9 +200,11 @@ function emitTraversal(
     const index = `index${namespace}_${variableIndex}`;
     variableIndex += 1;
     const start = segment.kind === "tupleRest" ? segment.start : 0;
+    const end =
+      segment.kind === "tupleRest" ? `${subject}.length - ${segment.end}` : `${subject}.length`;
     return [
       ...guardLines,
-      `${indent}for (let ${index} = ${start}; ${index} < ${subject}.length; ${index} += 1) {`,
+      `${indent}for (let ${index} = ${start}; ${index} < ${end}; ${index} += 1) {`,
       `${indent}  const ${nested} = ${subject}[${index}];`,
       ...visit(nested, `(${path} + "[" + ${index} + "]")`, remaining, `${indent}  `),
       `${indent}}`,
@@ -236,10 +242,9 @@ function traversalGuard(check: RefinementCheck): TraversalGuard {
   return (subject, path, segment, indent) => {
     const requiresArray = ["array", "tuple", "tupleRest"].includes(segment.kind);
     const invalidArray = requiresArray ? ` || !Array.isArray(${subject})` : "";
-    const invalidObject =
-      segment.kind === "index"
-        ? ` || (typeof ${subject} !== "object" && typeof ${subject} !== "function")`
-        : "";
+    const invalidObject = ["index", "property", "union"].includes(segment.kind)
+      ? ` || (typeof ${subject} !== "object" && typeof ${subject} !== "function")`
+      : "";
     return [
       `${indent}if (${subject} === null || ${subject} === undefined${invalidArray}${invalidObject}) {`,
       ...errorLines(check, subject, path, `${indent}  `),

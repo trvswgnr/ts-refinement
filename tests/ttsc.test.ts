@@ -14,7 +14,10 @@ const ttsc = resolve(root, "node_modules/.bin/ttsc");
 const outputRoot = mkdtempSync(resolve(tmpdir(), "ts-refinement-ttsc-"));
 
 interface NativeRuntimeFixture {
+  readonly checkCallable: (value: (() => void) & { readonly value?: number }) => void;
   readonly checkCapturedEvery: (value: number[]) => void;
+  readonly checkMiddleRest: (value: readonly [number, ...number[], number]) => void;
+  readonly checkOptional: (value: number | { readonly value?: number }) => void;
   readonly checkPair: (value: { readonly 0?: number; readonly length: number }) => void;
   readonly checkScores: (value: number) => void;
   readonly checkSubjectShadowedEvery: (value: number[]) => void;
@@ -121,6 +124,7 @@ describe("TypeScript-Go native plugin", () => {
     expect(diagnostics).toContain("Predicate capture 'MUTABLE_LIMIT'");
     expect(diagnostics).toContain("does not satisfy refinement 'Positive'");
     expect(diagnostics).toContain("at '.age'");
+    expect(diagnostics).toContain("at '[3]'");
 
     const unrelatedInvalid = runTtsc("unrelated-invalid", resolve(outputRoot, "unrelated-invalid"));
     expect(unrelatedInvalid.status).toBe(2);
@@ -157,6 +161,24 @@ describe("TypeScript-Go native plugin", () => {
     const malformedPair = { 0: 1, length: 1 };
     expect(() => runtime.checkPair(malformedPair)).toThrowError(
       expect.objectContaining({ name: "RefinementError", value: malformedPair }),
+    );
+    expect(() => runtime.checkMiddleRest([1, 0, 7])).toThrowError(
+      expect.objectContaining({ name: "RefinementError", path: "[1]", value: 0 }),
+    );
+    expect(() => runtime.checkMiddleRest([1, 2, 6, 1])).toThrowError(
+      expect.objectContaining({ name: "RefinementError", path: "[3]", value: 1 }),
+    );
+    expect(() => runtime.checkMiddleRest([1, 2, 6, 7])).not.toThrow();
+    const validCallable = Object.assign(() => undefined, { value: 1 });
+    expect(() => runtime.checkCallable(validCallable)).not.toThrow();
+    expect(() => runtime.checkCallable(Object.assign(() => undefined, { value: -1 }))).toThrowError(
+      expect.objectContaining({ path: ".value", value: -1 }),
+    );
+    expect(() => runtime.checkCallable(() => undefined)).toThrowError(
+      expect.objectContaining({ path: ".value", value: undefined }),
+    );
+    expect(() => runtime.checkOptional(42)).toThrowError(
+      expect.objectContaining({ name: "RefinementError", value: 42 }),
     );
     expect(() => runtime.checkScores(1)).toThrowError(
       expect.objectContaining({ name: "RefinementError", value: 1 }),

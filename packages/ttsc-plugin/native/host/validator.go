@@ -150,7 +150,7 @@ func validatorTraversalGuard(check analysis.Check, errorAlias, marker string) tr
 			invalidArray = fmt.Sprintf(" || !Array.isArray(%s)", subject)
 		}
 		invalidObject := ""
-		if segment.Kind == analysis.PathIndex {
+		if segment.Kind == analysis.PathIndex || segment.Kind == analysis.PathProperty || segment.Kind == analysis.PathUnion {
 			invalidObject = fmt.Sprintf(" || (typeof %s !== \"object\" && typeof %s !== \"function\")", subject, subject)
 		}
 		lines := []string{fmt.Sprintf("%sif (%s === null || %s === undefined%s%s) {", indent, subject, subject, invalidArray, invalidObject)}
@@ -200,9 +200,13 @@ func emitTraversal(
 			}
 			return lines
 		case analysis.PathTuple:
-			nestedPath := fmt.Sprintf("(%s + %s)", path, quoted(fmt.Sprintf("[%d]", segment.Index)))
+			elementIndex := fmt.Sprintf("%d", segment.Index)
+			if segment.FromEnd > 0 {
+				elementIndex = fmt.Sprintf("%s.length - %d", subject, segment.FromEnd)
+			}
+			nestedPath := fmt.Sprintf("(%s + \"[\" + (%s) + \"]\")", path, elementIndex)
 			lines := append([]string{}, guardLines...)
-			lines = append(lines, fmt.Sprintf("%sconst %s = %s[%d];", indent, nested, subject, segment.Index))
+			lines = append(lines, fmt.Sprintf("%sconst %s = %s[%s];", indent, nested, subject, elementIndex))
 			if segment.Optional {
 				lines = append(lines, fmt.Sprintf("%sif (%s !== undefined) {", indent, nested))
 				lines = append(lines, visit(nested, nestedPath, tail, indent+"  ")...)
@@ -252,9 +256,13 @@ func emitTraversal(
 			if segment.Kind == analysis.PathTupleRest {
 				start = segment.Start
 			}
+			end := fmt.Sprintf("%s.length", subject)
+			if segment.Kind == analysis.PathTupleRest && segment.End > 0 {
+				end = fmt.Sprintf("%s.length - %d", subject, segment.End)
+			}
 			lines := append([]string{}, guardLines...)
 			lines = append(lines,
-				fmt.Sprintf("%sfor (let %s = %d; %s < %s.length; %s += 1) {", indent, index, start, index, subject, index),
+				fmt.Sprintf("%sfor (let %s = %d; %s < %s; %s += 1) {", indent, index, start, index, end, index),
 				fmt.Sprintf("%s  const %s = %s[%s];", indent, nested, subject, index),
 			)
 			lines = append(lines, visit(nested, fmt.Sprintf("(%s + \"[\" + %s + \"]\")", path, index), tail, indent+"  ")...)

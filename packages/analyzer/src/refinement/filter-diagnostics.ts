@@ -409,23 +409,77 @@ function tupleTarget(reference: ts.TypeReference): ts.TupleType {
 }
 
 function tupleElementsAreEntailed(
-  sourceFixed: readonly ts.Type[],
-  sourceElements: TupleParameters,
-  targetFixed: readonly ts.Type[],
-  targetElements: TupleParameters,
+  source: TupleLayout,
+  target: TupleLayout,
   visit: EntailmentVisit,
 ): boolean {
-  if (sourceElements.minimum < targetElements.minimum) return false;
-  if (sourceElements.rest !== null && targetElements.rest === null) return false;
-  if (targetElements.rest === null && sourceFixed.length > targetFixed.length) return false;
-  for (const [index, element] of sourceFixed.entries()) {
-    const targetElement = targetFixed[index] ?? targetElements.rest;
-    if (targetElement === null || !visit(element, targetElement)) return false;
-  }
-  return (
-    sourceElements.rest === null ||
-    (targetElements.rest !== null && visit(sourceElements.rest, targetElements.rest))
+  if (source.minimum < target.minimum) return false;
+  if (source.rest !== null && target.rest === null) return false;
+  const boundary = Math.max(
+    source.minimum,
+    target.minimum,
+    source.prefix.length + source.suffix.length,
+    target.prefix.length + target.suffix.length,
   );
+  const maximum = source.rest === null ? source.prefix.length + source.suffix.length : boundary + 1;
+  for (let length = source.minimum; length <= maximum; length += 1) {
+    if (!tupleLengthIsEntailed(source, target, length, visit)) return false;
+  }
+  return true;
+}
+
+function tupleLengthIsEntailed(
+  source: TupleLayout,
+  target: TupleLayout,
+  length: number,
+  visit: EntailmentVisit,
+): boolean {
+  if (!tupleSupportsLength(target, length)) return false;
+  for (let index = 0; index < length; index += 1) {
+    const sourceElement = tupleElementAt(source, length, index);
+    const targetElement = tupleElementAt(target, length, index);
+    if (sourceElement === null || targetElement === null || !visit(sourceElement, targetElement)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function tupleSupportsLength(layout: TupleLayout, length: number): boolean {
+  return (
+    length >= layout.minimum &&
+    (layout.rest !== null || length <= layout.prefix.length + layout.suffix.length)
+  );
+}
+
+function tupleElementAt(layout: TupleLayout, length: number, index: number): ts.Type | null {
+  const suffixStart = length - layout.suffix.length;
+  if (index >= suffixStart) return layout.suffix[index - suffixStart] ?? null;
+  if (index < layout.prefix.length) return layout.prefix[index] ?? null;
+  return layout.rest;
+}
+
+interface TupleLayout {
+  readonly minimum: number;
+  readonly prefix: readonly ts.Type[];
+  readonly rest: ts.Type | null;
+  readonly suffix: readonly ts.Type[];
+}
+
+function tupleLayout(context: AnalyzerContext, reference: ts.TypeReference): TupleLayout {
+  const elements = context.checker.getTypeArguments(reference);
+  const flags = tupleTarget(reference).elementFlags;
+  const restIndex = flags.findIndex(
+    (elementFlags) =>
+      (elementFlags & (context.ts.ElementFlags.Rest | context.ts.ElementFlags.Variadic)) !== 0,
+  );
+  return {
+    minimum: flags.filter((elementFlags) => (elementFlags & context.ts.ElementFlags.Required) !== 0)
+      .length,
+    prefix: restIndex < 0 ? elements : elements.slice(0, restIndex),
+    rest: restIndex < 0 ? null : (elements[restIndex] ?? null),
+    suffix: restIndex < 0 ? [] : elements.slice(restIndex + 1),
+  };
 }
 
 function tupleEntailment(
@@ -441,11 +495,11 @@ function tupleEntailment(
   const sourceTarget = tupleTarget(sourceReference);
   const targetTarget = tupleTarget(targetReference);
   if (sourceTarget.readonly && !targetTarget.readonly) return false;
-  const sourceFixed: ts.Type[] = [];
-  const targetFixed: ts.Type[] = [];
-  const sourceElements = appendTupleParameters(context, sourceReference, sourceFixed);
-  const targetElements = appendTupleParameters(context, targetReference, targetFixed);
-  return tupleElementsAreEntailed(sourceFixed, sourceElements, targetFixed, targetElements, visit);
+  return tupleElementsAreEntailed(
+    tupleLayout(context, sourceReference),
+    tupleLayout(context, targetReference),
+    visit,
+  );
 }
 
 function arrayEntailment(
@@ -852,6 +906,14 @@ function objectRefinementPresence(
   return combineRefinementPresence(nested);
 }
 
+function isObjectStructure(context: AnalyzerContext, type: ts.Type): boolean {
+  return (
+    (type.flags & context.ts.TypeFlags.Object) !== 0 ||
+    ((type.flags & context.ts.TypeFlags.Intersection) !== 0 &&
+      context.checker.getSignaturesOfType(type, context.ts.SignatureKind.Call).length > 0)
+  );
+}
+
 function typeContainsRefinement(context: AnalyzerContext, root: ts.Type): RefinementPresence {
   const visited = new Set<ts.Type>();
 
@@ -878,7 +940,7 @@ function typeContainsRefinement(context: AnalyzerContext, root: ts.Type): Refine
     if (context.checker.isArrayType(type)) {
       return visit(context.checker.getIndexTypeOfType(type, context.ts.IndexKind.Number));
     }
-    if ((type.flags & context.ts.TypeFlags.Object) === 0) {
+    if (!isObjectStructure(context, type)) {
       return { hasRefinement: false, valid: true };
     }
 
@@ -911,10 +973,7 @@ function refinementStructureIsEntailed(
     const collectionResult = collectionEntailment(context, source, target, visit);
     if (collectionResult !== undefined) return collectionResult;
 
-    if (
-      (source.flags & context.ts.TypeFlags.Object) === 0 ||
-      (target.flags & context.ts.TypeFlags.Object) === 0
-    ) {
+    if (!isObjectStructure(context, source) || !isObjectStructure(context, target)) {
       return context.checker.isTypeAssignableTo(source, target);
     }
 

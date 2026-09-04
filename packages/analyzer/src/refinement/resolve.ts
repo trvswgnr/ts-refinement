@@ -39,8 +39,13 @@ export type RefinementPathSegment =
   | { readonly key: "symbol"; readonly kind: "index" }
   | { readonly key: "template"; readonly kind: "index"; readonly pattern: RefinementIndexPattern }
   | { readonly kind: "property"; readonly name: string; readonly optional: boolean }
-  | { readonly index: number; readonly kind: "tuple"; readonly optional: boolean }
-  | { readonly kind: "tupleRest"; readonly start: number }
+  | {
+      readonly fromEnd?: number;
+      readonly index: number;
+      readonly kind: "tuple";
+      readonly optional: boolean;
+    }
+  | { readonly end: number; readonly kind: "tupleRest"; readonly start: number }
   | {
       readonly kind: "union";
       readonly property: string;
@@ -677,6 +682,13 @@ function discriminantValue(
 }
 
 function propertyType(context: AnalyzerContext, type: ts.Type, name: string): ts.Type | undefined {
+  // SAFETY: Every supported TypeScript version exposes this checker method at runtime; the
+  // classic public TypeChecker declaration omits it while the tsgo shim exports it directly.
+  const checker = context.checker as ts.TypeChecker & {
+    getTypeOfPropertyOfType(type: ts.Type, name: string): ts.Type | undefined;
+  };
+  const resolved = checker.getTypeOfPropertyOfType(type, name);
+  if (resolved !== undefined) return resolved;
   const property = context.checker.getPropertyOfType(type, name);
   const location = property?.valueDeclaration ?? property?.declarations?.[0];
   return property === undefined || location === undefined
@@ -894,17 +906,31 @@ export function resolveRefinementChecks(
     const target = reference.target as ts.TupleType & {
       readonly elementFlags?: readonly ts.ElementFlags[];
     };
+    const flags = target.elementFlags ?? [];
+    const restIndex = flags.findIndex(
+      (elementFlags) =>
+        (elementFlags & (context.ts.ElementFlags.Rest | context.ts.ElementFlags.Variadic)) !== 0,
+    );
     for (const [index, elementType] of typeArguments.entries()) {
-      const flags = target.elementFlags?.[index] ?? context.ts.ElementFlags.Required;
-      if ((flags & (context.ts.ElementFlags.Rest | context.ts.ElementFlags.Variadic)) !== 0) {
-        visit(elementType, [...path, { kind: "tupleRest", start: index }]);
+      const elementFlags = flags[index] ?? context.ts.ElementFlags.Required;
+      if (
+        (elementFlags & (context.ts.ElementFlags.Rest | context.ts.ElementFlags.Variadic)) !==
+        0
+      ) {
+        visit(elementType, [
+          ...path,
+          { end: typeArguments.length - index - 1, kind: "tupleRest", start: index },
+        ]);
       } else {
+        const fromEnd =
+          restIndex >= 0 && index > restIndex ? typeArguments.length - index : undefined;
         visit(elementType, [
           ...path,
           {
+            fromEnd,
             index,
             kind: "tuple",
-            optional: (flags & context.ts.ElementFlags.Optional) !== 0,
+            optional: (elementFlags & context.ts.ElementFlags.Optional) !== 0,
           },
         ]);
       }
@@ -920,10 +946,10 @@ export function resolveRefinementChecks(
   }
 
   function visitObject(type: ts.Type, path: readonly RefinementPathSegment[]): void {
-    if (
-      (type.flags & context.ts.TypeFlags.Object) === 0 ||
-      context.checker.getSignaturesOfType(type, context.ts.SignatureKind.Call).length > 0
-    ) {
+    const callableIntersection =
+      (type.flags & context.ts.TypeFlags.Intersection) !== 0 &&
+      context.checker.getSignaturesOfType(type, context.ts.SignatureKind.Call).length > 0;
+    if ((type.flags & context.ts.TypeFlags.Object) === 0 && !callableIntersection) {
       return;
     }
     for (const property of context.checker.getPropertiesOfType(type)) {

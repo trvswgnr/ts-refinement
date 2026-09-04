@@ -87,6 +87,19 @@ interface NestedRefinementFixture {
   readonly checkValues: (value: MalformedCollection | number[]) => number[];
 }
 
+interface MiddleRestTupleFixture {
+  readonly checkMiddleRest: (
+    value: readonly [number, ...number[], number],
+  ) => readonly [number, ...number[], number];
+}
+
+interface ObjectContainerFixture {
+  readonly checkCallable: (value: (() => void) & { readonly value?: number }) => () => void;
+  readonly checkOptional: (
+    value: number | { readonly value?: number },
+  ) => number | { readonly value?: number };
+}
+
 interface IndexSignatureFixture {
   readonly checkBigIntDataScores: (value: Record<string, number>) => Record<string, number>;
   readonly checkDataScores: (value: Record<string, number>) => Record<string, number>;
@@ -363,6 +376,47 @@ describe("Rolldown plugin", () => {
     };
     cyclicTree.children.push(cyclicTree);
     expect(nested.checkTree(cyclicTree)).toBe(cyclicTree);
+  });
+
+  it("validates middle-rest tuple ranges and suffixes", async () => {
+    const bundle = await build(fixtureFile("tuple-middle-rest.ts"));
+    const generated = await bundle.generate({ format: "esm" });
+    const chunk = generated.output.find((output) => output.type === "chunk");
+    if (chunk === undefined) throw new Error("bundle did not emit a chunk");
+    const moduleUrl = `data:text/javascript;base64,${Buffer.from(chunk.code).toString("base64")}#${Date.now()}`;
+    // SAFETY: Rolldown generated this module from the focused tuple fixture.
+    const fixture = (await import(moduleUrl)) as MiddleRestTupleFixture;
+
+    expect(fixture.checkMiddleRest([1, 2, 6, 7])).toEqual([1, 2, 6, 7]);
+    expect(() => fixture.checkMiddleRest([1, 0, 7])).toThrowError(
+      expect.objectContaining({ path: "[1]", value: 0 }),
+    );
+    expect(() => fixture.checkMiddleRest([1, 2, 6, 1])).toThrowError(
+      expect.objectContaining({ path: "[3]", value: 1 }),
+    );
+  });
+
+  it("validates callable properties and rejects primitive optional containers", async () => {
+    const bundle = await build(fixtureFile("object-containers.ts"));
+    const generated = await bundle.generate({ format: "esm" });
+    const chunk = generated.output.find((output) => output.type === "chunk");
+    if (chunk === undefined) throw new Error("bundle did not emit a chunk");
+    const moduleUrl = `data:text/javascript;base64,${Buffer.from(chunk.code).toString("base64")}#${Date.now()}`;
+    // SAFETY: Rolldown generated this module from the focused object-container fixture.
+    const fixture = (await import(moduleUrl)) as ObjectContainerFixture;
+
+    const valid = Object.assign(() => undefined, { value: 1 });
+    expect(fixture.checkCallable(valid)).toBe(valid);
+    const invalid = Object.assign(() => undefined, { value: -1 });
+    expect(() => fixture.checkCallable(invalid)).toThrowError(
+      expect.objectContaining({ path: ".value", value: -1 }),
+    );
+    expect(() => fixture.checkCallable(() => undefined)).toThrowError(
+      expect.objectContaining({ path: ".value", value: undefined }),
+    );
+    expect(() => fixture.checkOptional(42)).toThrowError(
+      expect.objectContaining({ name: "RefinementError", value: 42 }),
+    );
   });
 
   it("validates each index-signature key domain", async () => {

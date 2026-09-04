@@ -22,7 +22,7 @@ func TestValidatorGuardsNullishNestedValues(t *testing.T) {
 		"RefinementError",
 		"",
 	)
-	guard := `if (__ts_refinement_value === null || __ts_refinement_value === undefined) {`
+	guard := `if (__ts_refinement_value === null || __ts_refinement_value === undefined || (typeof __ts_refinement_value !== "object" && typeof __ts_refinement_value !== "function")) {`
 	access := `const __ts_refinement_nested0_0 = __ts_refinement_value["age"];`
 	guardIndex := strings.Index(code, guard)
 	accessIndex := strings.Index(code, access)

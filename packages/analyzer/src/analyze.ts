@@ -162,9 +162,11 @@ function valuesAtTuple(
   path: string,
 ): readonly StaticRefinementLeaf[] {
   if (!value.known || !Array.isArray(value.value)) return unknownLeaf(path);
-  const child = value.value[segment.index];
+  const index =
+    segment.fromEnd === undefined ? segment.index : value.value.length - segment.fromEnd;
+  const child = value.value[index];
   if (child === undefined && segment.optional) return [];
-  return valuesAtPath(knownValue(child), remaining, `${path}[${segment.index}]`);
+  return valuesAtPath(knownValue(child), remaining, `${path}[${index}]`);
 }
 
 function valuesAtArray(
@@ -175,8 +177,9 @@ function valuesAtArray(
 ): readonly StaticRefinementLeaf[] {
   if (!value.known || !Array.isArray(value.value)) return unknownLeaf(path);
   const start = segment.kind === "tupleRest" ? segment.start : 0;
+  const end = segment.kind === "tupleRest" ? value.value.length - segment.end : value.value.length;
   return value.value
-    .slice(start)
+    .slice(start, end)
     .flatMap((child, index) =>
       valuesAtPath(knownValue(child), remaining, `${path}[${index + start}]`),
     );

@@ -10,6 +10,12 @@ import (
 	"github.com/ts-refinement/ttsc-plugin/native/entailment"
 )
 
+func isObjectStructure(checker *shimchecker.Checker, target *shimchecker.Type) bool {
+	return target.Flags()&shimchecker.TypeFlagsObject != 0 ||
+		target.Flags()&shimchecker.TypeFlagsIntersection != 0 &&
+			len(shimchecker.Checker_getSignaturesOfType(checker, target, shimchecker.SignatureKindCall)) > 0
+}
+
 func containsRefinement(checker *shimchecker.Checker, root *shimchecker.Type) (bool, bool) {
 	visited := map[*shimchecker.Type]struct{}{}
 	var visit func(*shimchecker.Type) (bool, bool)
@@ -36,7 +42,7 @@ func containsRefinement(checker *shimchecker.Checker, root *shimchecker.Type) (b
 		if target.Flags()&shimchecker.TypeFlagsTypeParameter != 0 {
 			return visit(checker.GetBaseConstraintOfType(target))
 		}
-		if target.Flags()&shimchecker.TypeFlagsObject == 0 {
+		if !isObjectStructure(checker, target) {
 			return false, true
 		}
 		for _, kind := range []shimchecker.SignatureKind{shimchecker.SignatureKindCall, shimchecker.SignatureKindConstruct} {
@@ -167,7 +173,7 @@ func refinementStructureIsEntailed(checker *shimchecker.Checker, sourceType, tar
 		if result, handled := collectionEntailment(checker, source, target, visit); handled {
 			return result
 		}
-		if source.Flags()&shimchecker.TypeFlagsObject == 0 || target.Flags()&shimchecker.TypeFlagsObject == 0 {
+		if !isObjectStructure(checker, source) || !isObjectStructure(checker, target) {
 			return checker.IsTypeAssignableTo(source, target)
 		}
 
@@ -231,25 +237,28 @@ func collectionEntailment(
 		if sourceTuple.IsReadonly() && !targetTuple.IsReadonly() {
 			return false, true
 		}
-		sourceElements := tupleElements(checker, source)
-		targetElements := tupleElements(checker, target)
+		sourceElements := tupleLayoutFor(checker, source)
+		targetElements := tupleLayoutFor(checker, target)
 		if sourceElements.minimum < targetElements.minimum {
 			return false, true
 		}
 		if sourceElements.rest != nil && targetElements.rest == nil {
 			return false, true
 		}
-		if targetElements.rest == nil && len(sourceElements.fixed) > len(targetElements.fixed) {
-			return false, true
+		boundary := max(
+			sourceElements.minimum,
+			targetElements.minimum,
+			len(sourceElements.prefix)+len(sourceElements.suffix),
+			len(targetElements.prefix)+len(targetElements.suffix),
+		)
+		maximum := len(sourceElements.prefix) + len(sourceElements.suffix)
+		if sourceElements.rest != nil {
+			maximum = boundary + 1
 		}
-		for index, element := range sourceElements.fixed {
-			targetElement := signatureParameterAt(targetElements, index)
-			if targetElement == nil || !visit(element, targetElement) {
+		for length := sourceElements.minimum; length <= maximum; length++ {
+			if !tupleLengthIsEntailed(sourceElements, targetElements, length, visit) {
 				return false, true
 			}
-		}
-		if sourceElements.rest != nil && (targetElements.rest == nil || !visit(sourceElements.rest, targetElements.rest)) {
-			return false, true
 		}
 		return true, true
 	}
@@ -273,10 +282,52 @@ func collectionEntailment(
 	return sourceElement != nil && visit(sourceElement, targetElement), true
 }
 
-func tupleElements(checker *shimchecker.Checker, target *shimchecker.Type) signatureParameterSequence {
-	result := signatureParameterSequence{}
+func tupleLengthIsEntailed(
+	source, target tupleLayout,
+	length int,
+	visit func(*shimchecker.Type, *shimchecker.Type) bool,
+) bool {
+	if !tupleSupportsLength(target, length) {
+		return false
+	}
+	for index := 0; index < length; index++ {
+		sourceElement := tupleElementAt(source, length, index)
+		targetElement := tupleElementAt(target, length, index)
+		if sourceElement == nil || targetElement == nil || !visit(sourceElement, targetElement) {
+			return false
+		}
+	}
+	return true
+}
+
+func tupleSupportsLength(layout tupleLayout, length int) bool {
+	return length >= layout.minimum &&
+		(layout.rest != nil || length <= len(layout.prefix)+len(layout.suffix))
+}
+
+func tupleElementAt(layout tupleLayout, length, index int) *shimchecker.Type {
+	suffixStart := length - len(layout.suffix)
+	if index >= suffixStart {
+		return layout.suffix[index-suffixStart]
+	}
+	if index < len(layout.prefix) {
+		return layout.prefix[index]
+	}
+	return layout.rest
+}
+
+type tupleLayout struct {
+	prefix  []*shimchecker.Type
+	rest    *shimchecker.Type
+	suffix  []*shimchecker.Type
+	minimum int
+}
+
+func tupleLayoutFor(checker *shimchecker.Checker, target *shimchecker.Type) tupleLayout {
+	result := tupleLayout{}
 	arguments := shimchecker.Checker_getTypeArguments(checker, target)
 	flags := target.TargetTupleType().ElementFlags()
+	restIndex := -1
 	for index, element := range arguments {
 		elementFlags := shimchecker.ElementFlagsRequired
 		if index < len(flags) {
@@ -284,11 +335,16 @@ func tupleElements(checker *shimchecker.Checker, target *shimchecker.Type) signa
 		}
 		if elementFlags&(shimchecker.ElementFlagsRest|shimchecker.ElementFlagsVariadic) != 0 {
 			result.rest = element
-			break
+			restIndex = index
+			continue
 		}
-		result.fixed = append(result.fixed, element)
 		if elementFlags&shimchecker.ElementFlagsRequired != 0 {
-			result.minimum = len(result.fixed)
+			result.minimum++
+		}
+		if restIndex < 0 {
+			result.prefix = append(result.prefix, element)
+		} else {
+			result.suffix = append(result.suffix, element)
 		}
 	}
 	return result
