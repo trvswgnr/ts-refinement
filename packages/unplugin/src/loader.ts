@@ -188,6 +188,10 @@ export async function load(
   const fileName = fileURLToPath(url);
   const source = await readFile(fileName, "utf8");
   const current = programState();
+  const sourceFile = current.program.getSourceFile(fileName);
+  if (sourceFile !== undefined && sourceFile.text !== source) {
+    current.invalidateSource(fileName);
+  }
   const format = packageFormat(fileName);
   const output = transformLoadedSource(current, fileName, source, format);
   const diagnostic = output?.diagnostics[0];

@@ -1,4 +1,6 @@
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -77,6 +79,59 @@ describe("runtime runner adapters", { timeout: 30_000 }, () => {
     );
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain("2\ntrue RefinementError -1\n");
+  });
+
+  it("reloads changed TypeScript modules against a fresh Program", () => {
+    const directory = realpathSync(mkdtempSync(resolve(tmpdir(), "ts-refinement-loader-")));
+    const fileName = resolve(directory, "entry.ts");
+    const initialSource = `import type { Refined } from "ts-refinement";
+type Positive = Refined<number, "value > 0">;
+export const result = 1 as Positive;
+`;
+    const updatedSource = initialSource.replace("result = 1", "result = 2");
+    try {
+      writeFileSync(resolve(directory, "package.json"), '{"type":"module"}\n');
+      writeFileSync(
+        resolve(directory, "tsconfig.json"),
+        `${JSON.stringify({
+          compilerOptions: {
+            module: "Preserve",
+            moduleResolution: "bundler",
+            paths: { "ts-refinement": [resolve(root, "packages/core/src/index.ts")] },
+            target: "ESNext",
+          },
+          files: ["entry.ts"],
+        })}\n`,
+      );
+      writeFileSync(fileName, initialSource);
+      const entry = pathToFileURL(fileName).href;
+      const result = spawnSync(
+        process.execPath,
+        [
+          "--loader",
+          resolve(root, "packages/unplugin/dist/loader.mjs"),
+          "--input-type=module",
+          "--eval",
+          `const { writeFile } = await import("node:fs/promises"); const first = await import(${JSON.stringify(`${entry}?first`)}); await writeFile(${JSON.stringify(fileName)}, ${JSON.stringify(updatedSource)}); const second = await import(${JSON.stringify(`${entry}?second`)}); console.log(first.result, second.result);`,
+        ],
+        {
+          cwd: root,
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            TS_REFINEMENT_CWD: directory,
+            TS_REFINEMENT_RUNTIME_MODULE: pathToFileURL(
+              resolve(root, "fixtures/unplugin/runtime.mjs"),
+            ).href,
+            TS_REFINEMENT_TSCONFIG: "tsconfig.json",
+          },
+        },
+      );
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toContain("1 2\n");
+    } finally {
+      rmSync(directory, { force: true, recursive: true });
+    }
   });
 
   it("loads TypeScript before delegating to Node", async () => {

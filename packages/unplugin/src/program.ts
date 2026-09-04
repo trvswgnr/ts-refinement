@@ -162,9 +162,11 @@ export function createProgramState(
   }
 
   const diskScripts = new Map<string, DiskScriptState>();
+  const invalidatedScripts = new Set<string>();
   const normalizeFileName = (fileName: string) => resolve(fileName);
   function readDiskScript(fileName: string): ScriptState | undefined {
     const normalizedFileName = normalizeFileName(fileName);
+    const invalidated = invalidatedScripts.delete(normalizedFileName);
     const stats = statSync(normalizedFileName, { throwIfNoEntry: false });
     if (stats === undefined) {
       diskScripts.delete(normalizedFileName);
@@ -172,7 +174,9 @@ export function createProgramState(
     }
 
     const previous = diskScripts.get(normalizedFileName);
-    if (previous?.mtimeMs === stats.mtimeMs && previous.size === stats.size) return previous;
+    if (!invalidated && previous?.mtimeMs === stats.mtimeMs && previous.size === stats.size) {
+      return previous;
+    }
 
     const source = tsModule.sys.readFile(normalizedFileName);
     if (source === undefined) {
@@ -293,7 +297,7 @@ export function createProgramState(
       return getScript(fileName)?.version ?? 0;
     },
     invalidateSource(fileName) {
-      diskScripts.delete(normalizeFileName(fileName));
+      invalidatedScripts.add(normalizeFileName(fileName));
       currentProgram = undefined;
       refinementFiles = undefined;
     },

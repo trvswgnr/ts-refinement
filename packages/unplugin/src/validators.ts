@@ -419,7 +419,7 @@ ${assertionCode}
         importId,
         inlineCode(localName, runtimeSpecifier) {
           return `const ${localName} = (() => {
-  const { RefinementError } = require(${JSON.stringify(runtimeSpecifier)});
+  const { RefinementError } = require("node:module").createRequire(__filename)(${JSON.stringify(runtimeSpecifier)});
 ${declarations}
   return function assert(value, refinement, marker) {
 ${assertionCode}
