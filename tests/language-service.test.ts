@@ -124,9 +124,16 @@ describe("TypeScript language-service plugin", () => {
       .filter((diagnostic) => diagnostic.source !== "ts-refinement");
 
     expect(originalDiagnostics.map((diagnostic) => diagnostic.code)).toEqual([
-      2322, 2352, 2322, 2345, 2345, 2322, 2322, 2322, 2322, 2322, 2322, 2322,
+      2322, 2352, 2322, 2345, 2345, 2345, 2345, 2322, 2322, 2322, 2322, 2322, 2322, 2322,
     ]);
-    expect(diagnostics).toEqual([]);
+    expect(diagnostics).toHaveLength(1);
+    const diagnostic = diagnostics[0];
+    expect(diagnostic?.code).toBe(2345);
+    expect(
+      diagnostic?.start === undefined || diagnostic.length === undefined
+        ? ""
+        : diagnostic.file?.text.slice(diagnostic.start, diagnostic.start + diagnostic.length),
+    ).toBe("weak");
   });
 
   it("retains unrelated callable incompatibilities in refined structures", () => {

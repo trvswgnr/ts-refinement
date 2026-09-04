@@ -200,21 +200,18 @@ func argumentTargetType(
 	call, argument *shimast.Node,
 	index int,
 ) *shimchecker.Type {
+	if argument == nil || argument.Kind == shimast.KindSpreadElement {
+		return nil
+	}
 	signature := checker.GetResolvedSignature(call)
 	if signature == nil {
 		return nil
 	}
-	parameters := signature.Parameters()
-	if len(parameters) == 0 {
+	arguments := callArguments(call)
+	if arguments == nil {
 		return nil
 	}
-	if signature.HasRestParameter() && index >= len(parameters)-1 {
-		return shimchecker.Checker_getRestTypeOfSignature(checker, signature)
-	}
-	if index >= len(parameters) {
-		index = len(parameters) - 1
-	}
-	return shimchecker.Checker_getTypeOfSymbolAtLocation(checker, parameters[index], argument)
+	return tupleElementAt(signatureParameters(checker, signature), len(arguments.Nodes), index)
 }
 
 func hasExactSpan(file *shimast.SourceFile, node *shimast.Node, start, length int) bool {

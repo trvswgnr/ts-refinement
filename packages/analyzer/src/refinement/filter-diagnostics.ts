@@ -78,20 +78,12 @@ function parameterType(
   argument: ts.Expression,
 ): ts.Type | undefined {
   const index = call.arguments?.indexOf(argument) ?? -1;
-  if (index < 0) return undefined;
+  if (index < 0 || context.ts.isSpreadElement(argument)) return undefined;
   const signature = context.checker.getResolvedSignature(call);
-  const parameter = signature?.parameters[index] ?? signature?.parameters.at(-1);
-  if (parameter === undefined) return undefined;
-  const type = context.checker.getTypeOfSymbolAtLocation(parameter, argument);
-  const declaration = parameter.valueDeclaration ?? parameter.declarations?.[0];
-  if (
-    declaration !== undefined &&
-    context.ts.isParameter(declaration) &&
-    declaration.dotDotDotToken !== undefined
-  ) {
-    return context.checker.getIndexTypeOfType(type, context.ts.IndexKind.Number);
-  }
-  return type;
+  if (signature === undefined) return undefined;
+  const parameters = signatureParameters(context, signature);
+  if (parameters === null) return undefined;
+  return tupleElementAt(parameters, call.arguments?.length ?? 0, index) ?? undefined;
 }
 
 function contextualType(context: AnalyzerContext, expression: ts.Expression): ts.Type | undefined {

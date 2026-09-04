@@ -13,6 +13,9 @@ interface User {
 }
 
 declare const unknownValue: unknown;
+declare const positive: Positive;
+
+function acceptStrongTupleRest(..._values: [Strong, ...Positive[]]): void {}
 
 export const knownBad = -1 as Positive;
 export const knownBadValues = [1, -2] as AllPositive;
@@ -20,3 +23,4 @@ export const knownBadUser = { age: -5 } as User;
 export const knownBadMiddleRest = [1, 2, 6, 1] as RawMiddleRest as MiddleRest;
 export const unsafeUser = unknownValue as User;
 export const invalidCapture = 6 as AboveMutableLimit;
+acceptStrongTupleRest(positive);

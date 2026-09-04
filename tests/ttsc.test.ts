@@ -121,6 +121,7 @@ describe("TypeScript-Go native plugin", () => {
     expect(diagnostics).toContain("error RF1000200:");
     expect(diagnostics).toContain("error RF1000101:");
     expect(diagnostics).toContain("error RF1000003:");
+    expect(diagnostics).toContain("TS2345:");
     expect(diagnostics).toContain("Predicate capture 'MUTABLE_LIMIT'");
     expect(diagnostics).toContain("does not satisfy refinement 'Positive'");
     expect(diagnostics).toContain("at '.age'");

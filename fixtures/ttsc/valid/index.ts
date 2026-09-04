@@ -144,6 +144,9 @@ acceptPositive(greaterThanFive);
 function acceptPositiveRest(..._values: Positive[]): void {}
 acceptPositiveRest(greaterThanFive);
 
+function acceptPositiveTupleRest(..._values: [Positive, ...Positive[]]): void {}
+acceptPositiveTupleRest(greaterThanFive);
+
 export const knownUser = { age: 5, name: "ok" } as User;
 export const runtimeUser = dynamicUser as User;
 export const runtimeValues = dynamicValues as Positive[];
