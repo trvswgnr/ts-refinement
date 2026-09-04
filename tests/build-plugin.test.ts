@@ -488,51 +488,55 @@ export const ordinaryNamedAssertion = value as Positive;
     await expect(bundle.generate({ format: "esm" })).rejects.toThrow(/first source transform/u);
   });
 
-  it("creates fresh program state for each build generation", async () => {
-    const directory = await realpath(await mkdtemp(join(tmpdir(), "ts-refinement-generation-")));
-    const initialInput = join(directory, "initial.ts");
-    const changedInput = join(directory, "changed.ts");
-    const configPath = join(directory, "tsconfig.json");
-    const source = (name: string) => `
+  it(
+    "creates fresh program state for each build generation",
+    { timeout: rebuildTestTimeout },
+    async () => {
+      const directory = await realpath(await mkdtemp(join(tmpdir(), "ts-refinement-generation-")));
+      const initialInput = join(directory, "initial.ts");
+      const changedInput = join(directory, "changed.ts");
+      const configPath = join(directory, "tsconfig.json");
+      const source = (name: string) => `
 import type { Refined } from "ts-refinement";
 type Positive = Refined<number, "n > 0">;
 declare const value: number;
 export const ${name} = value as Positive;
 `;
-    const config = (input: string) => ({
-      compilerOptions: {
-        module: "Preserve",
-        moduleResolution: "bundler",
-        noEmit: true,
-        paths: { "ts-refinement": [fixtureFile("../../packages/core/src/index.ts")] },
-        strict: true,
-        target: "ESNext",
-      },
-      include: [input],
-    });
-
-    try {
-      await Promise.all([
-        writeFile(initialInput, source("initial")),
-        writeFile(changedInput, source("changed")),
-        writeFile(configPath, JSON.stringify(config("initial.ts"))),
-      ]);
-      const refinementPlugin = refinementTypesPlugin({
-        cwd: directory,
-        runtimeModule: fixtureFile("../../packages/runtime/src/index.ts"),
+      const config = (input: string) => ({
+        compilerOptions: {
+          module: "Preserve",
+          moduleResolution: "bundler",
+          noEmit: true,
+          paths: { "ts-refinement": [fixtureFile("../../packages/core/src/index.ts")] },
+          strict: true,
+          target: "ESNext",
+        },
+        include: [input],
       });
-      const initialBundle = await rolldown({ input: initialInput, plugins: [refinementPlugin] });
-      await initialBundle.generate({ format: "esm" });
 
-      await writeFile(configPath, JSON.stringify(config("changed.ts")));
-      const changedBundle = await rolldown({ input: changedInput, plugins: [refinementPlugin] });
-      const generated = await changedBundle.generate({ format: "esm" });
-      const chunk = generated.output.find((output) => output.type === "chunk");
-      expect(chunk?.code).toContain("changed = assert");
-    } finally {
-      await rm(directory, { force: true, recursive: true });
-    }
-  });
+      try {
+        await Promise.all([
+          writeFile(initialInput, source("initial")),
+          writeFile(changedInput, source("changed")),
+          writeFile(configPath, JSON.stringify(config("initial.ts"))),
+        ]);
+        const refinementPlugin = refinementTypesPlugin({
+          cwd: directory,
+          runtimeModule: fixtureFile("../../packages/runtime/src/index.ts"),
+        });
+        const initialBundle = await rolldown({ input: initialInput, plugins: [refinementPlugin] });
+        await initialBundle.generate({ format: "esm" });
+
+        await writeFile(configPath, JSON.stringify(config("changed.ts")));
+        const changedBundle = await rolldown({ input: changedInput, plugins: [refinementPlugin] });
+        const generated = await changedBundle.generate({ format: "esm" });
+        const chunk = generated.output.find((output) => output.type === "chunk");
+        expect(chunk?.code).toContain("changed = assert");
+      } finally {
+        await rm(directory, { force: true, recursive: true });
+      }
+    },
+  );
 
   it("refreshes inherited config watches", { timeout: rebuildTestTimeout }, async () => {
     const directory = await realpath(await mkdtemp(join(tmpdir(), "ts-refinement-config-")));
