@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { constants, accessSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { constants, accessSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { extname, isAbsolute, relative, resolve, sep } from "node:path";
 
 import { parse, type AnyNode, type ObjectExpression } from "acorn";
 import { ancestor } from "acorn-walk";
@@ -81,6 +81,25 @@ function containedAssetPath(directory: string, fileName: string): AssetPathResul
   } catch {
     return { error: "missing", ok: false };
   }
+}
+
+function javaScriptAssets(directory: string): readonly string[] {
+  const files: string[] = [];
+  function visit(currentDirectory: string): void {
+    for (const entry of readdirSync(currentDirectory, { withFileTypes: true })) {
+      const entryPath = resolve(currentDirectory, entry.name);
+      if (entry.isDirectory()) {
+        visit(entryPath);
+      } else if (
+        (entry.isFile() || entry.isSymbolicLink()) &&
+        [".cjs", ".js", ".mjs"].includes(extname(entry.name))
+      ) {
+        files.push(relative(directory, entryPath).replaceAll(sep, "/"));
+      }
+    }
+  }
+  visit(directory);
+  return files.sort((left, right) => left.localeCompare(right));
 }
 
 type ParsedMarkerValue = RegExp | bigint | boolean | number | string | null | undefined;
@@ -308,6 +327,12 @@ export function verifyOutput(directory: string, manifestPath: string): readonly 
   const { manifest } = result;
 
   const failures: string[] = [];
+  const manifestAssets = new Set(manifest.assets.map((asset) => asset.file.replaceAll("\\", "/")));
+  for (const fileName of javaScriptAssets(directory)) {
+    if (!manifestAssets.has(fileName)) {
+      failures.push(`JavaScript asset '${fileName}' is not listed in the refinement manifest.`);
+    }
+  }
   const markers = new Set<string>();
   for (const asset of manifest.assets) {
     const assetPath = containedAssetPath(directory, asset.file);

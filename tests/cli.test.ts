@@ -72,6 +72,15 @@ describe("ts-refinement verify", () => {
 
       expect(invoke(["verify", directory])).toEqual({ code: 0, stderr: "", stdout: "" });
 
+      const unmanifestedAsset = resolve(directory, "stale.js");
+      writeFileSync(unmanifestedAsset, "export const stale = true;\n");
+      const staleOutput = invoke(["verify", directory]);
+      expect(staleOutput.code).toBe(1);
+      expect(staleOutput.stdout).toContain(
+        "JavaScript asset 'stale.js' is not listed in the refinement manifest",
+      );
+      rmSync(unmanifestedAsset);
+
       const customManifest = resolve(directory, "custom-manifest.json");
       renameSync(manifestPath, customManifest);
       expect(invoke(["verify", directory, "--manifest", customManifest])).toEqual({
