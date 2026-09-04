@@ -177,6 +177,7 @@ func TestFiltersOnlyValidStructuralImplications(t *testing.T) {
 	filtered := filterEntailedRefinementDiagnostics(program.Checker, program.SourceFiles(), program.Diagnostics())
 	fixtureName := filepath.Join("fixtures", "analysis", "entailment-structure-matrix.ts")
 	spans := map[string]bool{}
+	satisfiesDiagnostics := 0
 	for _, diagnostic := range filtered {
 		if !strings.HasSuffix(filepath.Clean(diagnostic.File), fixtureName) || diagnostic.Start == nil || diagnostic.Length == nil {
 			continue
@@ -184,6 +185,9 @@ func TestFiltersOnlyValidStructuralImplications(t *testing.T) {
 		file := program.SourceFile(diagnostic.File)
 		if file != nil && *diagnostic.Start >= 0 && *diagnostic.Start+*diagnostic.Length <= len(file.Text()) {
 			spans[file.Text()[*diagnostic.Start:*diagnostic.Start+*diagnostic.Length]] = true
+			if diagnostic.Code == 1360 {
+				satisfiesDiagnostics++
+			}
 		}
 	}
 	for _, shape := range []string{
@@ -212,6 +216,8 @@ func TestFiltersOnlyValidStructuralImplications(t *testing.T) {
 		"validRequiredToOptionalTuple",
 		"validShortToOptionalTuple",
 		"validFixedToRestTuple",
+		"validSatisfies",
+		"validGenericCallable",
 	} {
 		if spans[name] {
 			t.Errorf("expected tuple subtype diagnostic on %q to be filtered", name)
@@ -226,9 +232,18 @@ func TestFiltersOnlyValidStructuralImplications(t *testing.T) {
 		"invalidRestToFixedTuple",
 		"invalidTupleExtra",
 		"invalidFixedToRestMember",
+		"invalidGenericCallable",
+		"invalidGenericConstraint",
+		"invalidGenericArity",
 	} {
 		if !spans[name] {
 			t.Errorf("expected ordinary incompatibility on %q to be retained", name)
 		}
+	}
+	if satisfiesDiagnostics != 1 {
+		t.Errorf("expected one inverse satisfies diagnostic, got %d", satisfiesDiagnostics)
+	}
+	if !spans["return"] {
+		t.Error("expected target type parameter return diagnostic to be retained")
 	}
 }

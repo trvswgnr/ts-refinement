@@ -127,12 +127,15 @@ func refinementDefinitionDiagnostics(checker *shimchecker.Checker, file *shimast
 			return
 		}
 		if node.Kind == shimast.KindTypeReference {
-			resolution := analysis.Resolve(checker, checker.GetTypeAtLocation(node), node)
-			for _, issue := range resolution.Issues {
-				key := fmt.Sprintf("%d:%d:%s", node.Pos(), issue.Code, issue.Message)
-				if _, exists := seen[key]; !exists {
-					seen[key] = struct{}{}
-					diagnostics = append(diagnostics, nodeDiagnostic(file, node, issue.Code, issue.Message))
+			target := checker.GetTypeAtLocation(node)
+			if target != nil && target.Flags()&shimchecker.TypeFlagsTypeParameter == 0 {
+				resolution := analysis.Resolve(checker, target, node)
+				for _, issue := range resolution.Issues {
+					key := fmt.Sprintf("%d:%d:%s", node.Pos(), issue.Code, issue.Message)
+					if _, exists := seen[key]; !exists {
+						seen[key] = struct{}{}
+						diagnostics = append(diagnostics, nodeDiagnostic(file, node, issue.Code, issue.Message))
+					}
 				}
 			}
 		}

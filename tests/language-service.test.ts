@@ -194,8 +194,9 @@ describe("TypeScript language-service plugin", () => {
     } as ts.server.PluginCreateInfo);
 
     const diagnostics = proxy.getSemanticDiagnostics(fixtureFile("entailment-structure-matrix.ts"));
-    expect(originalDiagnostics).toHaveLength(32);
-    expect(originalDiagnostics.filter((diagnostic) => diagnostic.code === 2322)).toHaveLength(31);
+    expect(originalDiagnostics.filter((diagnostic) => diagnostic.code === 2322)).toHaveLength(36);
+    expect(originalDiagnostics.filter((diagnostic) => diagnostic.code === 1360)).toHaveLength(2);
+    expect(originalDiagnostics.filter((diagnostic) => diagnostic.code === 4104)).toHaveLength(1);
     expect(originalDiagnostics.filter((diagnostic) => diagnostic.code === 4104)).toHaveLength(1);
     expect(
       diagnostics.map((diagnostic) =>
@@ -222,6 +223,11 @@ describe("TypeScript language-service plugin", () => {
       "invalidRestToFixedTuple",
       "invalidTupleExtra",
       "invalidFixedToRestMember",
+      "satisfies",
+      "invalidGenericCallable",
+      "invalidGenericConstraint",
+      "invalidGenericArity",
+      "return",
     ]);
   });
 

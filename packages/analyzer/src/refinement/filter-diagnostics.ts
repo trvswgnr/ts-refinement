@@ -251,6 +251,22 @@ function assertionTransfers(
   ];
 }
 
+function satisfiesTransfers(
+  context: AnalyzerContext,
+  node: ts.Node,
+  sourceFile: ts.SourceFile,
+  start: number,
+): readonly RefinementTransfer[] {
+  if (!context.ts.isSatisfiesExpression(node)) return [];
+  if (start < node.expression.end || start > node.type.getStart(sourceFile)) return [];
+  return [
+    {
+      sourceExpression: node.expression,
+      targetType: context.checker.getTypeAtLocation(node.type),
+    },
+  ];
+}
+
 function findTransfers(
   context: AnalyzerContext,
   sourceFile: ts.SourceFile,
@@ -278,6 +294,9 @@ function findTransfers(
       transfers.push(
         ...assertionTransfers(context, node, sourceFile, diagnosticStart, diagnosticLength),
       );
+    }
+    if (diagnostic.code === 1360) {
+      transfers.push(...satisfiesTransfers(context, node, sourceFile, diagnosticStart));
     }
     context.ts.forEachChild(node, visit);
   }
@@ -369,8 +388,7 @@ function typeParameterEntailment(
     return constraint !== undefined && visit(constraint, target);
   }
   if ((target.flags & context.ts.TypeFlags.TypeParameter) !== 0) {
-    const constraint = context.checker.getBaseConstraintOfType(target);
-    return constraint !== undefined && visit(source, constraint);
+    return false;
   }
   return undefined;
 }
@@ -675,12 +693,47 @@ function signatureSupportsStructuralEntailment(
   target: ts.Signature,
 ): boolean {
   return (
-    source.getTypeParameters() === undefined &&
-    target.getTypeParameters() === undefined &&
     context.checker.getTypePredicateOfSignature(source) === undefined &&
     context.checker.getTypePredicateOfSignature(target) === undefined &&
     (source.thisParameter === undefined) === (target.thisParameter === undefined)
   );
+}
+
+function signatureTypeParameterVisit(
+  context: AnalyzerContext,
+  source: ts.Signature,
+  target: ts.Signature,
+  visit: EntailmentVisit,
+): EntailmentVisit | null {
+  const sourceParameters = source.getTypeParameters() ?? [];
+  const targetParameters = target.getTypeParameters() ?? [];
+  if (sourceParameters.length !== targetParameters.length) return null;
+  const equivalents = new Map<ts.Type, ts.Type>();
+  for (const [index, sourceParameter] of sourceParameters.entries()) {
+    const targetParameter = targetParameters[index];
+    if (targetParameter === undefined) return null;
+    equivalents.set(sourceParameter, targetParameter);
+    equivalents.set(targetParameter, sourceParameter);
+  }
+  const scopedVisit: EntailmentVisit = (sourceType, targetType) =>
+    equivalents.get(sourceType) === targetType || visit(sourceType, targetType);
+  for (const [index, sourceParameter] of sourceParameters.entries()) {
+    const targetParameter = targetParameters[index];
+    if (targetParameter === undefined) return null;
+    const sourceConstraint = context.checker.getBaseConstraintOfType(sourceParameter);
+    const targetConstraint = context.checker.getBaseConstraintOfType(targetParameter);
+    if (sourceConstraint === undefined || targetConstraint === undefined) {
+      if (sourceConstraint !== targetConstraint) return null;
+      continue;
+    }
+    if (
+      !scopedVisit(sourceConstraint, targetConstraint) ||
+      !scopedVisit(targetConstraint, sourceConstraint)
+    ) {
+      return null;
+    }
+  }
+  return scopedVisit;
 }
 
 function signatureThisIsEntailed(
@@ -722,18 +775,22 @@ function signatureIsEntailed(
   visit: EntailmentVisit,
 ): boolean {
   if (!signatureSupportsStructuralEntailment(context, source, target)) return false;
+  const scopedVisit = signatureTypeParameterVisit(context, source, target, visit);
+  if (scopedVisit === null) return false;
 
   const sourceParameters = signatureParameters(context, source);
   const targetParameters = signatureParameters(context, target);
   if (sourceParameters === null || targetParameters === null) return false;
   if (sourceParameters.minimum > targetParameters.minimum) return false;
-  if (!signatureThisIsEntailed(context, source, target, visit)) return false;
-  if (!signatureParametersAreEntailed(sourceParameters, targetParameters, visit)) return false;
+  if (!signatureThisIsEntailed(context, source, target, scopedVisit)) return false;
+  if (!signatureParametersAreEntailed(sourceParameters, targetParameters, scopedVisit)) {
+    return false;
+  }
 
   const targetReturn = target.getReturnType();
   return (
     (targetReturn.flags & context.ts.TypeFlags.Void) !== 0 ||
-    visit(source.getReturnType(), targetReturn)
+    scopedVisit(source.getReturnType(), targetReturn)
   );
 }
 
@@ -757,10 +814,7 @@ function objectRefinementPresence(
   const nested: RefinementPresence[] = [];
   for (const kind of [context.ts.SignatureKind.Call, context.ts.SignatureKind.Construct]) {
     for (const signature of context.checker.getSignaturesOfType(type, kind)) {
-      if (
-        signature.getTypeParameters() !== undefined ||
-        context.checker.getTypePredicateOfSignature(signature) !== undefined
-      ) {
+      if (context.checker.getTypePredicateOfSignature(signature) !== undefined) {
         continue;
       }
       nested.push(visit(signature.getReturnType()));
@@ -885,7 +939,12 @@ export function filterEntailedRefinementDiagnostics(
   diagnostics: readonly ts.Diagnostic[],
 ): readonly ts.Diagnostic[] {
   return diagnostics.filter((diagnostic) => {
-    if (diagnostic.code !== 2322 && diagnostic.code !== 2345 && diagnostic.code !== 2352) {
+    if (
+      diagnostic.code !== 1360 &&
+      diagnostic.code !== 2322 &&
+      diagnostic.code !== 2345 &&
+      diagnostic.code !== 2352
+    ) {
       return true;
     }
     const transfers = findTransfers(context, sourceFile, diagnostic);

@@ -162,7 +162,7 @@ func refinementStructureIsEntailed(checker *shimchecker.Checker, sourceType, tar
 			return visit(checker.GetBaseConstraintOfType(source), target)
 		}
 		if target.Flags()&shimchecker.TypeFlagsTypeParameter != 0 {
-			return visit(source, checker.GetBaseConstraintOfType(target))
+			return false
 		}
 		if result, handled := collectionEntailment(checker, source, target, visit); handled {
 			return result
@@ -372,10 +372,37 @@ func signatureIsEntailed(
 	target *shimchecker.Signature,
 	visit func(*shimchecker.Type, *shimchecker.Type) bool,
 ) bool {
-	if len(source.TypeParameters()) > 0 || len(target.TypeParameters()) > 0 ||
-		checker.GetTypePredicateOfSignature(source) != nil || checker.GetTypePredicateOfSignature(target) != nil ||
+	if checker.GetTypePredicateOfSignature(source) != nil || checker.GetTypePredicateOfSignature(target) != nil ||
 		(source.ThisParameter() == nil) != (target.ThisParameter() == nil) {
 		return false
+	}
+	sourceTypeParameters := source.TypeParameters()
+	targetTypeParameters := target.TypeParameters()
+	if len(sourceTypeParameters) != len(targetTypeParameters) {
+		return false
+	}
+	equivalents := map[*shimchecker.Type]*shimchecker.Type{}
+	for index, sourceParameter := range sourceTypeParameters {
+		targetParameter := targetTypeParameters[index]
+		equivalents[sourceParameter] = targetParameter
+		equivalents[targetParameter] = sourceParameter
+	}
+	scopedVisit := func(sourceType, targetType *shimchecker.Type) bool {
+		return equivalents[sourceType] == targetType || visit(sourceType, targetType)
+	}
+	for index, sourceParameter := range sourceTypeParameters {
+		targetParameter := targetTypeParameters[index]
+		sourceConstraint := checker.GetBaseConstraintOfType(sourceParameter)
+		targetConstraint := checker.GetBaseConstraintOfType(targetParameter)
+		if sourceConstraint == nil || targetConstraint == nil {
+			if sourceConstraint != targetConstraint {
+				return false
+			}
+			continue
+		}
+		if !scopedVisit(sourceConstraint, targetConstraint) || !scopedVisit(targetConstraint, sourceConstraint) {
+			return false
+		}
 	}
 	sourceParameters := signatureParameters(checker, source)
 	targetParameters := signatureParameters(checker, target)
@@ -383,7 +410,7 @@ func signatureIsEntailed(
 		return false
 	}
 	if source.ThisParameter() != nil {
-		if !visit(signatureSymbolType(checker, target.ThisParameter()), signatureSymbolType(checker, source.ThisParameter())) {
+		if !scopedVisit(signatureSymbolType(checker, target.ThisParameter()), signatureSymbolType(checker, source.ThisParameter())) {
 			return false
 		}
 	}
@@ -391,16 +418,16 @@ func signatureIsEntailed(
 	for index := range fixedCount {
 		sourceParameter := signatureParameterAt(sourceParameters, index)
 		targetParameter := signatureParameterAt(targetParameters, index)
-		if sourceParameter != nil && targetParameter != nil && !visit(targetParameter, sourceParameter) {
+		if sourceParameter != nil && targetParameter != nil && !scopedVisit(targetParameter, sourceParameter) {
 			return false
 		}
 	}
-	if sourceParameters.rest != nil && targetParameters.rest != nil && !visit(targetParameters.rest, sourceParameters.rest) {
+	if sourceParameters.rest != nil && targetParameters.rest != nil && !scopedVisit(targetParameters.rest, sourceParameters.rest) {
 		return false
 	}
 	targetReturn := shimchecker.Checker_getReturnTypeOfSignature(checker, target)
 	return targetReturn != nil && (targetReturn.Flags()&shimchecker.TypeFlagsVoid != 0 ||
-		visit(shimchecker.Checker_getReturnTypeOfSignature(checker, source), targetReturn))
+		scopedVisit(shimchecker.Checker_getReturnTypeOfSignature(checker, source), targetReturn))
 }
 
 func signaturesAreEntailed(

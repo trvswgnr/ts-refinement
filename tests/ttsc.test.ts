@@ -7,6 +7,8 @@ import { pathToFileURL } from "node:url";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { expectEntailmentMatrixDiagnostics } from "./entailment-matrix.ts";
+
 const root = resolve(import.meta.dirname, "..");
 const ttsc = resolve(root, "node_modules/.bin/ttsc");
 const outputRoot = mkdtempSync(resolve(tmpdir(), "ts-refinement-ttsc-"));
@@ -117,6 +119,16 @@ describe("TypeScript-Go native plugin", () => {
     const result = runTtscCheck("imported-invalid");
     expect(result.status).toBe(2);
     expect(`${result.stdout}${result.stderr}`).toMatch(/imported\.ts.*RF1000200/su);
+  }, 60_000);
+
+  it("filters only valid entailment matrix assignments through ttsc", () => {
+    const result = spawnSync(
+      ttsc,
+      ["check", "--project", resolve(root, "fixtures/entailment-matrix/tsconfig.native.json")],
+      { cwd: root, encoding: "utf8" },
+    );
+    expect(result.status).toBe(2);
+    expectEntailmentMatrixDiagnostics(`${result.stdout}${result.stderr}`);
   }, 60_000);
 
   it("rejects malformed collection containers at runtime", async () => {

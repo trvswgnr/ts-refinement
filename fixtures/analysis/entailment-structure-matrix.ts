@@ -38,6 +38,10 @@ declare const taggedStrong: Tagged<Strong>;
 declare const taggedWeak: Tagged<Weak>;
 declare const parameterBroad: (value: Weak) => void;
 declare const parameterNarrow: (value: Strong) => void;
+declare const genericReturnStrong: <Key extends string>(key: Key) => Strong;
+declare const genericReturnWeak: <Key extends string>(key: Key) => Weak;
+declare const genericNarrowConstraint: <Value extends Strong>(value: Value) => Strong;
+declare const genericPairReturnStrong: <Key, Value>(key: Key, value: Value) => Strong;
 declare const nodeStrong: StrongNode;
 declare const nodeWeak: WeakNode;
 
@@ -73,3 +77,14 @@ export const invalidOptionalToRequiredTuple: readonly [Weak] = optionalOnlyStron
 export const invalidRestToFixedTuple: readonly [Weak, Weak] = restTupleStrong;
 export const invalidTupleExtra: readonly [Weak] = fixedPairStrong;
 export const invalidFixedToRestMember: readonly [Weak, ...number[]] = tupleStrong;
+export const validSatisfies = propertyStrong.value satisfies Weak;
+export const invalidSatisfies = propertyWeak.value satisfies Strong;
+export const validGenericCallable: <Key extends string>(key: Key) => Weak = genericReturnStrong;
+export const invalidGenericCallable: <Key extends string>(key: Key) => Strong = genericReturnWeak;
+export const invalidGenericConstraint: <Value extends Weak>(value: Value) => Weak =
+  genericNarrowConstraint;
+export const invalidGenericArity: <Key>(key: Key) => Weak = genericPairReturnStrong;
+
+export function invalidTargetTypeParameter<Target extends Weak>(): Target {
+  return propertyStrong.value;
+}

@@ -33,6 +33,11 @@ const retainedStructuralDiagnostics = [
   "invalidRestToFixedTuple",
   "invalidTupleExtra",
   "invalidFixedToRestMember",
+  "satisfies",
+  "invalidGenericCallable",
+  "invalidGenericConstraint",
+  "invalidGenericArity",
+  "return",
 ];
 const retainedIndexDiagnostics = [
   "invalidStringToTemplate",

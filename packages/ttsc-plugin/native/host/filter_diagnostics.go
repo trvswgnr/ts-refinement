@@ -24,7 +24,7 @@ func filterEntailedRefinementDiagnostics(
 	}
 	filtered := diagnostics[:0]
 	for _, diagnostic := range diagnostics {
-		if (diagnostic.Code != 2322 && diagnostic.Code != 2345 && diagnostic.Code != 2352) ||
+		if (diagnostic.Code != 1360 && diagnostic.Code != 2322 && diagnostic.Code != 2345 && diagnostic.Code != 2352) ||
 			diagnostic.Start == nil || diagnostic.Length == nil {
 			filtered = append(filtered, diagnostic)
 			continue
@@ -117,6 +117,16 @@ func findTransfers(
 				transfers = append(transfers, &refinementTransfer{
 					sourceExpression: site.expression,
 					targetType:       checker.GetTypeAtLocation(site.typeNode),
+				})
+			}
+		}
+		if code == 1360 && node.Kind == shimast.KindSatisfiesExpression {
+			satisfies := node.AsSatisfiesExpression()
+			if satisfies != nil && satisfies.Expression != nil && satisfies.Type != nil &&
+				start >= satisfies.Expression.End() && start <= tokenStart(file, satisfies.Type) {
+				transfers = append(transfers, &refinementTransfer{
+					sourceExpression: satisfies.Expression,
+					targetType:       checker.GetTypeAtLocation(satisfies.Type),
 				})
 			}
 		}
