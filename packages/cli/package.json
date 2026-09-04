@@ -10,7 +10,7 @@
   ],
   "license": "MIT",
   "bin": {
-    "ts-refinement": "./dist/index.mjs"
+    "ts-refinement": "dist/index.mjs"
   },
   "files": [
     "dist",
