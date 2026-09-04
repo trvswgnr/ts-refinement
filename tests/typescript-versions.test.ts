@@ -26,6 +26,7 @@ const retainedStructuralDiagnostics = [
   "invalidUnion",
   "invalidCallableProperty",
   "invalidParameter",
+  "invalidCallableMiddleRest",
   "invalidRecursive",
   "invalidReadonlyArray",
   "invalidOptionalRequired",

@@ -43,6 +43,8 @@ declare const callableValueStrong: CallableValue<Strong>;
 declare const callableValueWeak: CallableValue<Weak>;
 declare const parameterBroad: (value: Weak) => void;
 declare const parameterNarrow: (value: Strong) => void;
+declare const broadMiddleRestParameter: (...values: [Weak, ...Weak[], Weak]) => void;
+declare const narrowMiddleRestParameter: (...values: [Weak, ...Weak[], Strong]) => void;
 declare const genericReturnStrong: <Key extends string>(key: Key) => Strong;
 declare const genericReturnWeak: <Key extends string>(key: Key) => Weak;
 declare const genericNarrowConstraint: <Value extends Strong>(value: Value) => Strong;
@@ -73,6 +75,10 @@ export const validCallableProperty: CallableValue<Weak> = callableValueStrong;
 export const invalidCallableProperty: CallableValue<Strong> = callableValueWeak;
 export const validParameter: (value: Strong) => void = parameterBroad;
 export const invalidParameter: (value: Weak) => void = parameterNarrow;
+export const validCallableMiddleRest: (...values: [Weak, ...Weak[], Strong]) => void =
+  broadMiddleRestParameter;
+export const invalidCallableMiddleRest: (...values: [Weak, ...Weak[], Weak]) => void =
+  narrowMiddleRestParameter;
 export const validRecursive: WeakNode = nodeStrong;
 export const invalidRecursive: StrongNode = nodeWeak;
 export const validMutableArray: readonly Weak[] = mutableArrayStrong;

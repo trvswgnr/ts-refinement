@@ -218,6 +218,7 @@ func TestFiltersOnlyValidStructuralImplications(t *testing.T) {
 		"validFixedToRestTuple",
 		"validSatisfies",
 		"validGenericCallable",
+		"validCallableMiddleRest",
 	} {
 		if spans[name] {
 			t.Errorf("expected tuple subtype diagnostic on %q to be filtered", name)
@@ -233,6 +234,7 @@ func TestFiltersOnlyValidStructuralImplications(t *testing.T) {
 		"invalidTupleExtra",
 		"invalidFixedToRestMember",
 		"invalidGenericCallable",
+		"invalidCallableMiddleRest",
 		"invalidGenericConstraint",
 		"invalidGenericArity",
 	} {

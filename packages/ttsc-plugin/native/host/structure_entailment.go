@@ -56,7 +56,13 @@ func containsRefinement(checker *shimchecker.Checker, root *shimchecker.Type) (b
 					return has, valid
 				}
 				parameters := signatureParameters(checker, signature)
-				for _, parameter := range parameters.fixed {
+				for _, parameter := range parameters.prefix {
+					has, valid = visit(parameter)
+					if !valid || has {
+						return has, valid
+					}
+				}
+				for _, parameter := range parameters.suffix {
 					has, valid = visit(parameter)
 					if !valid || has {
 						return has, valid
@@ -237,30 +243,11 @@ func collectionEntailment(
 		if sourceTuple.IsReadonly() && !targetTuple.IsReadonly() {
 			return false, true
 		}
-		sourceElements := tupleLayoutFor(checker, source)
-		targetElements := tupleLayoutFor(checker, target)
-		if sourceElements.minimum < targetElements.minimum {
-			return false, true
-		}
-		if sourceElements.rest != nil && targetElements.rest == nil {
-			return false, true
-		}
-		boundary := max(
-			sourceElements.minimum,
-			targetElements.minimum,
-			len(sourceElements.prefix)+len(sourceElements.suffix),
-			len(targetElements.prefix)+len(targetElements.suffix),
-		)
-		maximum := len(sourceElements.prefix) + len(sourceElements.suffix)
-		if sourceElements.rest != nil {
-			maximum = boundary + 1
-		}
-		for length := sourceElements.minimum; length <= maximum; length++ {
-			if !tupleLengthIsEntailed(sourceElements, targetElements, length, visit) {
-				return false, true
-			}
-		}
-		return true, true
+		return tupleLayoutsAreEntailed(
+			tupleLayoutFor(checker, source),
+			tupleLayoutFor(checker, target),
+			visit,
+		), true
 	}
 
 	targetElement := collectionArrayElement(checker, target)
@@ -280,6 +267,31 @@ func collectionEntailment(
 	}
 	sourceElement := collectionArrayElement(checker, source)
 	return sourceElement != nil && visit(sourceElement, targetElement), true
+}
+
+func tupleLayoutsAreEntailed(
+	source, target tupleLayout,
+	visit func(*shimchecker.Type, *shimchecker.Type) bool,
+) bool {
+	if source.minimum < target.minimum || source.rest != nil && target.rest == nil {
+		return false
+	}
+	boundary := max(
+		source.minimum,
+		target.minimum,
+		len(source.prefix)+len(source.suffix),
+		len(target.prefix)+len(target.suffix),
+	)
+	maximum := len(source.prefix) + len(source.suffix)
+	if source.rest != nil {
+		maximum = boundary + 1
+	}
+	for length := source.minimum; length <= maximum; length++ {
+		if !tupleLengthIsEntailed(source, target, length, visit) {
+			return false
+		}
+	}
+	return true
 }
 
 func tupleLengthIsEntailed(
@@ -373,53 +385,28 @@ func signatureSymbolType(checker *shimchecker.Checker, symbol *shimast.Symbol) *
 	return shimchecker.Checker_getTypeOfSymbol(checker, symbol)
 }
 
-type signatureParameterSequence struct {
-	fixed   []*shimchecker.Type
-	minimum int
-	rest    *shimchecker.Type
-}
-
 func signatureParameters(
 	checker *shimchecker.Checker,
 	signature *shimchecker.Signature,
-) signatureParameterSequence {
-	result := signatureParameterSequence{minimum: shimchecker.Checker_getMinArgumentCount(checker, signature)}
+) tupleLayout {
+	result := tupleLayout{minimum: shimchecker.Checker_getMinArgumentCount(checker, signature)}
 	parameters := shimchecker.Signature_parameters(signature)
 	for index, parameter := range parameters {
 		parameterType := signatureSymbolType(checker, parameter)
 		if shimchecker.Signature_hasRestParameter(signature) && index == len(parameters)-1 {
 			if shimchecker.IsTupleType(parameterType) {
-				arguments := shimchecker.Checker_getTypeArguments(checker, parameterType)
-				flags := parameterType.TargetTupleType().ElementFlags()
-				for elementIndex, element := range arguments {
-					elementFlags := shimchecker.ElementFlagsRequired
-					if elementIndex < len(flags) {
-						elementFlags = flags[elementIndex]
-					}
-					if elementFlags&(shimchecker.ElementFlagsRest|shimchecker.ElementFlagsVariadic) != 0 {
-						result.rest = element
-						break
-					}
-					result.fixed = append(result.fixed, element)
-				}
+				layout := tupleLayoutFor(checker, parameterType)
+				result.prefix = append(result.prefix, layout.prefix...)
+				result.rest = layout.rest
+				result.suffix = append(result.suffix, layout.suffix...)
 			} else {
 				result.rest = shimchecker.Checker_getRestTypeOfSignature(checker, signature)
 			}
 			continue
 		}
-		result.fixed = append(result.fixed, parameterType)
+		result.prefix = append(result.prefix, parameterType)
 	}
 	return result
-}
-
-func signatureParameterAt(parameters signatureParameterSequence, index int) *shimchecker.Type {
-	if index >= 0 && index < len(parameters.fixed) {
-		return parameters.fixed[index]
-	}
-	if index >= len(parameters.fixed) {
-		return parameters.rest
-	}
-	return nil
 }
 
 func signatureIsEntailed(
@@ -470,15 +457,7 @@ func signatureIsEntailed(
 			return false
 		}
 	}
-	fixedCount := max(len(sourceParameters.fixed), len(targetParameters.fixed))
-	for index := range fixedCount {
-		sourceParameter := signatureParameterAt(sourceParameters, index)
-		targetParameter := signatureParameterAt(targetParameters, index)
-		if sourceParameter != nil && targetParameter != nil && !scopedVisit(targetParameter, sourceParameter) {
-			return false
-		}
-	}
-	if sourceParameters.rest != nil && targetParameters.rest != nil && !scopedVisit(targetParameters.rest, sourceParameters.rest) {
+	if !tupleLayoutsAreEntailed(targetParameters, sourceParameters, scopedVisit) {
 		return false
 	}
 	targetReturn := shimchecker.Checker_getReturnTypeOfSignature(checker, target)

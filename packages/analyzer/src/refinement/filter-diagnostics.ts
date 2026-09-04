@@ -679,43 +679,12 @@ function signatureSymbolType(
   return context.checker.getTypeOfSymbolAtLocation(parameter, location);
 }
 
-interface SignatureParameters {
-  readonly fixed: readonly ts.Type[];
-  readonly minimum: number;
-  readonly rest: ts.Type | null;
-}
-
-interface TupleParameters {
-  readonly minimum: number;
-  readonly rest: ts.Type | null;
-}
+type SignatureParameters = TupleLayout;
 
 function tupleTypeReference(context: AnalyzerContext, type: ts.Type): ts.TypeReference {
   if (!context.checker.isTupleType(type)) throw new Error("Expected a tuple type.");
   // SAFETY: isTupleType establishes a TypeReference backed by a TupleType target.
   return type as ts.TypeReference;
-}
-
-function appendTupleParameters(
-  context: AnalyzerContext,
-  tuple: ts.TypeReference,
-  fixed: ts.Type[],
-): TupleParameters {
-  const elements = context.checker.getTypeArguments(tuple);
-  // SAFETY: tupleTypeReference is only called after isTupleType succeeds.
-  const target = tuple.target as ts.TupleType & {
-    readonly elementFlags?: readonly ts.ElementFlags[];
-  };
-  let minimum = 0;
-  for (const [index, element] of elements.entries()) {
-    const flags = target.elementFlags?.[index] ?? context.ts.ElementFlags.Required;
-    if ((flags & (context.ts.ElementFlags.Rest | context.ts.ElementFlags.Variadic)) !== 0) {
-      return { minimum, rest: element };
-    }
-    fixed.push(element);
-    if ((flags & context.ts.ElementFlags.Required) !== 0) minimum = fixed.length;
-  }
-  return { minimum, rest: null };
 }
 
 function signatureParameters(
@@ -724,7 +693,8 @@ function signatureParameters(
 ): SignatureParameters | null {
   const parameters = signature.getParameters();
   const hasRest = signatureHasRestParameter(context, signature);
-  const fixed: ts.Type[] = [];
+  const prefix: ts.Type[] = [];
+  const suffix: ts.Type[] = [];
   let minimum = 0;
   let rest: ts.Type | null = null;
   for (const [index, parameter] of parameters.entries()) {
@@ -732,12 +702,11 @@ function signatureParameters(
     if (resolvedParameter === null) return null;
     if (hasRest && index === parameters.length - 1) {
       if (context.checker.isTupleType(resolvedParameter)) {
-        const tuple = appendTupleParameters(
-          context,
-          tupleTypeReference(context, resolvedParameter),
-          fixed,
-        );
-        minimum = Math.max(minimum, tuple.minimum);
+        const preceding = prefix.length;
+        const tuple = tupleLayout(context, tupleTypeReference(context, resolvedParameter));
+        prefix.push(...tuple.prefix);
+        suffix.push(...tuple.suffix);
+        minimum = Math.max(minimum, preceding + tuple.minimum);
         rest = tuple.rest;
       } else {
         rest =
@@ -747,14 +716,10 @@ function signatureParameters(
       }
       continue;
     }
-    fixed.push(resolvedParameter);
-    if ((parameter.flags & context.ts.SymbolFlags.Optional) === 0) minimum = fixed.length;
+    prefix.push(resolvedParameter);
+    if ((parameter.flags & context.ts.SymbolFlags.Optional) === 0) minimum = prefix.length;
   }
-  return { fixed, minimum, rest };
-}
-
-function parameterAt(parameters: SignatureParameters, index: number): ts.Type | null {
-  return parameters.fixed[index] ?? (index >= parameters.fixed.length ? parameters.rest : null);
+  return { minimum, prefix, rest, suffix };
 }
 
 function signatureSupportsStructuralEntailment(
@@ -823,19 +788,7 @@ function signatureParametersAreEntailed(
   target: SignatureParameters,
   visit: EntailmentVisit,
 ): boolean {
-  const fixedCount = Math.max(source.fixed.length, target.fixed.length);
-  for (let index = 0; index < fixedCount; index += 1) {
-    const sourceParameter = parameterAt(source, index);
-    const targetParameter = parameterAt(target, index);
-    if (
-      sourceParameter !== null &&
-      targetParameter !== null &&
-      !visit(targetParameter, sourceParameter)
-    ) {
-      return false;
-    }
-  }
-  return source.rest === null || target.rest === null || visit(target.rest, source.rest);
+  return tupleElementsAreEntailed(target, source, visit);
 }
 
 function signatureIsEntailed(
@@ -893,7 +846,8 @@ function objectRefinementPresence(
       );
       const parameters = signatureParameters(context, signature);
       if (parameters !== null) {
-        nested.push(...parameters.fixed.map(visit));
+        nested.push(...parameters.prefix.map(visit));
+        nested.push(...parameters.suffix.map(visit));
         nested.push(visit(parameters.rest ?? undefined));
       }
     }
