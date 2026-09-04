@@ -204,4 +204,4 @@ bun install
 bun run gate
 ```
 
-`gate` runs type checking, linting, formatting verification, the analyzer/build/runtime/language-service tests, all package builds, and the tsdown example build.
+`gate` is the fast local feedback loop: type checking, corpus parity, native Go tests, linting, formatting verification, and in-process analyzer/build/runtime/language-service tests. `gate:release` adds coverage, compiler subprocess and version matrices, bundler conformance, packed-package consumers, and the tsdown example build.
