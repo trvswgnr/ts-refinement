@@ -1,0 +1,56 @@
+name: publish
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: npm-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'trvswgnr/ts-refinement'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Set up npm
+        run: npm install --global npm@11.11.0
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.0
+      - name: Set up Go
+        uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
+        with:
+          cache: false
+          go-version: "1.26"
+      - name: Verify release version
+        run: test "v$(node --print 'require("./package.json").version')" = "$GITHUB_REF_NAME"
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Run release gate
+        run: bun run gate:release
+      - name: Publish packages
+        run: |
+          npm publish ./packages/core --access public
+          npm publish ./packages/runtime --access public
+          npm publish ./packages/analyzer --access public
+          npm publish ./packages/cli --access public
+          npm publish ./packages/unplugin --access public
+          npm publish ./packages/rolldown-plugin --access public
+          npm publish ./packages/typescript-plugin --access public
+          npm publish ./packages/ttsc-plugin --access public

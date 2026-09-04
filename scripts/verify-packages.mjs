@@ -91,6 +91,13 @@ async function validateMetadata() {
     [...new Set([...manifests.values()].map((manifest) => manifest.version))],
     [rootManifest.version],
   );
+  for (const packageDefinition of packages) {
+    assert.deepEqual(manifests.get(packageDefinition.name).repository, {
+      type: "git",
+      url: "git+https://github.com/trvswgnr/ts-refinement.git",
+      directory: packageDefinition.directory,
+    });
+  }
   assert.deepEqual(manifests.get("ts-refinement").dependencies, undefined);
   assert.deepEqual(manifests.get("ts-refinement").optionalDependencies, undefined);
   assert.deepEqual(manifests.get("ts-refinement").peerDependencies, undefined);

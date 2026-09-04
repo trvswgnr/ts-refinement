@@ -9,6 +9,11 @@
     "validation"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/trvswgnr/ts-refinement.git",
+    "directory": "packages/cli"
+  },
   "bin": {
     "ts-refinement": "dist/index.mjs"
   },

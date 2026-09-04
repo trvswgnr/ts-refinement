@@ -8,6 +8,11 @@
     "validation"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/trvswgnr/ts-refinement.git",
+    "directory": "packages/runtime"
+  },
   "files": [
     "dist",
     "src"
