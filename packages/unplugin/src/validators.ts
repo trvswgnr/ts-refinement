@@ -236,8 +236,12 @@ function traversalGuard(check: RefinementCheck): TraversalGuard {
   return (subject, path, segment, indent) => {
     const requiresArray = ["array", "tuple", "tupleRest"].includes(segment.kind);
     const invalidArray = requiresArray ? ` || !Array.isArray(${subject})` : "";
+    const invalidObject =
+      segment.kind === "index"
+        ? ` || (typeof ${subject} !== "object" && typeof ${subject} !== "function")`
+        : "";
     return [
-      `${indent}if (${subject} === null || ${subject} === undefined${invalidArray}) {`,
+      `${indent}if (${subject} === null || ${subject} === undefined${invalidArray}${invalidObject}) {`,
       ...errorLines(check, subject, path, `${indent}  `),
       `${indent}}`,
     ];

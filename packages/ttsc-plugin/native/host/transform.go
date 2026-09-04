@@ -49,6 +49,18 @@ type assertion struct {
 	typePrefix bool
 }
 
+type typedAssertion struct {
+	site       assertion
+	sourceType *shimchecker.Type
+	targetType *shimchecker.Type
+}
+
+type analyzedAssertion struct {
+	typed      typedAssertion
+	resolution analysis.Resolution
+	checks     analysis.ChecksResolution
+}
+
 func RunTransform(args []string) int {
 	options, err := parseOptions("transform", args)
 	if err != nil {
@@ -227,84 +239,105 @@ func transformFileWithTracker(
 	runtimeAlias := uniqueName(source, "__ts_refinement_error")
 	hasRuntimeCheck := false
 
-	var visit func(*shimast.Node)
-	visit = func(node *shimast.Node) {
+	assertions := []typedAssertion{}
+	var collect func(*shimast.Node)
+	collect = func(node *shimast.Node) {
 		if node == nil {
 			return
 		}
 		if site, ok := assertionAt(node); ok {
-			targetType := checker.GetTypeAtLocation(site.typeNode)
-			resolution := analysis.Resolve(checker, targetType, site.typeNode)
-			checks := analysis.ResolveChecks(checker, targetType, site.typeNode)
-			if !resolution.Refinement && len(checks.Checks) == 0 && len(checks.Issues) == 0 {
-				goto children
-			}
-			issues := append([]analysis.Issue(nil), checks.Issues...)
-			if resolution.Refinement {
-				issues = append(issues, resolution.Issues...)
-			}
-			seenIssues := map[string]struct{}{}
-			for _, issue := range issues {
-				key := fmt.Sprintf("%d:%s", issue.Code, issue.Message)
-				if _, exists := seenIssues[key]; exists {
-					continue
-				}
-				seenIssues[key] = struct{}{}
-				diagnostics = append(diagnostics, nodeDiagnostic(file, site.typeNode, issue.Code, issue.Message))
-			}
-			if len(seenIssues) == 0 && len(checks.Checks) > 0 {
-				proven := false
-				sourceType := checker.GetTypeAtLocation(site.expression)
-				if resolution.Definition == nil && sourceType != nil &&
-					sourceType.Flags()&(shimchecker.TypeFlagsAny|shimchecker.TypeFlagsUnknown) != 0 {
-					diagnostics = append(diagnostics, nodeDiagnostic(
-						file,
-						site.node,
-						analysis.DiagnosticSourceNotAssignable,
-						fmt.Sprintf("Source type '%s' is not assignable to a nested refinement target.", checker.TypeToString(sourceType)),
-					))
-					goto children
-				}
-				sourceHasRefinement, sourceValid := containsRefinement(checker, sourceType)
-				targetHasRefinement, targetValid := containsRefinement(checker, targetType)
-				if sourceValid && targetValid && sourceHasRefinement && targetHasRefinement {
-					proven = refinementStructureIsEntailed(checker, sourceType, targetType)
-				}
-				if !proven {
-					directProof := true
-					var directIssue *protocolDiagnostic
-					if resolution.Definition != nil {
-						directProof, directIssue = proveAssertion(checker, file, site, resolution.Definition)
-					}
-					nestedProof, nestedIssue := proveNestedChecks(file, site, checks.Checks)
-					if directIssue != nil {
-						diagnostics = append(diagnostics, *directIssue)
-					} else if nestedIssue != nil {
-						diagnostics = append(diagnostics, *nestedIssue)
-					} else {
-						proven = directProof && nestedProof
-					}
-				}
-				if len(diagnostics) == 0 {
-					addAssertionRemoval(plan, file, site)
-					if !proven {
-						hasRuntimeCheck = true
-						marker := ""
-						if tracker != nil {
-							marker = tracker.register(file, site, checks.Checks, checks.Recursions)
-						}
-						addRuntimeWrapper(plan, file, site, checks.Checks, checks.Recursions, runtimeAlias, marker)
-					}
-				}
-			}
+			assertions = append(assertions, typedAssertion{
+				site:       site,
+				sourceType: checker.GetTypeAtLocation(site.expression),
+				targetType: checker.GetTypeAtLocation(site.typeNode),
+			})
 		}
-	children:
 		node.ForEachChild(func(child *shimast.Node) bool {
-			visit(child)
+			collect(child)
 			return false
 		})
 	}
-	visit(file.AsNode())
+	collect(file.AsNode())
+
+	analyzed := make([]analyzedAssertion, 0, len(assertions))
+	for _, typed := range assertions {
+		analyzed = append(analyzed, analyzedAssertion{
+			typed:      typed,
+			resolution: analysis.Resolve(checker, typed.targetType, typed.site.typeNode),
+			checks:     analysis.ResolveChecks(checker, typed.targetType, typed.site.typeNode),
+		})
+	}
+
+	for _, result := range analyzed {
+		typed := result.typed
+		site := typed.site
+		targetType := typed.targetType
+		resolution := result.resolution
+		checks := result.checks
+		if !resolution.Refinement && len(checks.Checks) == 0 && len(checks.Issues) == 0 {
+			continue
+		}
+		issues := append([]analysis.Issue(nil), checks.Issues...)
+		if resolution.Refinement {
+			issues = append(issues, resolution.Issues...)
+		}
+		seenIssues := map[string]struct{}{}
+		for _, issue := range issues {
+			key := fmt.Sprintf("%d:%s", issue.Code, issue.Message)
+			if _, exists := seenIssues[key]; exists {
+				continue
+			}
+			seenIssues[key] = struct{}{}
+			diagnostics = append(diagnostics, nodeDiagnostic(file, site.typeNode, issue.Code, issue.Message))
+		}
+		if len(seenIssues) > 0 || len(checks.Checks) == 0 {
+			continue
+		}
+
+		proven := false
+		sourceType := typed.sourceType
+		if resolution.Definition == nil && sourceType != nil &&
+			sourceType.Flags()&(shimchecker.TypeFlagsAny|shimchecker.TypeFlagsUnknown) != 0 {
+			diagnostics = append(diagnostics, nodeDiagnostic(
+				file,
+				site.node,
+				analysis.DiagnosticSourceNotAssignable,
+				fmt.Sprintf("Source type '%s' is not assignable to a nested refinement target.", checker.TypeToString(sourceType)),
+			))
+			continue
+		}
+		sourceHasRefinement, sourceValid := containsRefinement(checker, sourceType)
+		targetHasRefinement, targetValid := containsRefinement(checker, targetType)
+		if sourceValid && targetValid && sourceHasRefinement && targetHasRefinement {
+			proven = refinementStructureIsEntailed(checker, sourceType, targetType)
+		}
+		if !proven {
+			directProof := true
+			var directIssue *protocolDiagnostic
+			if resolution.Definition != nil {
+				directProof, directIssue = proveAssertion(checker, file, site, sourceType, resolution.Definition)
+			}
+			nestedProof, nestedIssue := proveNestedChecks(file, site, checks.Checks)
+			if directIssue != nil {
+				diagnostics = append(diagnostics, *directIssue)
+			} else if nestedIssue != nil {
+				diagnostics = append(diagnostics, *nestedIssue)
+			} else {
+				proven = directProof && nestedProof
+			}
+		}
+		if len(diagnostics) == 0 {
+			addAssertionRemoval(plan, file, site)
+			if !proven {
+				hasRuntimeCheck = true
+				marker := ""
+				if tracker != nil {
+					marker = tracker.register(file, site, checks.Checks, checks.Recursions)
+				}
+				addRuntimeWrapper(plan, file, site, checks.Checks, checks.Recursions, runtimeAlias, marker)
+			}
+		}
+	}
 	if len(diagnostics) > 0 || len(plan.removals) == 0 {
 		return "", diagnostics
 	}
@@ -351,9 +384,9 @@ func proveAssertion(
 	checker *shimchecker.Checker,
 	file *shimast.SourceFile,
 	site assertion,
+	sourceType *shimchecker.Type,
 	target *analysis.Definition,
 ) (bool, *protocolDiagnostic) {
-	sourceType := checker.GetTypeAtLocation(site.expression)
 	if sourceType == nil {
 		diagnostic := nodeDiagnostic(file, site.expression, analysis.DiagnosticUnableResolveMetadata, "Unable to resolve assertion source type.")
 		return false, &diagnostic

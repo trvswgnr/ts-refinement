@@ -127,6 +127,7 @@ describe("TypeScript-Go native plugin", () => {
     // SAFETY: ttsc emitted this module from the focused runtime fixture above.
     const runtime = (await import(moduleUrl)) as {
       readonly checkPair: (value: unknown) => unknown;
+      readonly checkScores: (value: unknown) => unknown;
       readonly checkTree: (value: unknown) => unknown;
       readonly checkValues: (value: unknown) => unknown;
     };
@@ -137,6 +138,9 @@ describe("TypeScript-Go native plugin", () => {
     const malformedPair = { 0: 1, length: 1 };
     expect(() => runtime.checkPair(malformedPair)).toThrowError(
       expect.objectContaining({ name: "RefinementError", value: malformedPair }),
+    );
+    expect(() => runtime.checkScores(1)).toThrowError(
+      expect.objectContaining({ name: "RefinementError", value: 1 }),
     );
     const malformedTree = { children: { length: 0 }, value: 1 };
     expect(() => runtime.checkTree(malformedTree)).toThrowError(

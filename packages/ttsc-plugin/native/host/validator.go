@@ -149,7 +149,11 @@ func validatorTraversalGuard(check analysis.Check, errorAlias, marker string) tr
 		if segment.Kind == analysis.PathArray || segment.Kind == analysis.PathTuple || segment.Kind == analysis.PathTupleRest {
 			invalidArray = fmt.Sprintf(" || !Array.isArray(%s)", subject)
 		}
-		lines := []string{fmt.Sprintf("%sif (%s === null || %s === undefined%s) {", indent, subject, subject, invalidArray)}
+		invalidObject := ""
+		if segment.Kind == analysis.PathIndex {
+			invalidObject = fmt.Sprintf(" || (typeof %s !== \"object\" && typeof %s !== \"function\")", subject, subject)
+		}
+		lines := []string{fmt.Sprintf("%sif (%s === null || %s === undefined%s%s) {", indent, subject, subject, invalidArray, invalidObject)}
 		lines = append(lines, validatorErrorLines(check, errorAlias, marker, subject, path, indent+"  ")...)
 		return append(lines, fmt.Sprintf("%s}", indent))
 	}

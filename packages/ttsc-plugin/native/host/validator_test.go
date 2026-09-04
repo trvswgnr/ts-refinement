@@ -67,3 +67,26 @@ func TestValidatorGuardsArrayTraversals(t *testing.T) {
 		t.Fatalf("recursive validator does not guard child array traversal:\n%s", recursive)
 	}
 }
+
+func TestValidatorGuardsIndexTraversals(t *testing.T) {
+	predicate, err := entailment.ParsePredicate("value > 0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := emitValidator(
+		[]analysis.Check{{
+			Definition: &analysis.Definition{Display: "Positive", Predicates: []entailment.Predicate{predicate}},
+			Path:       []analysis.PathSegment{{Kind: analysis.PathIndex, Key: "string"}},
+		}},
+		nil,
+		"RefinementError",
+		"",
+	)
+	guard := `typeof __ts_refinement_value !== "object"`
+	access := `Reflect.ownKeys(__ts_refinement_value)`
+	guardIndex := strings.Index(code, guard)
+	accessIndex := strings.Index(code, access)
+	if guardIndex < 0 || accessIndex < 0 || guardIndex > accessIndex {
+		t.Fatalf("validator does not guard index traversal:\n%s", code)
+	}
+}

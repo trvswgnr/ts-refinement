@@ -2,6 +2,7 @@ import type { Refined } from "ts-refinement";
 
 type Positive = Refined<number, "value > 0">;
 type Pair = readonly [Positive, ...Positive[]];
+type Scores = Readonly<Record<string, Positive>>;
 
 interface Tree {
   readonly children: Tree[];
@@ -19,6 +20,10 @@ export function checkValues(values: number[]): Positive[] {
 
 export function checkPair(pair: readonly [number, ...number[]]): Pair {
   return pair as Pair;
+}
+
+export function checkScores(scores: Readonly<Record<string, number>>): Scores {
+  return scores as Scores;
 }
 
 export function checkTree(tree: RawTree): Tree {

@@ -330,6 +330,11 @@ describe("Rolldown plugin", () => {
       expect.objectContaining({ path: ".user.age", value: 0 }),
     );
     expect(nested.checkScores({ alice: 1, bob: 2 })).toEqual({ alice: 1, bob: 2 });
+    const malformedScores: unknown = 1;
+    // SAFETY: This deliberately violates the static base type to exercise the runtime guard.
+    expect(() =>
+      nested.checkScores(malformedScores as Readonly<Record<string, number>>),
+    ).toThrowError(expect.objectContaining({ name: "RefinementError", value: malformedScores }));
     expect(() => nested.checkScores({ alice: 1, bob: -2 })).toThrowError(
       expect.objectContaining({ path: ".bob", value: -2 }),
     );
