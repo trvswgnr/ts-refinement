@@ -298,6 +298,11 @@ describe("Rolldown plugin", () => {
       expect.objectContaining({ path: ".name", value: "" }),
     );
     expect(nested.checkValues([1, 2])).toEqual([1, 2]);
+    const malformedArray: unknown = { length: 0 };
+    // SAFETY: This deliberately violates the static base type to exercise the runtime guard.
+    expect(() => nested.checkValues(malformedArray as number[])).toThrowError(
+      expect.objectContaining({ name: "RefinementError", value: malformedArray }),
+    );
     expect(() => nested.checkValues([1, -2, -3])).toThrowError(
       expect.objectContaining({ path: "[1]", value: -2 }),
     );
@@ -306,6 +311,11 @@ describe("Rolldown plugin", () => {
       expect.objectContaining({ path: ".value", value: 0 }),
     );
     expect(nested.checkPair([1, "x", 2, 3])).toEqual([1, "x", 2, 3]);
+    const malformedPair: unknown = { 0: 1, length: 1 };
+    // SAFETY: This deliberately violates the static base type to exercise the runtime guard.
+    expect(() => nested.checkPair(malformedPair as NestedPairValue)).toThrowError(
+      expect.objectContaining({ name: "RefinementError", value: malformedPair }),
+    );
     expect(() => nested.checkPair([1, "", 2])).toThrowError(
       expect.objectContaining({ path: "[1]", value: "" }),
     );
@@ -326,6 +336,15 @@ describe("Rolldown plugin", () => {
     const tree = { children: [{ children: [{ children: [], value: 0 }], value: 2 }], value: 1 };
     expect(() => nested.checkTree(tree)).toThrowError(
       expect.objectContaining({ path: ".children[0].children[0].value", value: 0 }),
+    );
+    const malformedTree: unknown = { children: { length: 0 }, value: 1 };
+    // SAFETY: This deliberately violates the static base type to exercise recursive traversal.
+    expect(() => nested.checkTree(malformedTree as NestedTreeValue)).toThrowError(
+      expect.objectContaining({
+        name: "RefinementError",
+        path: ".children",
+        value: { length: 0 },
+      }),
     );
     const cyclicTree: MutableNestedTreeValue = {
       children: [],

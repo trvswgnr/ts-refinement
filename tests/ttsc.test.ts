@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -11,7 +12,7 @@ const ttsc = resolve(root, "node_modules/.bin/ttsc");
 const outputRoot = mkdtempSync(resolve(tmpdir(), "ts-refinement-ttsc-"));
 
 function runTtsc(
-  project: "external-invalid" | "invalid" | "unrelated-invalid" | "valid",
+  project: "external-invalid" | "invalid" | "runtime" | "unrelated-invalid" | "valid",
   outDir: string,
 ) {
   return spawnSync(
@@ -117,6 +118,35 @@ describe("TypeScript-Go native plugin", () => {
     expect(result.status).toBe(2);
     expect(`${result.stdout}${result.stderr}`).toMatch(/imported\.ts.*RF1000200/su);
   }, 60_000);
+
+  it("rejects malformed collection containers at runtime", async () => {
+    const outDir = resolve(outputRoot, "runtime");
+    const result = runTtsc("runtime", outDir);
+    expect(result.status, `${result.stdout}${result.stderr}`).toBe(0);
+    const moduleUrl = `${pathToFileURL(resolve(outDir, "fixtures/ttsc/runtime/index.js")).href}?${Date.now()}`;
+    // SAFETY: ttsc emitted this module from the focused runtime fixture above.
+    const runtime = (await import(moduleUrl)) as {
+      readonly checkPair: (value: unknown) => unknown;
+      readonly checkTree: (value: unknown) => unknown;
+      readonly checkValues: (value: unknown) => unknown;
+    };
+    const malformedArray = { length: 0 };
+    expect(() => runtime.checkValues(malformedArray)).toThrowError(
+      expect.objectContaining({ name: "RefinementError", value: malformedArray }),
+    );
+    const malformedPair = { 0: 1, length: 1 };
+    expect(() => runtime.checkPair(malformedPair)).toThrowError(
+      expect.objectContaining({ name: "RefinementError", value: malformedPair }),
+    );
+    const malformedTree = { children: { length: 0 }, value: 1 };
+    expect(() => runtime.checkTree(malformedTree)).toThrowError(
+      expect.objectContaining({
+        name: "RefinementError",
+        path: ".children",
+        value: malformedTree.children,
+      }),
+    );
+  }, 120_000);
 
   it("warns when exported refinements lack publish verification", () => {
     const result = runTtscCheck("publish-unconfigured");

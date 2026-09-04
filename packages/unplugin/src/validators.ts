@@ -83,7 +83,12 @@ function templateIndexGuard(
 }
 
 type TraversalLeaf = (subject: string, path: string, indent: string) => readonly string[];
-type TraversalGuard = (subject: string, path: string, indent: string) => readonly string[];
+type TraversalGuard = (
+  subject: string,
+  path: string,
+  segment: RefinementPathSegment,
+  indent: string,
+) => readonly string[];
 
 function emitTraversal(
   segments: readonly RefinementPathSegment[],
@@ -104,7 +109,7 @@ function emitTraversal(
   ): string[] {
     const [segment, ...remaining] = remainingSegments;
     if (segment === undefined) return [...leaf(subject, path, indent)];
-    const guardLines = guard(subject, path, indent);
+    const guardLines = guard(subject, path, segment, indent);
 
     if (segment.kind === "union") {
       return [
@@ -202,13 +207,12 @@ function emitTraversal(
   return visit(rootSubject, rootPath, segments, rootIndent).join("\n");
 }
 
-function emitCheck(
-  tsModule: typeof ts,
+function errorLines(
   check: RefinementCheck,
-  checkIndex: string,
-  rootSubject = "value",
-  rootPath = '""',
-): string {
+  subject: string,
+  path: string,
+  indent: string,
+): readonly string[] {
   const predicateLabel = check.definition.predicates
     .map((predicate) => predicate.source)
     .join(" && ");
@@ -216,7 +220,7 @@ function emitCheck(
     check.definition.displayName === undefined
       ? "refinement"
       : `refinement ?? ${JSON.stringify(check.definition.displayName)}`;
-  const errorLines = (subject: string, path: string, indent: string): readonly string[] => [
+  return [
     `${indent}throw new RefinementError({`,
     `${indent}  path: ${path} || undefined,`,
     `${indent}  predicate: ${JSON.stringify(predicateLabel)},`,
@@ -225,6 +229,27 @@ function emitCheck(
     `${indent}  value: ${subject},`,
     `${indent}});`,
   ];
+}
+
+function traversalGuard(check: RefinementCheck): TraversalGuard {
+  return (subject, path, segment, indent) => {
+    const requiresArray = ["array", "tuple", "tupleRest"].includes(segment.kind);
+    const invalidArray = requiresArray ? ` || !Array.isArray(${subject})` : "";
+    return [
+      `${indent}if (${subject} === null || ${subject} === undefined${invalidArray}) {`,
+      ...errorLines(check, subject, path, `${indent}  `),
+      `${indent}}`,
+    ];
+  };
+}
+
+function emitCheck(
+  tsModule: typeof ts,
+  check: RefinementCheck,
+  checkIndex: string,
+  rootSubject = "value",
+  rootPath = '""',
+): string {
   return emitTraversal(
     check.path,
     checkIndex,
@@ -239,15 +264,11 @@ function emitCheck(
         emittedPredicates.map((predicate) => `(${predicate})`).join(" && ") || "true";
       return [
         `${indent}if (!(${condition})) {`,
-        ...errorLines(subject, path, `${indent}  `),
+        ...errorLines(check, subject, path, `${indent}  `),
         `${indent}}`,
       ];
     },
-    (subject, path, indent) => [
-      `${indent}if (${subject} === null || ${subject} === undefined) {`,
-      ...errorLines(subject, path, `${indent}  `),
-      `${indent}}`,
-    ],
+    traversalGuard(check),
   );
 }
 
@@ -347,6 +368,8 @@ export function createValidatorRegistry(
             const path = relativePath(recursion.path, targetPath);
             const targetFunction = functionNames.get(pathKey(recursion.targetPath));
             if (path === null || targetFunction === undefined) return [];
+            const guardCheck =
+              checks.find((check) => relativePath(check.path, targetPath) !== null) ?? checks[0];
             return [
               emitTraversal(
                 path,
@@ -357,6 +380,7 @@ export function createValidatorRegistry(
                 (nested, nestedPath, indent) => [
                   `${indent}${targetFunction}(${nested}, ${nestedPath}, refinement, marker, seen);`,
                 ],
+                guardCheck === undefined ? undefined : traversalGuard(guardCheck),
               ),
             ];
           });

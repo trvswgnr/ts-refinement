@@ -11,6 +11,7 @@ import (
 )
 
 type traversalLeaf func(subject, path, indent string) []string
+type traversalGuard func(subject, path string, segment analysis.PathSegment, indent string) []string
 
 func emitValidator(
 	checks []analysis.Check,
@@ -65,6 +66,17 @@ func emitValidator(
 			if relative == nil || !exists {
 				continue
 			}
+			var guard traversalGuard
+			if len(checks) > 0 {
+				guardCheck := checks[0]
+				for _, check := range checks {
+					if relativePath(check.Path, targetPath) != nil {
+						guardCheck = check
+						break
+					}
+				}
+				guard = validatorTraversalGuard(guardCheck, errorAlias, marker)
+			}
 			lines = append(lines, emitTraversal(
 				relative,
 				fmt.Sprintf("%d_r%d", functionIndex, recursionIndex),
@@ -74,7 +86,7 @@ func emitValidator(
 				func(nested, nestedPath, indent string) []string {
 					return []string{fmt.Sprintf("%s__ts_refinement_validate%d(%s, %s, seen);", indent, targetIndex, nested, nestedPath)}
 				},
-				nil,
+				guard,
 			))
 		}
 		lines = append(lines, "  }")
@@ -93,21 +105,6 @@ func emitCheck(
 	for index, predicate := range check.Definition.Predicates {
 		predicates[index] = predicate.Source
 	}
-	markerExpression := "undefined"
-	if marker != "" {
-		markerExpression = quoted(marker)
-	}
-	errorLines := func(subject, path, indent string) []string {
-		return []string{
-			fmt.Sprintf("%sthrow new %s({", indent, errorAlias),
-			fmt.Sprintf("%s  marker: %s,", indent, markerExpression),
-			fmt.Sprintf("%s  path: %s || undefined,", indent, path),
-			fmt.Sprintf("%s  predicate: %s,", indent, quoted(strings.Join(predicates, " && "))),
-			fmt.Sprintf("%s  refinement: %s,", indent, quoted(check.Definition.Display)),
-			fmt.Sprintf("%s  value: %s,", indent, subject),
-			fmt.Sprintf("%s});", indent),
-		}
-	}
 	return emitTraversal(check.Path, namespace, rootSubject, rootPath, rootIndent, func(subject, path, indent string) []string {
 		conditions := make([]string, len(check.Definition.Predicates))
 		for index, predicate := range check.Definition.Predicates {
@@ -118,20 +115,51 @@ func emitCheck(
 			condition = strings.Join(conditions, " && ")
 		}
 		lines := []string{fmt.Sprintf("%sif (!(%s)) {", indent, condition)}
-		lines = append(lines, errorLines(subject, path, indent+"  ")...)
+		lines = append(lines, validatorErrorLines(check, errorAlias, marker, subject, path, indent+"  ")...)
 		return append(lines, fmt.Sprintf("%s}", indent))
-	}, func(subject, path, indent string) []string {
-		lines := []string{fmt.Sprintf("%sif (%s === null || %s === undefined) {", indent, subject, subject)}
-		lines = append(lines, errorLines(subject, path, indent+"  ")...)
+	}, validatorTraversalGuard(check, errorAlias, marker))
+}
+
+func validatorErrorLines(
+	check analysis.Check,
+	errorAlias, marker, subject, path, indent string,
+) []string {
+	predicates := make([]string, len(check.Definition.Predicates))
+	for index, predicate := range check.Definition.Predicates {
+		predicates[index] = predicate.Source
+	}
+	markerExpression := "undefined"
+	if marker != "" {
+		markerExpression = quoted(marker)
+	}
+	return []string{
+		fmt.Sprintf("%sthrow new %s({", indent, errorAlias),
+		fmt.Sprintf("%s  marker: %s,", indent, markerExpression),
+		fmt.Sprintf("%s  path: %s || undefined,", indent, path),
+		fmt.Sprintf("%s  predicate: %s,", indent, quoted(strings.Join(predicates, " && "))),
+		fmt.Sprintf("%s  refinement: %s,", indent, quoted(check.Definition.Display)),
+		fmt.Sprintf("%s  value: %s,", indent, subject),
+		fmt.Sprintf("%s});", indent),
+	}
+}
+
+func validatorTraversalGuard(check analysis.Check, errorAlias, marker string) traversalGuard {
+	return func(subject, path string, segment analysis.PathSegment, indent string) []string {
+		invalidArray := ""
+		if segment.Kind == analysis.PathArray || segment.Kind == analysis.PathTuple || segment.Kind == analysis.PathTupleRest {
+			invalidArray = fmt.Sprintf(" || !Array.isArray(%s)", subject)
+		}
+		lines := []string{fmt.Sprintf("%sif (%s === null || %s === undefined%s) {", indent, subject, subject, invalidArray)}
+		lines = append(lines, validatorErrorLines(check, errorAlias, marker, subject, path, indent+"  ")...)
 		return append(lines, fmt.Sprintf("%s}", indent))
-	})
+	}
 }
 
 func emitTraversal(
 	segments []analysis.PathSegment,
 	namespace, rootSubject, rootPath, rootIndent string,
 	leaf traversalLeaf,
-	guard traversalLeaf,
+	guard traversalGuard,
 ) string {
 	variableIndex := 0
 	var visit func(string, string, []analysis.PathSegment, string) []string
@@ -139,11 +167,11 @@ func emitTraversal(
 		if len(remaining) == 0 {
 			return leaf(subject, path, indent)
 		}
+		segment := remaining[0]
 		guardLines := []string{}
 		if guard != nil {
-			guardLines = guard(subject, path, indent)
+			guardLines = guard(subject, path, segment, indent)
 		}
-		segment := remaining[0]
 		tail := remaining[1:]
 		if segment.Kind == analysis.PathUnion {
 			return append(guardLines, append(
