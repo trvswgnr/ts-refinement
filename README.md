@@ -2,8 +2,6 @@
 
 An implementation of refinement assertions for TypeScript that integrates with build tooling and your favorite code editor.
 
-Using VS Code? [Start here](./docs/vscode-quickstart.md).
-
 A refinement attaches a predicate to an existing type:
 
 ```ts
@@ -154,7 +152,7 @@ TypeScript 5.7 through 6.x uses the language-service plugin:
 }
 ```
 
-VS Code may need to be switched to the workspace TypeScript version. The language-service plugin adds editor diagnostics while `tspc` owns CI diagnostics.
+Run `TypeScript: Select TypeScript Version` from the VS Code command palette and choose `Use Workspace Version`. Restart the TypeScript server if diagnostics do not appear. The language-service plugin adds editor diagnostics while `tspc` owns CI diagnostics.
 
 TypeScript 7 and newer uses the [ttsc VS Code extension](https://ttsc.dev/docs/setup/vscode):
 
