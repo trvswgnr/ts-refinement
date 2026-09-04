@@ -1,6 +1,6 @@
 {
   "name": "@ts-refinement/rolldown",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Rolldown and tsdown transform for ts-refinement assertions",
   "keywords": [
     "refinement-types",
@@ -34,12 +34,12 @@
     "prepack": "bun run build"
   },
   "dependencies": {
-    "@ts-refinement/unplugin": "0.1.0"
+    "@ts-refinement/unplugin": "0.2.0"
   },
   "peerDependencies": {
-    "@ts-refinement/runtime": "0.1.0",
+    "@ts-refinement/runtime": "0.2.0",
     "rolldown": ">=1 <2",
-    "ts-refinement": "0.1.0",
+    "ts-refinement": "0.2.0",
     "typescript": ">=5.7 <7"
   },
   "engines": {

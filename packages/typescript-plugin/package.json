@@ -1,6 +1,6 @@
 {
   "name": "@ts-refinement/typescript-plugin",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "TypeScript language-service diagnostics for ts-refinement",
   "keywords": [
     "language-service",
@@ -37,10 +37,10 @@
     "prepack": "bun run build"
   },
   "dependencies": {
-    "@ts-refinement/analyzer": "0.1.0"
+    "@ts-refinement/analyzer": "0.2.0"
   },
   "peerDependencies": {
-    "ts-refinement": "0.1.0",
+    "ts-refinement": "0.2.0",
     "typescript": ">=5.7 <7"
   },
   "engines": {

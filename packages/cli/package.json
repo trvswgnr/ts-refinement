@@ -1,6 +1,6 @@
 {
   "name": "@ts-refinement/cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Publish-time verification for transformed ts-refinement output",
   "keywords": [
     "cli",

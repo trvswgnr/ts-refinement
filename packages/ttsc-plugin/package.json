@@ -1,6 +1,6 @@
 {
   "name": "@ts-refinement/ttsc",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "TypeScript-Go diagnostics and transforms for ts-refinement",
   "keywords": [
     "refinement-types",
@@ -44,8 +44,8 @@
     "prepack": "bun run build"
   },
   "peerDependencies": {
-    "@ts-refinement/runtime": "0.1.0",
-    "ts-refinement": "0.1.0",
+    "@ts-refinement/runtime": "0.2.0",
+    "ts-refinement": "0.2.0",
     "ttsc": ">=0.28 <1",
     "typescript": ">=7"
   },
