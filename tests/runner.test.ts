@@ -121,5 +121,26 @@ describe("runtime runner adapters", { timeout: 30_000 }, () => {
     );
     expect(commonjs.format).toBe("commonjs");
     expect(String(commonjs.source)).toContain("module.exports = value");
+
+    const irrelevantOutside = pathToFileURL(resolve(root, "fixtures/irrelevant-outside.ts")).href;
+    const irrelevant = await load(
+      irrelevantOutside,
+      { conditions: [], format: undefined, importAttributes: {} },
+      async () => {
+        throw new TypeError("Unknown file extension '.ts'");
+      },
+    );
+    expect(String(irrelevant.source)).toContain("irrelevant = true");
+
+    const assertionOutside = pathToFileURL(resolve(root, "fixtures/unplugin-outside.ts")).href;
+    await expect(
+      load(
+        assertionOutside,
+        { conditions: [], format: undefined, importAttributes: {} },
+        async () => {
+          throw new TypeError("Unknown file extension '.ts'");
+        },
+      ),
+    ).rejects.toThrow(/not included in the program configured by/u);
   });
 });

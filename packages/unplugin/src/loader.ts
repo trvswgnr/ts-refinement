@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import remapping, { type SourceMapInput } from "@jridgewell/remapping";
 import ts from "typescript";
 
+import { transformCandidate } from "./candidate.ts";
 import { createProgramState, type ProgramState } from "./program.ts";
 import { transformSource } from "./transform.ts";
 import { createValidatorRegistry } from "./validators.ts";
@@ -168,19 +169,13 @@ export async function load(
   const fileName = fileURLToPath(url);
   const source = await readFile(fileName, "utf8");
   const current = programState();
-  const sourceFile = current.context.program.getSourceFile(fileName);
-  if (sourceFile === undefined) {
-    throw new Error(
-      `TypeScript module '${fileName}' is not included in the program configured by '${current.configPath}'.`,
-    );
-  }
-  if (sourceFile.text !== source) {
-    throw new Error(
-      `TypeScript module '${fileName}' was changed before ts-refinement ran. Configure ts-refinement as the first source transform.`,
-    );
-  }
-  const output = transformSource(current.context, sourceFile, source, registry);
-  const diagnostic = output.diagnostics[0];
+  const candidate = transformCandidate(current, fileName, source);
+  if (candidate.kind === "error") throw new Error(candidate.message);
+  const output =
+    candidate.kind === "transform"
+      ? transformSource(current.context, candidate.sourceFile, source, registry)
+      : null;
+  const diagnostic = output?.diagnostics[0];
   if (diagnostic !== undefined) throw new Error(diagnostic.message);
   const format = packageFormat(fileName);
   return {
@@ -188,9 +183,9 @@ export async function load(
     shortCircuit: true,
     source: transpileSource(
       fileName,
-      output.code ?? source,
+      output?.code ?? source,
       current,
-      output.map?.toString() ?? null,
+      output?.map?.toString() ?? null,
       format,
     ),
   };
