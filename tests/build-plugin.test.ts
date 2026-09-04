@@ -287,6 +287,9 @@ describe("Rolldown plugin", () => {
 
     expect(nested.checkUser({ age: 1 })).toEqual({ age: 1 });
     expect(nested.checkUser({ age: 1, name: "Ada" })).toEqual({ age: 1, name: "Ada" });
+    expect(() => nested.checkUser(JSON.parse("null"))).toThrowError(
+      expect.objectContaining({ name: "RefinementError", value: null }),
+    );
     expect(() => nested.checkUser({ age: -1 })).toThrowError(
       expect.objectContaining({ path: ".age", value: -1 }),
     );

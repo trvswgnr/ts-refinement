@@ -83,6 +83,7 @@ function templateIndexGuard(
 }
 
 type TraversalLeaf = (subject: string, path: string, indent: string) => readonly string[];
+type TraversalGuard = (subject: string, path: string, indent: string) => readonly string[];
 
 function emitTraversal(
   segments: readonly RefinementPathSegment[],
@@ -91,6 +92,7 @@ function emitTraversal(
   rootPath: string,
   rootIndent: string,
   leaf: TraversalLeaf,
+  guard: TraversalGuard = () => [],
 ): string {
   let variableIndex = 0;
 
@@ -102,9 +104,11 @@ function emitTraversal(
   ): string[] {
     const [segment, ...remaining] = remainingSegments;
     if (segment === undefined) return [...leaf(subject, path, indent)];
+    const guardLines = guard(subject, path, indent);
 
     if (segment.kind === "union") {
       return [
+        ...guardLines,
         `${indent}if (${subject}[${JSON.stringify(segment.property)}] === ${JSON.stringify(segment.value)}) {`,
         ...visit(subject, path, remaining, `${indent}  `),
         `${indent}}`,
@@ -115,7 +119,10 @@ function emitTraversal(
     variableIndex += 1;
     if (segment.kind === "property") {
       const nestedPath = `(${path} + ${JSON.stringify(propertyPathSegment(segment.name))})`;
-      const lines = [`${indent}const ${nested} = ${subject}[${JSON.stringify(segment.name)}];`];
+      const lines = [
+        ...guardLines,
+        `${indent}const ${nested} = ${subject}[${JSON.stringify(segment.name)}];`,
+      ];
       if (segment.optional) {
         lines.push(`${indent}if (${nested} !== undefined) {`);
         lines.push(...visit(nested, nestedPath, remaining, `${indent}  `));
@@ -128,7 +135,7 @@ function emitTraversal(
 
     if (segment.kind === "tuple") {
       const nestedPath = `(${path} + ${JSON.stringify(`[${segment.index}]`)})`;
-      const lines = [`${indent}const ${nested} = ${subject}[${segment.index}];`];
+      const lines = [...guardLines, `${indent}const ${nested} = ${subject}[${segment.index}];`];
       if (segment.optional) {
         lines.push(`${indent}if (${nested} !== undefined) {`);
         lines.push(...visit(nested, nestedPath, remaining, `${indent}  `));
@@ -167,6 +174,7 @@ function emitTraversal(
             ]
           : [];
       return [
+        ...guardLines,
         `${indent}const keys${namespace}_${variableIndex} = new Set(Reflect.ownKeys(${subject}));`,
         `${indent}for (const inherited${namespace}_${variableIndex} in ${subject}) keys${namespace}_${variableIndex}.add(inherited${namespace}_${variableIndex});`,
         ...inheritedSymbols,
@@ -183,6 +191,7 @@ function emitTraversal(
     variableIndex += 1;
     const start = segment.kind === "tupleRest" ? segment.start : 0;
     return [
+      ...guardLines,
       `${indent}for (let ${index} = ${start}; ${index} < ${subject}.length; ${index} += 1) {`,
       `${indent}  const ${nested} = ${subject}[${index}];`,
       ...visit(nested, `(${path} + "[" + ${index} + "]")`, remaining, `${indent}  `),
@@ -200,6 +209,22 @@ function emitCheck(
   rootSubject = "value",
   rootPath = '""',
 ): string {
+  const predicateLabel = check.definition.predicates
+    .map((predicate) => predicate.source)
+    .join(" && ");
+  const refinement =
+    check.definition.displayName === undefined
+      ? "refinement"
+      : `refinement ?? ${JSON.stringify(check.definition.displayName)}`;
+  const errorLines = (subject: string, path: string, indent: string): readonly string[] => [
+    `${indent}throw new RefinementError({`,
+    `${indent}  path: ${path} || undefined,`,
+    `${indent}  predicate: ${JSON.stringify(predicateLabel)},`,
+    `${indent}  refinement: ${refinement},`,
+    `${indent}  marker,`,
+    `${indent}  value: ${subject},`,
+    `${indent}});`,
+  ];
   return emitTraversal(
     check.path,
     checkIndex,
@@ -212,25 +237,17 @@ function emitCheck(
       );
       const condition =
         emittedPredicates.map((predicate) => `(${predicate})`).join(" && ") || "true";
-      const predicateLabel = check.definition.predicates
-        .map((predicate) => predicate.source)
-        .join(" && ");
-      const refinement =
-        check.definition.displayName === undefined
-          ? "refinement"
-          : `refinement ?? ${JSON.stringify(check.definition.displayName)}`;
       return [
         `${indent}if (!(${condition})) {`,
-        `${indent}  throw new RefinementError({`,
-        `${indent}    path: ${path} || undefined,`,
-        `${indent}    predicate: ${JSON.stringify(predicateLabel)},`,
-        `${indent}    refinement: ${refinement},`,
-        `${indent}    marker,`,
-        `${indent}    value: ${subject},`,
-        `${indent}  });`,
+        ...errorLines(subject, path, `${indent}  `),
         `${indent}}`,
       ];
     },
+    (subject, path, indent) => [
+      `${indent}if (${subject} === null || ${subject} === undefined) {`,
+      ...errorLines(subject, path, `${indent}  `),
+      `${indent}}`,
+    ],
   );
 }
 

@@ -74,6 +74,7 @@ func emitValidator(
 				func(nested, nestedPath, indent string) []string {
 					return []string{fmt.Sprintf("%s__ts_refinement_validate%d(%s, %s, seen);", indent, targetIndex, nested, nestedPath)}
 				},
+				nil,
 			))
 		}
 		lines = append(lines, "  }")
@@ -88,32 +89,41 @@ func emitCheck(
 	check analysis.Check,
 	namespace, rootSubject, rootPath, rootIndent, errorAlias, marker string,
 ) string {
+	predicates := make([]string, len(check.Definition.Predicates))
+	for index, predicate := range check.Definition.Predicates {
+		predicates[index] = predicate.Source
+	}
+	markerExpression := "undefined"
+	if marker != "" {
+		markerExpression = quoted(marker)
+	}
+	errorLines := func(subject, path, indent string) []string {
+		return []string{
+			fmt.Sprintf("%sthrow new %s({", indent, errorAlias),
+			fmt.Sprintf("%s  marker: %s,", indent, markerExpression),
+			fmt.Sprintf("%s  path: %s || undefined,", indent, path),
+			fmt.Sprintf("%s  predicate: %s,", indent, quoted(strings.Join(predicates, " && "))),
+			fmt.Sprintf("%s  refinement: %s,", indent, quoted(check.Definition.Display)),
+			fmt.Sprintf("%s  value: %s,", indent, subject),
+			fmt.Sprintf("%s});", indent),
+		}
+	}
 	return emitTraversal(check.Path, namespace, rootSubject, rootPath, rootIndent, func(subject, path, indent string) []string {
 		conditions := make([]string, len(check.Definition.Predicates))
-		predicates := make([]string, len(check.Definition.Predicates))
 		for index, predicate := range check.Definition.Predicates {
 			conditions[index] = "(" + entailment.Compile(predicate, subject) + ")"
-			predicates[index] = predicate.Source
 		}
 		condition := "true"
 		if len(check.Definition.Predicates) > 0 {
 			condition = strings.Join(conditions, " && ")
 		}
-		markerExpression := "undefined"
-		if marker != "" {
-			markerExpression = quoted(marker)
-		}
-		return []string{
-			fmt.Sprintf("%sif (!(%s)) {", indent, condition),
-			fmt.Sprintf("%s  throw new %s({", indent, errorAlias),
-			fmt.Sprintf("%s    marker: %s,", indent, markerExpression),
-			fmt.Sprintf("%s    path: %s || undefined,", indent, path),
-			fmt.Sprintf("%s    predicate: %s,", indent, quoted(strings.Join(predicates, " && "))),
-			fmt.Sprintf("%s    refinement: %s,", indent, quoted(check.Definition.Display)),
-			fmt.Sprintf("%s    value: %s,", indent, subject),
-			fmt.Sprintf("%s  });", indent),
-			fmt.Sprintf("%s}", indent),
-		}
+		lines := []string{fmt.Sprintf("%sif (!(%s)) {", indent, condition)}
+		lines = append(lines, errorLines(subject, path, indent+"  ")...)
+		return append(lines, fmt.Sprintf("%s}", indent))
+	}, func(subject, path, indent string) []string {
+		lines := []string{fmt.Sprintf("%sif (%s === null || %s === undefined) {", indent, subject, subject)}
+		lines = append(lines, errorLines(subject, path, indent+"  ")...)
+		return append(lines, fmt.Sprintf("%s}", indent))
 	})
 }
 
@@ -121,6 +131,7 @@ func emitTraversal(
 	segments []analysis.PathSegment,
 	namespace, rootSubject, rootPath, rootIndent string,
 	leaf traversalLeaf,
+	guard traversalLeaf,
 ) string {
 	variableIndex := 0
 	var visit func(string, string, []analysis.PathSegment, string) []string
@@ -128,13 +139,17 @@ func emitTraversal(
 		if len(remaining) == 0 {
 			return leaf(subject, path, indent)
 		}
+		guardLines := []string{}
+		if guard != nil {
+			guardLines = guard(subject, path, indent)
+		}
 		segment := remaining[0]
 		tail := remaining[1:]
 		if segment.Kind == analysis.PathUnion {
-			return append(
+			return append(guardLines, append(
 				[]string{fmt.Sprintf("%sif (%s[%s] === %s) {", indent, subject, quoted(segment.Property), jsonValue(segment.Value))},
 				append(visit(subject, path, tail, indent+"  "), indent+"}")...,
-			)
+			)...)
 		}
 
 		nested := fmt.Sprintf("__ts_refinement_nested%s_%d", namespace, variableIndex)
@@ -142,7 +157,8 @@ func emitTraversal(
 		switch segment.Kind {
 		case analysis.PathProperty:
 			nestedPath := fmt.Sprintf("(%s + %s)", path, quoted(propertyPath("", segment.Name)))
-			lines := []string{fmt.Sprintf("%sconst %s = %s[%s];", indent, nested, subject, quoted(segment.Name))}
+			lines := append([]string{}, guardLines...)
+			lines = append(lines, fmt.Sprintf("%sconst %s = %s[%s];", indent, nested, subject, quoted(segment.Name)))
 			if segment.Optional {
 				lines = append(lines, fmt.Sprintf("%sif (%s !== undefined) {", indent, nested))
 				lines = append(lines, visit(nested, nestedPath, tail, indent+"  ")...)
@@ -153,7 +169,8 @@ func emitTraversal(
 			return lines
 		case analysis.PathTuple:
 			nestedPath := fmt.Sprintf("(%s + %s)", path, quoted(fmt.Sprintf("[%d]", segment.Index)))
-			lines := []string{fmt.Sprintf("%sconst %s = %s[%d];", indent, nested, subject, segment.Index)}
+			lines := append([]string{}, guardLines...)
+			lines = append(lines, fmt.Sprintf("%sconst %s = %s[%d];", indent, nested, subject, segment.Index))
 			if segment.Optional {
 				lines = append(lines, fmt.Sprintf("%sif (%s !== undefined) {", indent, nested))
 				lines = append(lines, visit(nested, nestedPath, tail, indent+"  ")...)
@@ -172,10 +189,11 @@ func emitTraversal(
 			keys := fmt.Sprintf("__ts_refinement_keys%s_%d", namespace, variableIndex)
 			inherited := fmt.Sprintf("__ts_refinement_inherited%s_%d", namespace, variableIndex)
 			variableIndex++
-			lines := []string{
+			lines := append([]string{}, guardLines...)
+			lines = append(lines,
 				fmt.Sprintf("%sconst %s = new Set(Reflect.ownKeys(%s));", indent, keys, subject),
 				fmt.Sprintf("%sfor (const %s in %s) %s.add(%s);", indent, inherited, subject, keys, inherited),
-			}
+			)
 			if segment.Key == "symbol" {
 				prototype := fmt.Sprintf("__ts_refinement_prototype%s_%d", namespace, variableIndex)
 				inheritedSymbol := fmt.Sprintf("__ts_refinement_inherited_symbol%s_%d", namespace, variableIndex)
@@ -202,10 +220,11 @@ func emitTraversal(
 			if segment.Kind == analysis.PathTupleRest {
 				start = segment.Start
 			}
-			lines := []string{
+			lines := append([]string{}, guardLines...)
+			lines = append(lines,
 				fmt.Sprintf("%sfor (let %s = %d; %s < %s.length; %s += 1) {", indent, index, start, index, subject, index),
 				fmt.Sprintf("%s  const %s = %s[%s];", indent, nested, subject, index),
-			}
+			)
 			lines = append(lines, visit(nested, fmt.Sprintf("(%s + \"[\" + %s + \"]\")", path, index), tail, indent+"  ")...)
 			return append(lines, indent+"}")
 		}
