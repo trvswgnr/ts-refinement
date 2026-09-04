@@ -78,6 +78,7 @@ async function packAll(packDirectory) {
 }
 
 async function validateMetadata() {
+  const rootManifest = await readManifest(".");
   const manifests = new Map(
     await Promise.all(
       packages.map(async (packageDefinition) => [
@@ -88,7 +89,7 @@ async function validateMetadata() {
   );
   assert.deepEqual(
     [...new Set([...manifests.values()].map((manifest) => manifest.version))],
-    ["0.1.0"],
+    [rootManifest.version],
   );
   assert.deepEqual(manifests.get("ts-refinement").dependencies, undefined);
   assert.deepEqual(manifests.get("ts-refinement").optionalDependencies, undefined);
@@ -116,7 +117,7 @@ async function validateMetadata() {
   });
   assert.equal(manifests.get("@ts-refinement/cli").peerDependencies, undefined);
   assert.deepEqual(manifests.get("@ts-refinement/typescript-plugin").dependencies, {
-    "@ts-refinement/analyzer": "0.1.0",
+    "@ts-refinement/analyzer": manifests.get("@ts-refinement/analyzer").version,
   });
   assert.deepEqual(manifests.get("@ts-refinement/ttsc").dependencies, undefined);
   assert.equal(
@@ -128,11 +129,11 @@ async function validateMetadata() {
     manifests.get("@ts-refinement/runtime").version,
   );
   assert.deepEqual(manifests.get("@ts-refinement/rolldown").dependencies, {
-    "@ts-refinement/unplugin": "0.1.0",
+    "@ts-refinement/unplugin": manifests.get("@ts-refinement/unplugin").version,
   });
   assert.deepEqual(manifests.get("@ts-refinement/unplugin").dependencies, {
     "@jridgewell/remapping": "^2.3.5",
-    "@ts-refinement/analyzer": "0.1.0",
+    "@ts-refinement/analyzer": manifests.get("@ts-refinement/analyzer").version,
     "magic-string": "^0.30.21",
     unplugin: "^3.3.0",
   });
