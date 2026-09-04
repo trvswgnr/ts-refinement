@@ -52,6 +52,33 @@ describe("runtime runner adapters", { timeout: 30_000 }, () => {
     expect(result.stdout).toContain("2\nRefinementError -1\n");
   });
 
+  it("transforms CommonJS refinements through the Node loader", () => {
+    const entry = pathToFileURL(resolve(root, "fixtures/unplugin/commonjs/refinement.ts")).href;
+    const runtime = pathToFileURL(resolve(root, "fixtures/unplugin/runtime.mjs")).href;
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--loader",
+        resolve(root, "packages/unplugin/dist/loader.mjs"),
+        "--input-type=module",
+        "--eval",
+        `const module = await import(${JSON.stringify(entry)}); const { RefinementError } = await import(${JSON.stringify(runtime)}); console.log(module.checkPositive(2)); try { module.checkPositive(-1); } catch (error) { console.log(error instanceof RefinementError, error.name, error.value); }`,
+      ],
+      {
+        cwd: root,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          TS_REFINEMENT_CWD: resolve(root, "fixtures/unplugin"),
+          TS_REFINEMENT_RUNTIME_MODULE: runtime,
+          TS_REFINEMENT_TSCONFIG: "tsconfig.json",
+        },
+      },
+    );
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("2\ntrue RefinementError -1\n");
+  });
+
   it("loads TypeScript before delegating to Node", async () => {
     const entry = pathToFileURL(resolve(root, "fixtures/unplugin/entry.ts")).href;
     process.env["TS_REFINEMENT_CWD"] = resolve(root, "fixtures/unplugin");

@@ -171,13 +171,18 @@ export async function load(
   const current = programState();
   const candidate = transformCandidate(current, fileName, source);
   if (candidate.kind === "error") throw new Error(candidate.message);
+  const format = packageFormat(fileName);
+  const commonJsRuntimeSpecifier = runtimeModule.startsWith("file:")
+    ? fileURLToPath(runtimeModule)
+    : runtimeModule;
   const output =
     candidate.kind === "transform"
-      ? transformSource(current.context, candidate.sourceFile, source, registry)
+      ? transformSource(current.context, candidate.sourceFile, source, registry, undefined, {
+          commonJsRuntimeSpecifier: format === "commonjs" ? commonJsRuntimeSpecifier : undefined,
+        })
       : null;
   const diagnostic = output?.diagnostics[0];
   if (diagnostic !== undefined) throw new Error(diagnostic.message);
-  const format = packageFormat(fileName);
   return {
     format,
     shortCircuit: true,

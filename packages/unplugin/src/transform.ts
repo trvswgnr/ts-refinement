@@ -17,6 +17,10 @@ export interface TransformOutput {
   readonly map: SourceMap | null;
 }
 
+export interface TransformSourceOptions {
+  readonly commonJsRuntimeSpecifier?: string;
+}
+
 interface ValidatorMappingAnchor {
   readonly localName: string;
   readonly originalStart: number;
@@ -214,6 +218,7 @@ export function transformSource(
   source: string,
   registry: ValidatorRegistry,
   tracker?: BuildTracker,
+  options: TransformSourceOptions = {},
 ): TransformOutput {
   if (sourceFile.text !== source) {
     throw new Error(`Source text invariant failed for '${sourceFile.fileName}'.`);
@@ -247,9 +252,10 @@ export function transformSource(
 
   if (imports.size > 0) {
     const importCode = [...imports]
-      .map(
-        ([entry, localName]) =>
-          `import { assert as ${localName} } from ${JSON.stringify(entry.importId)};`,
+      .map(([entry, localName]) =>
+        options.commonJsRuntimeSpecifier === undefined
+          ? `import { assert as ${localName} } from ${JSON.stringify(entry.importId)};`
+          : entry.inlineCode(localName, options.commonJsRuntimeSpecifier),
       )
       .join("\n");
     const insertionPoint = importInsertionPoint(context.ts, sourceFile, source);

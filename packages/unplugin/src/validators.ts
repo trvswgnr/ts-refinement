@@ -17,6 +17,7 @@ export interface ValidatorEntry {
   readonly localBaseName: string;
   readonly moduleCode: string;
   readonly resolvedId: string;
+  inlineCode(localName: string, runtimeSpecifier: string): string;
 }
 
 export interface ValidatorRegistry {
@@ -397,17 +398,31 @@ ${[...emittedChecks, ...emittedRecursions].join("\n")}
   const seen = Array.from({ length: ${targetPaths.size} }, () => new WeakSet());
   ${functionNames.get("[]")}(value, "", refinement, marker, seen);`;
       }
+      const declarationEnd = recursions.length === 0 ? -1 : validationCode.lastIndexOf("\n\n  ");
+      const declarations = declarationEnd === -1 ? "" : validationCode.slice(0, declarationEnd);
+      const assertionCode =
+        declarationEnd === -1 ? validationCode : validationCode.slice(declarationEnd + 2);
       const moduleCode = `import { RefinementError } from ${JSON.stringify(runtimeModule)};
 
-${recursions.length === 0 ? "" : validationCode.slice(0, validationCode.lastIndexOf("\n\n  "))}
+${declarations}
 
 export function assert(value, refinement, marker) {
-${recursions.length === 0 ? validationCode : validationCode.slice(validationCode.lastIndexOf("\n\n  ") + 2)}
+${assertionCode}
   return value;
 }
 `;
       const entry: ValidatorEntry = {
         importId,
+        inlineCode(localName, runtimeSpecifier) {
+          return `const ${localName} = (() => {
+  const { RefinementError } = require(${JSON.stringify(runtimeSpecifier)});
+${declarations}
+  return function assert(value, refinement, marker) {
+${assertionCode}
+    return value;
+  };
+})();`;
+        },
         key: semanticKey,
         localBaseName: `__rf_${suffix}`,
         moduleCode,
