@@ -197,6 +197,7 @@ describe("Rolldown plugin", () => {
   it("tracks transitive and global refinement visibility", { timeout: rebuildTestTimeout }, () => {
     const state = fixtureProgram();
     expect(state.mayContainRefinement(fixtureFile("runtime-entry.ts"))).toBe(true);
+    expect(state.mayContainRefinement(fixtureFile("inline-import-refinement.ts"))).toBe(true);
     expect(state.mayContainRefinement(fixtureFile("irrelevant-named-assertion.ts"))).toBe(false);
 
     const vitestState = projectProgram(fixtureFile("../vitest"));
@@ -388,6 +389,19 @@ describe("Rolldown plugin", () => {
     await expect(bundle.generate({ format: "esm", sourcemap: true })).rejects.toThrow(
       /first source transform/u,
     );
+  });
+
+  it("rejects refinement assertions injected into an irrelevant module", async () => {
+    const bundle = await buildWithPriorTransform(
+      fixtureFile("irrelevant-named-assertion.ts"),
+      () => `
+import type { Refined } from "ts-refinement";
+type Positive = Refined<number, "value > 0">;
+declare const value: number;
+export const ordinaryNamedAssertion = value as Positive;
+`,
+    );
+    await expect(bundle.generate({ format: "esm" })).rejects.toThrow(/first source transform/u);
   });
 
   it("creates fresh program state for each build generation", async () => {
@@ -711,6 +725,22 @@ export const ${name} = value as Positive;
     const chunk = generated.output.find((output) => output.type === "chunk");
 
     expect(chunk?.code).toContain("ordinaryNamedAssertion");
+  });
+
+  it("transforms refinements declared through inline import types", async () => {
+    const bundle = await build(fixtureFile("inline-import-refinement.ts"));
+    const generated = await bundle.generate({ format: "esm" });
+    const chunk = generated.output.find((output) => output.type === "chunk");
+    if (chunk === undefined) throw new Error("bundle did not emit a chunk");
+    const moduleUrl = `data:text/javascript;base64,${Buffer.from(chunk.code).toString("base64")}#${Date.now()}`;
+    const fixture = (await import(moduleUrl)) as {
+      readonly checkInlineImport: (value: number) => number;
+    };
+
+    expect(fixture.checkInlineImport(2)).toBe(2);
+    expect(() => fixture.checkInlineImport(-1)).toThrowError(
+      expect.objectContaining({ value: -1 }),
+    );
   });
 
   it("still fails outside-program modules that do not match an ignore glob", async () => {

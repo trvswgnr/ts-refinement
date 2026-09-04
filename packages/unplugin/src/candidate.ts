@@ -77,22 +77,22 @@ export function transformCandidate(
   source: string,
 ): TransformCandidate {
   const sourceFile = state.program.getSourceFile(fileName);
-  if (sourceFile !== undefined && !state.mayContainRefinement(fileName)) {
-    return { kind: "skip" };
-  }
+  const inputMayContainRefinement = canContainRefinementAssertion(source, fileName);
   if (sourceFile === undefined) {
-    if (!canContainRefinementAssertion(source, fileName)) return { kind: "skip" };
+    if (!inputMayContainRefinement) return { kind: "skip" };
     return {
       kind: "error",
       message: `TypeScript module '${fileName}' is not included in the program configured by '${state.configPath}'.`,
     };
   }
+  const programMayContainRefinement = state.mayContainRefinement(fileName);
+  if (!programMayContainRefinement && !inputMayContainRefinement) return { kind: "skip" };
   if (sourceFile.text !== source) {
     return {
       kind: "error",
       message: `TypeScript module '${fileName}' was changed before ts-refinement ran. Configure ts-refinement as the first source transform.`,
     };
   }
-  if (!canContainRefinementAssertion(source, fileName)) return { kind: "skip" };
+  if (!programMayContainRefinement || !inputMayContainRefinement) return { kind: "skip" };
   return { kind: "transform", sourceFile };
 }

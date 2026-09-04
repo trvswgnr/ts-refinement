@@ -48,6 +48,27 @@ function moduleSpecifierText(tsModule: typeof ts, statement: ts.Statement): stri
   return undefined;
 }
 
+function sourceModuleSpecifiers(tsModule: typeof ts, sourceFile: ts.SourceFile): readonly string[] {
+  const specifiers = new Set(
+    sourceFile.statements.flatMap((statement) => {
+      const specifier = moduleSpecifierText(tsModule, statement);
+      return specifier === undefined ? [] : [specifier];
+    }),
+  );
+  function visit(node: ts.Node): void {
+    if (
+      tsModule.isImportTypeNode(node) &&
+      tsModule.isLiteralTypeNode(node.argument) &&
+      tsModule.isStringLiteralLike(node.argument.literal)
+    ) {
+      specifiers.add(node.argument.literal.text);
+    }
+    tsModule.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+  return [...specifiers];
+}
+
 function containsGlobalAugmentation(tsModule: typeof ts, sourceFile: ts.SourceFile): boolean {
   let found = false;
   function visit(node: ts.Node): void {
@@ -218,10 +239,7 @@ export function createProgramState(
     let hasGlobalRefinements = false;
     for (const sourceFile of getProgram().getSourceFiles()) {
       const fileName = normalizeFileName(sourceFile.fileName);
-      const specifiers = sourceFile.statements.flatMap((statement) => {
-        const specifier = moduleSpecifierText(tsModule, statement);
-        return specifier === undefined ? [] : [specifier];
-      });
+      const specifiers = sourceModuleSpecifiers(tsModule, sourceFile);
       if (specifiers.includes("ts-refinement")) {
         discovered.add(fileName);
         hasGlobalRefinements ||= containsGlobalAugmentation(tsModule, sourceFile);
