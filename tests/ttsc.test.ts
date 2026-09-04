@@ -14,8 +14,10 @@ const ttsc = resolve(root, "node_modules/.bin/ttsc");
 const outputRoot = mkdtempSync(resolve(tmpdir(), "ts-refinement-ttsc-"));
 
 interface NativeRuntimeFixture {
+  readonly checkCapturedEvery: (value: number[]) => void;
   readonly checkPair: (value: { readonly 0?: number; readonly length: number }) => void;
   readonly checkScores: (value: number) => void;
+  readonly checkSubjectShadowedEvery: (value: number[]) => void;
   readonly checkTree: (value: {
     readonly children: { readonly length: number };
     readonly value: number;
@@ -159,6 +161,13 @@ describe("TypeScript-Go native plugin", () => {
     expect(() => runtime.checkScores(1)).toThrowError(
       expect.objectContaining({ name: "RefinementError", value: 1 }),
     );
+    expect(() => runtime.checkCapturedEvery([-1])).toThrowError(
+      expect.objectContaining({ name: "RefinementError", value: [-1] }),
+    );
+    expect(() => runtime.checkSubjectShadowedEvery([-1])).toThrowError(
+      expect.objectContaining({ name: "RefinementError", value: [-1] }),
+    );
+    expect(() => runtime.checkSubjectShadowedEvery([1, 2])).not.toThrow();
     const malformedTree = { children: { length: 0 }, value: 1 };
     expect(() => runtime.checkTree(malformedTree)).toThrowError(
       expect.objectContaining({

@@ -488,13 +488,6 @@ func normalizeSubjects(root *node, subject string) {
 		if current == nil {
 			return
 		}
-		if current.kind == nodeIdentifier && current.text == subject {
-			current.text = "$subject"
-		} else if current.kind == nodeIdentifier {
-			if local := locals[current.text]; local != "" {
-				current.text = local
-			}
-		}
 		nestedLocals := locals
 		if current.kind == nodeFunction {
 			nestedLocals = make(map[string]string, len(locals)+len(current.params))
@@ -506,6 +499,13 @@ func normalizeSubjects(root *node, subject string) {
 				localIndex++
 				nestedLocals[name] = normalized
 				current.params[index] = normalized
+			}
+		}
+		if current.kind == nodeIdentifier {
+			if local := locals[current.text]; local != "" {
+				current.text = local
+			} else if current.text == subject {
+				current.text = "$subject"
 			}
 		}
 		visit(current.left, nestedLocals)
@@ -611,21 +611,35 @@ func freeIdentifiers(root *node) []string {
 }
 
 func replaceCaptures(root *node, captures map[string]*node) *node {
-	if root == nil {
-		return nil
-	}
-	if root.kind == nodeIdentifier {
-		if replacement := captures[root.text]; replacement != nil {
-			return cloneNode(replacement)
+	var visit func(*node, map[string]bool) *node
+	visit = func(current *node, locals map[string]bool) *node {
+		if current == nil {
+			return nil
 		}
+		if current.kind == nodeIdentifier && !locals[current.text] {
+			if replacement := captures[current.text]; replacement != nil {
+				return cloneNode(replacement)
+			}
+		}
+		nestedLocals := locals
+		if current.kind == nodeFunction {
+			nestedLocals = make(map[string]bool, len(locals)+len(current.params))
+			for name := range locals {
+				nestedLocals[name] = true
+			}
+			for _, parameter := range current.params {
+				nestedLocals[parameter] = true
+			}
+		}
+		current.left = visit(current.left, nestedLocals)
+		current.right = visit(current.right, nestedLocals)
+		current.third = visit(current.third, nestedLocals)
+		for index, argument := range current.args {
+			current.args[index] = visit(argument, nestedLocals)
+		}
+		return current
 	}
-	root.left = replaceCaptures(root.left, captures)
-	root.right = replaceCaptures(root.right, captures)
-	root.third = replaceCaptures(root.third, captures)
-	for index, argument := range root.args {
-		root.args[index] = replaceCaptures(argument, captures)
-	}
-	return root
+	return visit(root, map[string]bool{})
 }
 
 func cloneNode(root *node) *node {

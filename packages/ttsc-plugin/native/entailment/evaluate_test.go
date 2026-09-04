@@ -146,6 +146,27 @@ func TestFoldsLiteralCapturesBeforeSubjectInference(t *testing.T) {
 	}
 }
 
+func TestRespectsCallbackBindingsDuringNormalization(t *testing.T) {
+	captured, err := ParsePredicateWithCaptures(
+		"values.every((LIMIT) => LIMIT > 0) && LIMIT > 0",
+		map[string]string{"LIMIT": "1"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if compiled := Compile(captured, "input"); compiled != "(input.every(($local0) => ($local0 > 0)) && (1 > 0))" {
+		t.Fatalf("unexpected shadowed capture output: %q", compiled)
+	}
+
+	shadowedSubject, err := ParsePredicate("value.every((value) => value > 0)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if compiled := Compile(shadowedSubject, "input"); compiled != "input.every(($local0) => ($local0 > 0))" {
+		t.Fatalf("unexpected shadowed subject output: %q", compiled)
+	}
+}
+
 func TestRejectsImpureAndAmbiguousPredicates(t *testing.T) {
 	for _, source := range []string{"Math.random() < 0.5", "Date.now() > 0", "value > minimum"} {
 		if _, err := ParsePredicate(source); err == nil {
