@@ -51,6 +51,16 @@ interface NestedTreeValue {
   readonly value: number;
 }
 
+interface MalformedCollection {
+  readonly 0?: number;
+  readonly length: number;
+}
+
+interface MalformedTreeValue {
+  readonly children: MalformedCollection;
+  readonly value: number;
+}
+
 interface MutableNestedTreeValue {
   children: MutableNestedTreeValue[];
   value: number;
@@ -67,14 +77,14 @@ interface NestedUserValue {
 
 interface NestedRefinementFixture {
   readonly checkBox: (value: NestedBoxValue) => NestedBoxValue;
-  readonly checkPair: (value: NestedPairValue) => NestedPairValue;
+  readonly checkPair: (value: MalformedCollection | NestedPairValue) => NestedPairValue;
   readonly checkResult: (value: NestedResultValue) => NestedResultValue;
   readonly checkScores: (
-    value: Readonly<Record<string, number>>,
-  ) => Readonly<Record<string, number>>;
-  readonly checkTree: (value: NestedTreeValue) => NestedTreeValue;
+    value: number | Readonly<Record<string, number>>,
+  ) => number | Readonly<Record<string, number>>;
+  readonly checkTree: (value: MalformedTreeValue | NestedTreeValue) => NestedTreeValue;
   readonly checkUser: (value: NestedUserValue) => NestedUserValue;
-  readonly checkValues: (value: number[]) => number[];
+  readonly checkValues: (value: MalformedCollection | number[]) => number[];
 }
 
 interface IndexSignatureFixture {
@@ -298,9 +308,8 @@ describe("Rolldown plugin", () => {
       expect.objectContaining({ path: ".name", value: "" }),
     );
     expect(nested.checkValues([1, 2])).toEqual([1, 2]);
-    const malformedArray: unknown = { length: 0 };
-    // SAFETY: This deliberately violates the static base type to exercise the runtime guard.
-    expect(() => nested.checkValues(malformedArray as number[])).toThrowError(
+    const malformedArray = { length: 0 };
+    expect(() => nested.checkValues(malformedArray)).toThrowError(
       expect.objectContaining({ name: "RefinementError", value: malformedArray }),
     );
     expect(() => nested.checkValues([1, -2, -3])).toThrowError(
@@ -311,9 +320,8 @@ describe("Rolldown plugin", () => {
       expect.objectContaining({ path: ".value", value: 0 }),
     );
     expect(nested.checkPair([1, "x", 2, 3])).toEqual([1, "x", 2, 3]);
-    const malformedPair: unknown = { 0: 1, length: 1 };
-    // SAFETY: This deliberately violates the static base type to exercise the runtime guard.
-    expect(() => nested.checkPair(malformedPair as NestedPairValue)).toThrowError(
+    const malformedPair = { 0: 1, length: 1 };
+    expect(() => nested.checkPair(malformedPair)).toThrowError(
       expect.objectContaining({ name: "RefinementError", value: malformedPair }),
     );
     expect(() => nested.checkPair([1, "", 2])).toThrowError(
@@ -330,11 +338,10 @@ describe("Rolldown plugin", () => {
       expect.objectContaining({ path: ".user.age", value: 0 }),
     );
     expect(nested.checkScores({ alice: 1, bob: 2 })).toEqual({ alice: 1, bob: 2 });
-    const malformedScores: unknown = 1;
-    // SAFETY: This deliberately violates the static base type to exercise the runtime guard.
-    expect(() =>
-      nested.checkScores(malformedScores as Readonly<Record<string, number>>),
-    ).toThrowError(expect.objectContaining({ name: "RefinementError", value: malformedScores }));
+    const malformedScores = 1;
+    expect(() => nested.checkScores(malformedScores)).toThrowError(
+      expect.objectContaining({ name: "RefinementError", value: malformedScores }),
+    );
     expect(() => nested.checkScores({ alice: 1, bob: -2 })).toThrowError(
       expect.objectContaining({ path: ".bob", value: -2 }),
     );
@@ -342,9 +349,8 @@ describe("Rolldown plugin", () => {
     expect(() => nested.checkTree(tree)).toThrowError(
       expect.objectContaining({ path: ".children[0].children[0].value", value: 0 }),
     );
-    const malformedTree: unknown = { children: { length: 0 }, value: 1 };
-    // SAFETY: This deliberately violates the static base type to exercise recursive traversal.
-    expect(() => nested.checkTree(malformedTree as NestedTreeValue)).toThrowError(
+    const malformedTree = { children: { length: 0 }, value: 1 };
+    expect(() => nested.checkTree(malformedTree)).toThrowError(
       expect.objectContaining({
         name: "RefinementError",
         path: ".children",
@@ -757,6 +763,7 @@ export const ${name} = value as Positive;
     const chunk = generated.output.find((output) => output.type === "chunk");
     if (chunk === undefined) throw new Error("bundle did not emit a chunk");
     const moduleUrl = `data:text/javascript;base64,${Buffer.from(chunk.code).toString("base64")}#${Date.now()}`;
+    // SAFETY: Rolldown generated this module from the typed inline-import fixture.
     const fixture = (await import(moduleUrl)) as {
       readonly checkInlineImport: (value: number) => number;
     };

@@ -395,11 +395,37 @@ function typeParameterEntailment(
 
 function arrayElementType(context: AnalyzerContext, type: ts.Type): ts.Type | undefined {
   if (!context.checker.isArrayType(type)) return undefined;
+  // SAFETY: isArrayType establishes an array TypeReference.
   return context.checker.getTypeArguments(type as ts.TypeReference)[0];
 }
 
 function isReadonlyArray(type: ts.Type): boolean {
   return type.getSymbol()?.getName() === "ReadonlyArray";
+}
+
+function tupleTarget(reference: ts.TypeReference): ts.TupleType {
+  // SAFETY: callers obtain references through tupleTypeReference.
+  return reference.target as ts.TupleType;
+}
+
+function tupleElementsAreEntailed(
+  sourceFixed: readonly ts.Type[],
+  sourceElements: TupleParameters,
+  targetFixed: readonly ts.Type[],
+  targetElements: TupleParameters,
+  visit: EntailmentVisit,
+): boolean {
+  if (sourceElements.minimum < targetElements.minimum) return false;
+  if (sourceElements.rest !== null && targetElements.rest === null) return false;
+  if (targetElements.rest === null && sourceFixed.length > targetFixed.length) return false;
+  for (const [index, element] of sourceFixed.entries()) {
+    const targetElement = targetFixed[index] ?? targetElements.rest;
+    if (targetElement === null || !visit(element, targetElement)) return false;
+  }
+  return (
+    sourceElements.rest === null ||
+    (targetElements.rest !== null && visit(sourceElements.rest, targetElements.rest))
+  );
 }
 
 function tupleEntailment(
@@ -412,24 +438,14 @@ function tupleEntailment(
   if (!context.checker.isTupleType(source)) return false;
   const sourceReference = tupleTypeReference(context, source);
   const targetReference = tupleTypeReference(context, target);
-  const sourceTarget = sourceReference.target as ts.TupleType;
-  const targetTarget = targetReference.target as ts.TupleType;
+  const sourceTarget = tupleTarget(sourceReference);
+  const targetTarget = tupleTarget(targetReference);
   if (sourceTarget.readonly && !targetTarget.readonly) return false;
   const sourceFixed: ts.Type[] = [];
   const targetFixed: ts.Type[] = [];
   const sourceElements = appendTupleParameters(context, sourceReference, sourceFixed);
   const targetElements = appendTupleParameters(context, targetReference, targetFixed);
-  if (sourceElements.minimum < targetElements.minimum) return false;
-  if (sourceElements.rest !== null && targetElements.rest === null) return false;
-  if (targetElements.rest === null && sourceFixed.length > targetFixed.length) return false;
-  for (const [index, element] of sourceFixed.entries()) {
-    const targetElement = targetFixed[index] ?? targetElements.rest;
-    if (targetElement === null || !visit(element, targetElement)) return false;
-  }
-  return (
-    sourceElements.rest === null ||
-    (targetElements.rest !== null && visit(sourceElements.rest, targetElements.rest))
-  );
+  return tupleElementsAreEntailed(sourceFixed, sourceElements, targetFixed, targetElements, visit);
 }
 
 function arrayEntailment(

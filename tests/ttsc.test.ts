@@ -13,6 +13,16 @@ const root = resolve(import.meta.dirname, "..");
 const ttsc = resolve(root, "node_modules/.bin/ttsc");
 const outputRoot = mkdtempSync(resolve(tmpdir(), "ts-refinement-ttsc-"));
 
+interface NativeRuntimeFixture {
+  readonly checkPair: (value: { readonly 0?: number; readonly length: number }) => void;
+  readonly checkScores: (value: number) => void;
+  readonly checkTree: (value: {
+    readonly children: { readonly length: number };
+    readonly value: number;
+  }) => void;
+  readonly checkValues: (value: { readonly length: number }) => void;
+}
+
 function runTtsc(
   project: "external-invalid" | "invalid" | "runtime" | "unrelated-invalid" | "valid",
   outDir: string,
@@ -137,12 +147,7 @@ describe("TypeScript-Go native plugin", () => {
     expect(result.status, `${result.stdout}${result.stderr}`).toBe(0);
     const moduleUrl = `${pathToFileURL(resolve(outDir, "fixtures/ttsc/runtime/index.js")).href}?${Date.now()}`;
     // SAFETY: ttsc emitted this module from the focused runtime fixture above.
-    const runtime = (await import(moduleUrl)) as {
-      readonly checkPair: (value: unknown) => unknown;
-      readonly checkScores: (value: unknown) => unknown;
-      readonly checkTree: (value: unknown) => unknown;
-      readonly checkValues: (value: unknown) => unknown;
-    };
+    const runtime = (await import(moduleUrl)) as NativeRuntimeFixture;
     const malformedArray = { length: 0 };
     expect(() => runtime.checkValues(malformedArray)).toThrowError(
       expect.objectContaining({ name: "RefinementError", value: malformedArray }),

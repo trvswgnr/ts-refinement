@@ -29,6 +29,25 @@ function programState(): ProgramState {
   return state;
 }
 
+function commonJsRuntimeSpecifier(format: NodeModuleFormat): string | undefined {
+  if (format !== "commonjs") return undefined;
+  return runtimeModule.startsWith("file:") ? fileURLToPath(runtimeModule) : runtimeModule;
+}
+
+function transformLoadedSource(
+  current: ProgramState,
+  fileName: string,
+  source: string,
+  format: NodeModuleFormat,
+): ReturnType<typeof transformSource> | null {
+  const candidate = transformCandidate(current, fileName, source);
+  if (candidate.kind === "error") throw new Error(candidate.message);
+  if (candidate.kind === "skip") return null;
+  return transformSource(current.context, candidate.sourceFile, source, registry, undefined, {
+    commonJsRuntimeSpecifier: commonJsRuntimeSpecifier(format),
+  });
+}
+
 function parsedPackageFormat(packagePath: string, source: string): NodeModuleFormat {
   const parsed = ts.parseJsonText(packagePath, source);
   const statement = parsed.statements[0];
@@ -169,18 +188,8 @@ export async function load(
   const fileName = fileURLToPath(url);
   const source = await readFile(fileName, "utf8");
   const current = programState();
-  const candidate = transformCandidate(current, fileName, source);
-  if (candidate.kind === "error") throw new Error(candidate.message);
   const format = packageFormat(fileName);
-  const commonJsRuntimeSpecifier = runtimeModule.startsWith("file:")
-    ? fileURLToPath(runtimeModule)
-    : runtimeModule;
-  const output =
-    candidate.kind === "transform"
-      ? transformSource(current.context, candidate.sourceFile, source, registry, undefined, {
-          commonJsRuntimeSpecifier: format === "commonjs" ? commonJsRuntimeSpecifier : undefined,
-        })
-      : null;
+  const output = transformLoadedSource(current, fileName, source, format);
   const diagnostic = output?.diagnostics[0];
   if (diagnostic !== undefined) throw new Error(diagnostic.message);
   return {
