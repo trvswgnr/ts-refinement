@@ -29,6 +29,9 @@ const validAssignments = [
   "validParameter",
   "validRecursive",
   "validMutableArray",
+  "validRequiredToOptionalTuple",
+  "validShortToOptionalTuple",
+  "validFixedToRestTuple",
 ];
 
 const invalidAssignments = [
@@ -54,6 +57,10 @@ const invalidAssignments = [
   "invalidOptionalRequired",
   "invalidTupleLength",
   "invalidTupleMember",
+  "invalidOptionalToRequiredTuple",
+  "invalidRestToFixedTuple",
+  "invalidTupleExtra",
+  "invalidFixedToRestMember",
 ];
 
 function expectMatrixDiagnostics(output: string): void {

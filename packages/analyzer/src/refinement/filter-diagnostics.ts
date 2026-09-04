@@ -397,18 +397,21 @@ function tupleEntailment(
   const sourceTarget = sourceReference.target as ts.TupleType;
   const targetTarget = targetReference.target as ts.TupleType;
   if (sourceTarget.readonly && !targetTarget.readonly) return false;
-  if (
-    sourceTarget.elementFlags.length !== targetTarget.elementFlags.length ||
-    sourceTarget.elementFlags.some((flags, index) => flags !== targetTarget.elementFlags[index])
-  ) {
-    return false;
+  const sourceFixed: ts.Type[] = [];
+  const targetFixed: ts.Type[] = [];
+  const sourceElements = appendTupleParameters(context, sourceReference, sourceFixed);
+  const targetElements = appendTupleParameters(context, targetReference, targetFixed);
+  if (sourceElements.minimum < targetElements.minimum) return false;
+  if (sourceElements.rest !== null && targetElements.rest === null) return false;
+  if (targetElements.rest === null && sourceFixed.length > targetFixed.length) return false;
+  for (const [index, element] of sourceFixed.entries()) {
+    const targetElement = targetFixed[index] ?? targetElements.rest;
+    if (targetElement === null || !visit(element, targetElement)) return false;
   }
-  const sourceElements = context.checker.getTypeArguments(sourceReference);
-  const targetElements = context.checker.getTypeArguments(targetReference);
-  return sourceElements.every((element, index) => {
-    const targetElement = targetElements[index];
-    return targetElement !== undefined && visit(element, targetElement);
-  });
+  return (
+    sourceElements.rest === null ||
+    (targetElements.rest !== null && visit(sourceElements.rest, targetElements.rest))
+  );
 }
 
 function arrayEntailment(

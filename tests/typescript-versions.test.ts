@@ -29,6 +29,10 @@ const retainedStructuralDiagnostics = [
   "invalidOptionalRequired",
   "invalidTupleLength",
   "invalidTupleMember",
+  "invalidOptionalToRequiredTuple",
+  "invalidRestToFixedTuple",
+  "invalidTupleExtra",
+  "invalidFixedToRestMember",
 ];
 const retainedIndexDiagnostics = [
   "invalidStringToTemplate",

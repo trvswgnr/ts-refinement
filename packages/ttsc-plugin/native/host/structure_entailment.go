@@ -231,25 +231,25 @@ func collectionEntailment(
 		if sourceTuple.IsReadonly() && !targetTuple.IsReadonly() {
 			return false, true
 		}
-		sourceFlags := sourceTuple.ElementFlags()
-		targetFlags := targetTuple.ElementFlags()
-		if len(sourceFlags) != len(targetFlags) {
+		sourceElements := tupleElements(checker, source)
+		targetElements := tupleElements(checker, target)
+		if sourceElements.minimum < targetElements.minimum {
 			return false, true
 		}
-		for index, flags := range sourceFlags {
-			if flags != targetFlags[index] {
+		if sourceElements.rest != nil && targetElements.rest == nil {
+			return false, true
+		}
+		if targetElements.rest == nil && len(sourceElements.fixed) > len(targetElements.fixed) {
+			return false, true
+		}
+		for index, element := range sourceElements.fixed {
+			targetElement := signatureParameterAt(targetElements, index)
+			if targetElement == nil || !visit(element, targetElement) {
 				return false, true
 			}
 		}
-		sourceElements := shimchecker.Checker_getTypeArguments(checker, source)
-		targetElements := shimchecker.Checker_getTypeArguments(checker, target)
-		if len(sourceElements) != len(targetElements) {
+		if sourceElements.rest != nil && (targetElements.rest == nil || !visit(sourceElements.rest, targetElements.rest)) {
 			return false, true
-		}
-		for index, element := range sourceElements {
-			if !visit(element, targetElements[index]) {
-				return false, true
-			}
 		}
 		return true, true
 	}
@@ -271,6 +271,27 @@ func collectionEntailment(
 	}
 	sourceElement := collectionArrayElement(checker, source)
 	return sourceElement != nil && visit(sourceElement, targetElement), true
+}
+
+func tupleElements(checker *shimchecker.Checker, target *shimchecker.Type) signatureParameterSequence {
+	result := signatureParameterSequence{}
+	arguments := shimchecker.Checker_getTypeArguments(checker, target)
+	flags := target.TargetTupleType().ElementFlags()
+	for index, element := range arguments {
+		elementFlags := shimchecker.ElementFlagsRequired
+		if index < len(flags) {
+			elementFlags = flags[index]
+		}
+		if elementFlags&(shimchecker.ElementFlagsRest|shimchecker.ElementFlagsVariadic) != 0 {
+			result.rest = element
+			break
+		}
+		result.fixed = append(result.fixed, element)
+		if elementFlags&shimchecker.ElementFlagsRequired != 0 {
+			result.minimum = len(result.fixed)
+		}
+	}
+	return result
 }
 
 func collectionArrayElement(checker *shimchecker.Checker, target *shimchecker.Type) *shimchecker.Type {

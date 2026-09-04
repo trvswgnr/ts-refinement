@@ -209,10 +209,23 @@ func TestFiltersOnlyValidStructuralImplications(t *testing.T) {
 		t.Error("expected mutable-to-readonly array diagnostic to be filtered")
 	}
 	for _, name := range []string{
+		"validRequiredToOptionalTuple",
+		"validShortToOptionalTuple",
+		"validFixedToRestTuple",
+	} {
+		if spans[name] {
+			t.Errorf("expected tuple subtype diagnostic on %q to be filtered", name)
+		}
+	}
+	for _, name := range []string{
 		"invalidReadonlyArray",
 		"invalidOptionalRequired",
 		"invalidTupleLength",
 		"invalidTupleMember",
+		"invalidOptionalToRequiredTuple",
+		"invalidRestToFixedTuple",
+		"invalidTupleExtra",
+		"invalidFixedToRestMember",
 	} {
 		if !spans[name] {
 			t.Errorf("expected ordinary incompatibility on %q to be retained", name)
