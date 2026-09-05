@@ -90,3 +90,17 @@ func TestValidatorGuardsIndexTraversals(t *testing.T) {
 		t.Fatalf("validator does not guard index traversal:\n%s", code)
 	}
 }
+
+func TestTemplateKeyGuardEscapesLineTerminators(t *testing.T) {
+	pattern := &analysis.IndexPattern{
+		Placeholders: []string{"string"},
+		Texts:        []string{"line\r\n\u2028\u2029", ""},
+	}
+	code := strings.Join(templateKeyGuard(pattern, "key", "match", ""), "\n")
+	if strings.ContainsAny(code, "\r\u2028\u2029") || strings.Count(code, "\n") != 2 {
+		t.Fatalf("validator contains a raw line terminator:\n%s", code)
+	}
+	if !strings.Contains(code, `const match = /^line\r\n\u2028\u2029([\s\S]*?)$/u.exec(key);`) {
+		t.Fatalf("validator does not escape line terminators:\n%s", code)
+	}
+}

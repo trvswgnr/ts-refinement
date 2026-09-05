@@ -239,5 +239,16 @@ describe("source transform", () => {
     expect(modules).toContain('!== "symbol"');
     expect(modules).toContain("Object.getOwnPropertySymbols");
     expect(modules).toContain("/^data-([\\s\\S]*?)$/u.exec");
+    expect(modules).toContain("/^line\\r\\n\\u2028\\u2029([\\s\\S]*?)$/u.exec");
+    for (const moduleCode of register.mock.results.flatMap((result) =>
+      result.type === "return" ? [result.value.moduleCode] : [],
+    )) {
+      const result = ts.transpileModule(moduleCode, {
+        compilerOptions: { allowJs: true, module: ts.ModuleKind.ESNext },
+        fileName: "validator.mjs",
+        reportDiagnostics: true,
+      });
+      expect(result.diagnostics).toEqual([]);
+    }
   });
 });

@@ -291,7 +291,7 @@ func templateKeyGuard(pattern *analysis.IndexPattern, key, match, indent string)
 	var source strings.Builder
 	conditions := []string{}
 	for index, text := range pattern.Texts {
-		source.WriteString(strings.ReplaceAll(regexp.QuoteMeta(text), "/", "\\/"))
+		source.WriteString(escapeRegExpLiteral(text))
 		if index >= len(pattern.Placeholders) {
 			continue
 		}
@@ -313,6 +313,14 @@ func templateKeyGuard(pattern *analysis.IndexPattern, key, match, indent string)
 		fmt.Sprintf("%sconst %s = /^%s$/u.exec(%s);", indent, match, source.String(), key),
 		fmt.Sprintf("%sif (%s === null%s) continue;", indent, match, condition),
 	}
+}
+
+func escapeRegExpLiteral(value string) string {
+	escaped := strings.ReplaceAll(regexp.QuoteMeta(value), "/", "\\/")
+	escaped = strings.ReplaceAll(escaped, "\r", "\\r")
+	escaped = strings.ReplaceAll(escaped, "\n", "\\n")
+	escaped = strings.ReplaceAll(escaped, "\u2028", "\\u2028")
+	return strings.ReplaceAll(escaped, "\u2029", "\\u2029")
 }
 
 func pathKey(path []analysis.PathSegment) string {

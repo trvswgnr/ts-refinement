@@ -53,7 +53,12 @@ function propertyPathSegment(name: string): string {
 }
 
 function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\/]/gu, "\\$&");
+  return value
+    .replace(/[.*+?^${}()|[\]\\/]/gu, "\\$&")
+    .replaceAll("\r", "\\r")
+    .replaceAll("\n", "\\n")
+    .replaceAll("\u2028", "\\u2028")
+    .replaceAll("\u2029", "\\u2029");
 }
 
 function templateIndexGuard(
