@@ -103,6 +103,7 @@ interface ObjectContainerFixture {
 interface IndexSignatureFixture {
   readonly checkBigIntDataScores: (value: Record<string, number>) => Record<string, number>;
   readonly checkDataScores: (value: Record<string, number>) => Record<string, number>;
+  readonly checkLineBreakScores: (value: Record<string, number>) => Record<string, number>;
   readonly checkNumericDataScores: (value: Record<string, number>) => Record<string, number>;
   readonly checkNumericScores: (value: Record<string, number>) => Record<string, number>;
   readonly checkSymbolScores: (value: Record<symbol, number>) => Record<symbol, number>;
@@ -449,6 +450,14 @@ describe("Rolldown plugin", () => {
     });
     expect(() => fixture.checkDataScores({ "data-bad": -1 })).toThrowError(
       expect.objectContaining({ path: '["data-bad"]', value: -1 }),
+    );
+    const lineBreakKey = "line\r\n\u2028\u2029value";
+    expect(fixture.checkLineBreakScores({ [lineBreakKey]: 1, other: -1 })).toEqual({
+      [lineBreakKey]: 1,
+      other: -1,
+    });
+    expect(() => fixture.checkLineBreakScores({ [lineBreakKey]: -1 })).toThrowError(
+      expect.objectContaining({ value: -1 }),
     );
     expect(fixture.checkNumericDataScores({ "number-Infinity": -1, "number-1.5": 1 })).toEqual({
       "number-1.5": 1,

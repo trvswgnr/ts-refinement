@@ -4,6 +4,7 @@ type Positive = Refined<number, "value > 0">;
 type NumericScores = { readonly [key: number]: Positive };
 type SymbolScores = { readonly [key: symbol]: Positive };
 type DataScores = { readonly [key: `data-${string}`]: Positive };
+type LineBreakScores = { readonly [key: `line\r\n\u2028\u2029${string}`]: Positive };
 type NumericDataScores = { readonly [key: `number-${number}`]: Positive };
 type BigIntDataScores = { readonly [key: `bigint-${bigint}`]: Positive };
 
@@ -17,6 +18,12 @@ export function checkSymbolScores(scores: { readonly [key: symbol]: number }): S
 
 export function checkDataScores(scores: { readonly [key: `data-${string}`]: number }): DataScores {
   return scores as DataScores;
+}
+
+export function checkLineBreakScores(scores: {
+  readonly [key: `line\r\n\u2028\u2029${string}`]: number;
+}): LineBreakScores {
+  return scores as LineBreakScores;
 }
 
 export function checkNumericDataScores(scores: {
