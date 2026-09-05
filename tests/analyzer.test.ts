@@ -219,7 +219,7 @@ describe("TypeScript refinement analysis", () => {
     ]);
 
     const runtimeResults = analyzeSourceFile(state.context, runtimeSource);
-    expect(runtimeResults).toHaveLength(5);
+    expect(runtimeResults).toHaveLength(6);
     expect(runtimeResults[0]?.site.checks[0]?.path).toEqual([{ key: "number", kind: "index" }]);
     expect(runtimeResults[1]?.site.checks[0]?.path).toEqual([{ key: "symbol", kind: "index" }]);
     expect(runtimeResults[2]?.site.checks[0]?.path).toEqual([
@@ -233,10 +233,17 @@ describe("TypeScript refinement analysis", () => {
       {
         key: "template",
         kind: "index",
-        pattern: { placeholders: ["number"], texts: ["number-", ""] },
+        pattern: { placeholders: ["string"], texts: ["line\r\n\u2028\u2029", ""] },
       },
     ]);
     expect(runtimeResults[4]?.site.checks[0]?.path).toEqual([
+      {
+        key: "template",
+        kind: "index",
+        pattern: { placeholders: ["number"], texts: ["number-", ""] },
+      },
+    ]);
+    expect(runtimeResults[5]?.site.checks[0]?.path).toEqual([
       {
         key: "template",
         kind: "index",
